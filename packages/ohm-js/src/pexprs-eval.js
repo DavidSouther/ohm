@@ -112,6 +112,15 @@ pexprs.Seq.prototype.eval = function(state) {
   return true;
 };
 
+pexprs.Fallible.prototype.eval = function (state) {
+  const [fall, join] = this.factors;
+  const first = state.eval(fall);
+  if (!first) {
+    state.inputStream.pos = state.rightmostFailurePosition;
+  }
+  return state.eval(join);
+};
+
 pexprs.Iter.prototype.eval = function(state) {
   const {inputStream} = state;
   const origPos = inputStream.pos;

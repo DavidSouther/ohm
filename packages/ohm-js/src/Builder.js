@@ -97,6 +97,16 @@ export class Builder {
     return factors.length === 1 ? factors[0] : new pexprs.Seq(factors);
   }
 
+  bang(fExpr, jExpr) {
+    if (!(fExpr instanceof pexprs.PExpr)) {
+      fExpr = this.fromRecipe(fExpr);
+    }
+    if (!(jExpr instanceof pexprs.PExpr)) {
+      jExpr = this.fromRecipe(jExpr);
+    }
+    return new pexprs.Fallible(fExpr, jExpr);
+  },
+
   star(expr) {
     if (!(expr instanceof pexprs.PExpr)) {
       expr = this.fromRecipe(expr);

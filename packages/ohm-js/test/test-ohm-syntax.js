@@ -489,6 +489,37 @@ describe('opt', test => {
   });
 });
 
+describe('fail', test => {
+  const m = ohm.grammar(`
+    M {
+      X = "A" B! "C"
+      B = "X" "Y"
+    }`);
+
+  test('recognition', t => {
+    assertSucceeds(t, m.match('XYC'));
+    assertSucceeds(t, m.match('XC'));
+  });
+
+  test('semantic actions', t => {
+    const s = m.createSemantics().addAttribute('X', {
+      X(b, c) {
+        return [b.children, c];
+      }
+    });
+
+    const m1 = m.match('XYC');
+    const m2 = m.match('XYC');
+    const s1 = s(m1);
+    const s2 = s(m2);
+    const x1 = s1.X;
+    const x2 = s2.X;
+
+    t.deepEqual(x1, [['X', 'Y'], 'C']);
+    t.deepEqual(x2, [['X'], 'C']);
+  });
+});
+
 describe('not', test => {
   const m = ohm.grammar('M { start = ~"hello" any* }');
 

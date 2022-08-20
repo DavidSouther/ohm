@@ -105,6 +105,14 @@ export class Seq extends PExpr {
   }
 }
 
+// Fallible Continuation
+
+export class Fallible extends Seq {
+  constructor(fallible, join) {
+    super([fallible, join]);
+  }
+}
+
 // Iterators and optionals
 
 export class Iter extends PExpr {

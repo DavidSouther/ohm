@@ -152,6 +152,10 @@ export function buildGrammar(match, namespace, optOhmGrammarForTesting) {
       return builder.seq(...expr.children.map(c => c.visit())).withSource(this.source);
     },
 
+    Fallible(x, _, y) {
+      return builder.bang(x.visit(), y.visit()).withSource(this.source);
+    },
+
     Iter_star(x, _) {
       return builder.star(x.visit()).withSource(this.source);
     },

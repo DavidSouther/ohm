@@ -18,7 +18,9 @@ Ohm {
     = "|"? NonemptyListOf<TopLevelTerm, "|">
 
   TopLevelTerm
-    = Seq caseName  -- inline
+    = Fallible caseName -- labeled
+    | Fallible
+    | Seq caseName  -- inline
     | Seq
 
   OverrideRuleBody
@@ -39,6 +41,9 @@ Ohm {
 
   Seq
     = Iter*
+
+  Fallible 
+    = Pred "!" Pred
 
   Iter
     = Pred "*"  -- star
