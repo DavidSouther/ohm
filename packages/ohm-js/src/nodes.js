@@ -179,10 +179,9 @@ export class IterationNode extends Node {
 }
 
 export class FailureNode extends Node {
-  constructor(children, childOffsets, matchLength) {
+  constructor(error, matchLength) {
     super(matchLength);
-    this.children = children;
-    this.childOffsets = childOffsets;
+    this.failure = error;
   }
 
   get ctorName() {

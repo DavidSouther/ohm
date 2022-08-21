@@ -3,6 +3,7 @@ import * as common from './common.js';
 import * as errors from './errors.js';
 import {FailureNode, IterationNode, NonterminalNode, TerminalNode} from './nodes.js';
 import * as pexprs from './pexprs-main.js';
+import {MatchResult} from "./MatchResult.js";
 
 // --------------------------------------------------------------------
 // Operations
@@ -121,11 +122,11 @@ pexprs.Fallible.prototype.eval = function(state) {
   // The rest of the seq entries get a FailureNode with span 0.
   // Run the input until join matches.
 
-  const factors = (seq instanceof pexprs.Seq) ? seq.factors : [seq];
+  const factors = seq instanceof pexprs.Seq ? seq.factors : [seq];
   let foundError = false;
   for (let idx = 0; idx < factors.length; idx++) {
     if (foundError) {
-      const failure = new FailureNode([], [0], 0);
+      const failure = new FailureNode({}, 0);
       state.pushBinding(failure, 0);
       continue;
     }
@@ -141,7 +142,16 @@ pexprs.Fallible.prototype.eval = function(state) {
           state._bindingOffsets.pop();
           // Push an Error node from where it first errored to where it recovered
           const matchLength = endPos - originalPos;
-          const failure = new FailureNode(matchLength);
+          let error = new MatchResult(
+            state.matcher,
+            state.inputStream,
+            factor,
+            undefined,
+            undefined,
+            originalPos,
+            undefined
+          );
+          const failure = new FailureNode(error, matchLength);
           // TODO Add the error to the failure
           state.pushBinding(failure, originalPos);
           state.inputStream.pos = endPos;

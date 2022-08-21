@@ -3,6 +3,7 @@ import test from 'ava-spec';
 import fs from 'fs';
 import * as ohm from '../index.mjs';
 import {buildGrammar} from '../src/buildGrammar.js';
+import { FailureNode } from '../src/nodes.js';
 
 const arithmeticGrammarSource = fs.readFileSync('test/arithmetic.ohm').toString();
 const ohmGrammarSource = fs.readFileSync('src/ohm-grammar.ohm').toString();
@@ -534,8 +535,14 @@ describe('fail', test => {
     const xcxyc = m.match('XCXYC', 'R');
     assertSucceeds(t, xycxc);
     assertSucceeds(t, xcxyc);
-    t.deepEqual(s(xycxc).X, [[['X', 'Y'], 'C'], [['X!'], 'C']]);
-    t.deepEqual(s(xcxyc).X, [[['X!'], 'C'], [['X', 'Y'], 'C']]);
+    t.deepEqual(s(xycxc).X, [
+      [['X', 'Y'], 'C'],
+      [['X!'], 'C']
+    ]);
+    t.deepEqual(s(xcxyc).X, [
+      [['X!'], 'C'],
+      [['X', 'Y'], 'C']
+    ]);
   });
 
   test('with sequence', t => {
@@ -550,6 +557,21 @@ describe('fail', test => {
     const xac = m.match('XAC', 'A');
     assertSucceeds(t, xac);
     t.deepEqual(s(xac).X, [['XA!'], ['!'], 'C']);
+  });
+
+  test('captures errors', t => {
+    // assertFails(m.match('X', 'B'));
+
+    const e = m.extendSemantics(s).extendAttribute('X', {
+      _fail() {
+        if (!this instanceof FailureNode) {
+          throw new Error('_fail expects FailureNode');
+        }
+        const {failure} = this._node;
+        return failure.shortMessage ?? 'Missing Failure';
+      }
+    });
+    t.deepEqual(e(m.match('XC')).X, [['Line 1 column 2: expected "Y"'], 'C']);
   });
 });
 
