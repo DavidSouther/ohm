@@ -492,9 +492,28 @@ describe('opt', test => {
 describe('fail', test => {
   const m = ohm.grammar(`
     M {
-      X = "A" B! "C"
+      X = B ! "C"
       B = "X" "Y"
+      R = X*
     }`);
+
+  const s = m.createSemantics().addAttribute('X', {
+    X(b, c) {
+      return [b.X, c.X];
+    },
+    B(a, b) {
+      return [a.X, b.X];
+    },
+    _iter() {
+      return this.children.map(({X}) => X);
+    },
+    _fail() {
+      return [this.child(0).X + '!'];
+    },
+    _terminal() {
+      return this.sourceString;
+    }
+  });
 
   test('recognition', t => {
     assertSucceeds(t, m.match('XYC'));
@@ -502,21 +521,17 @@ describe('fail', test => {
   });
 
   test('semantic actions', t => {
-    const s = m.createSemantics().addAttribute('X', {
-      X(b, c) {
-        return [b.children, c];
-      }
-    });
+    t.deepEqual(s(m.match('XYC')).X, [['X', 'Y'], 'C']);
+    t.deepEqual(s(m.match('XC')).X, [['X!'], 'C']);
+  });
 
-    const m1 = m.match('XYC');
-    const m2 = m.match('XYC');
-    const s1 = s(m1);
-    const s2 = s(m2);
-    const x1 = s1.X;
-    const x2 = s2.X;
-
-    t.deepEqual(x1, [['X', 'Y'], 'C']);
-    t.deepEqual(x2, [['X'], 'C']);
+  test('Repeats', t => {
+    const xycxc = m.match('XYCXC', 'R');
+    const xcxyc = m.match('XCXYC', 'R');
+    assertSucceeds(t, xycxc);
+    assertSucceeds(t, xcxyc);
+    t.deepEqual(s(xycxc).X, [[['X', 'Y'], 'C'], [['X!'], 'C']]);
+    t.deepEqual(s(xcxyc).X, [[['X!'], 'C'], [['X', 'Y'], 'C']]);
   });
 });
 

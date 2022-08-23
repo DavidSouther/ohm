@@ -626,7 +626,7 @@ class Operation {
     try {
       // Look for a semantic action whose name matches the node's constructor name, which is either
       // the name of a rule in the grammar, or '_terminal' (for a terminal node), or '_iter' (for an
-      // iteration node).
+      // iteration node), or '_fail' (for a failure node).
       const {ctorName} = nodeWrapper._node;
       let actionFn = this.actionDict[ctorName];
       if (actionFn) {

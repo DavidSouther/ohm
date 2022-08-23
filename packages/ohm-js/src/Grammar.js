@@ -8,7 +8,7 @@ import * as pexprs from './pexprs.js';
 // Private stuff
 // --------------------------------------------------------------------
 
-const SPECIAL_ACTION_NAMES = ['_iter', '_terminal', '_nonterminal', '_default'];
+const SPECIAL_ACTION_NAMES = ['_iter', '_terminal', '_nonterminal', '_default', '_fail'];
 
 function getSortedRuleValues(grammar) {
   return Object.keys(grammar.rules)

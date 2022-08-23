@@ -1,7 +1,7 @@
 import {Trace} from './Trace.js';
 import * as common from './common.js';
 import * as errors from './errors.js';
-import {IterationNode, NonterminalNode, TerminalNode} from './nodes.js';
+import {FailureNode, IterationNode, NonterminalNode, TerminalNode} from './nodes.js';
 import * as pexprs from './pexprs-main.js';
 
 // --------------------------------------------------------------------
@@ -112,10 +112,18 @@ pexprs.Seq.prototype.eval = function(state) {
   return true;
 };
 
-pexprs.Fallible.prototype.eval = function (state) {
+pexprs.Fallible.prototype.eval = function(state) {
+  const originalPos = state.inputStream.pos;
   const [fall, join] = this.factors;
   const first = state.eval(fall);
   if (!first) {
+    // Push an Error node from originalPos to current pos - 1
+    const endPos = state.rightmostFailurePosition;
+    const matchLength = endPos - originalPos;
+    const matched = new TerminalNode(matchLength);
+    const failure = new FailureNode([matched], [0], matchLength);
+    state.pushBinding(failure, 0);
+    // Recover at the new failure position
     state.inputStream.pos = state.rightmostFailurePosition;
   }
   return state.eval(join);
