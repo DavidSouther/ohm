@@ -113,6 +113,18 @@ pexprs.Seq.prototype.eval = function(state) {
   return true;
 };
 
+function makeError(state, factor) {
+  return new MatchResult(
+      state.matcher,
+      state.inputStream.source,
+      state.matcher._getStartExpr(factor.ruleName),
+      undefined,
+      undefined,
+      state.inputStream.pos,
+      undefined
+  );
+}
+
 pexprs.Fallible.prototype.eval = function(state) {
   const [seq, join] = this.factors;
 
@@ -125,36 +137,28 @@ pexprs.Fallible.prototype.eval = function(state) {
   const factors = seq instanceof pexprs.Seq ? seq.factors : [seq];
   let foundError = false;
   for (let idx = 0; idx < factors.length; idx++) {
-    if (foundError) {
-      const failure = new FailureNode({}, 0);
-      state.pushBinding(failure, 0);
-      continue;
-    }
     const factor = factors[idx];
     const originalPos = state.inputStream.pos;
-    if (!state.eval(factor)) {
-      // TODO Capture the error
+    if (foundError) {
+      // Create additional zero-width failure nodes for remaining seq terms
+      state.pushBinding(new FailureNode(makeError(state, factor), 0), 0);
+    } else if (!state.eval(factor)) {
       foundError = true;
       while (!state.inputStream.atEnd()) {
+        // Go position by position in the stream, looking for a match on `join`
         const endPos = state.inputStream.pos;
+        const bindingsCount = state._bindings.length;
         if (state.eval(join)) {
-          state._bindings.pop();
-          state._bindingOffsets.pop();
-          // Push an Error node from where it first errored to where it recovered
-          const matchLength = endPos - originalPos;
-          let error = new MatchResult(
-            state.matcher,
-            state.inputStream,
-            factor,
-            undefined,
-            undefined,
-            originalPos,
-            undefined
-          );
-          const failure = new FailureNode(error, matchLength);
-          // TODO Add the error to the failure
-          state.pushBinding(failure, originalPos);
+          // Finding join means the parse can record an error and continue.
+          state.truncateBindings(bindingsCount);
+
+          state.inputStream.pos = endPos - 1;
+
+          const failure = new FailureNode(makeError(state, factor), endPos - originalPos);
           state.inputStream.pos = endPos;
+          state.pushBinding(failure, originalPos);
+
+          // TODO: If the join works and it's the end of the lhs, return now
           break;
         } else {
           state.inputStream.pos += 1;
