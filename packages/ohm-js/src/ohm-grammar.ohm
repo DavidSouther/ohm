@@ -18,8 +18,7 @@ Ohm {
     = "|"? NonemptyListOf<TopLevelTerm, "|">
 
   TopLevelTerm
-    = Fallible caseName -- labeled
-    | Fallible
+    = Fallible
     | Seq caseName  -- inline
     | Seq
 
@@ -39,11 +38,11 @@ Ohm {
   Alt
     = NonemptyListOf<Seq, "|">
 
+  Fallible 
+    = Seq "!" Pred
+
   Seq
     = Iter*
-
-  Fallible 
-    = Pred "!" Pred
 
   Iter
     = Pred "*"  -- star

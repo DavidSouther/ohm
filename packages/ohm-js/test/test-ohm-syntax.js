@@ -495,9 +495,13 @@ describe('fail', test => {
       X = B ! "C"
       B = "X" "Y"
       R = X*
+      A = "A" B ! "C"
     }`);
 
   const s = m.createSemantics().addAttribute('X', {
+    A(a, b, c) {
+      return [a.X, b.X, c.X];
+    },
     X(b, c) {
       return [b.X, c.X];
     },
@@ -508,11 +512,11 @@ describe('fail', test => {
       return this.children.map(({X}) => X);
     },
     _fail() {
-      return [this.child(0).X + '!'];
+      return [this.sourceString + '!'];
     },
     _terminal() {
       return this.sourceString;
-    }
+    },
   });
 
   test('recognition', t => {
@@ -525,13 +529,27 @@ describe('fail', test => {
     t.deepEqual(s(m.match('XC')).X, [['X!'], 'C']);
   });
 
-  test('Repeats', t => {
+  test('repeats', t => {
     const xycxc = m.match('XYCXC', 'R');
     const xcxyc = m.match('XCXYC', 'R');
     assertSucceeds(t, xycxc);
     assertSucceeds(t, xcxyc);
     t.deepEqual(s(xycxc).X, [[['X', 'Y'], 'C'], [['X!'], 'C']]);
     t.deepEqual(s(xcxyc).X, [[['X!'], 'C'], [['X', 'Y'], 'C']]);
+  });
+
+  test('with sequence', t => {
+    const axyc = m.match('AXYC', 'A');
+    assertSucceeds(t, axyc);
+    t.deepEqual(s(axyc).X, ['A', ['X', 'Y'], 'C']);
+
+    const axc = m.match('AXC', 'A');
+    assertSucceeds(t, axc);
+    t.deepEqual(s(axc).X, ['A', ['X!'], 'C']);
+
+    const xac = m.match('XAC', 'A');
+    assertSucceeds(t, xac);
+    t.deepEqual(s(xac).X, [['XA!'], ['!'], 'C']);
   });
 });
 

@@ -189,14 +189,6 @@ export class FailureNode extends Node {
     return '_fail';
   }
 
-  isIteration() {
-    return true;
-  }
-
-  isOptional() {
-    return true;
-  }
-
   isFailure() {
     return true;
   }

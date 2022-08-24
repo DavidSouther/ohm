@@ -113,18 +113,44 @@ pexprs.Seq.prototype.eval = function(state) {
 };
 
 pexprs.Fallible.prototype.eval = function(state) {
-  const originalPos = state.inputStream.pos;
-  const [fall, join] = this.factors;
-  const first = state.eval(fall);
-  if (!first) {
-    // Push an Error node from originalPos to current pos - 1
-    const endPos = state.rightmostFailurePosition;
-    const matchLength = endPos - originalPos;
-    const matched = new TerminalNode(matchLength);
-    const failure = new FailureNode([matched], [0], matchLength);
-    state.pushBinding(failure, 0);
-    // Recover at the new failure position
-    state.inputStream.pos = state.rightmostFailurePosition;
+  const [seq, join] = this.factors;
+
+  // Create one binding for each item in seq.
+  // The first item that does not match gets a FailureNode binding with a span
+  // from pos to the end of its error.
+  // The rest of the seq entries get a FailureNode with span 0.
+  // Run the input until join matches.
+
+  const factors = (seq instanceof pexprs.Seq) ? seq.factors : [seq];
+  let foundError = false;
+  for (let idx = 0; idx < factors.length; idx++) {
+    if (foundError) {
+      const failure = new FailureNode([], [0], 0);
+      state.pushBinding(failure, 0);
+      continue;
+    }
+    const factor = factors[idx];
+    const originalPos = state.inputStream.pos;
+    if (!state.eval(factor)) {
+      // TODO Capture the error
+      foundError = true;
+      while (!state.inputStream.atEnd()) {
+        const endPos = state.inputStream.pos;
+        if (state.eval(join)) {
+          state._bindings.pop();
+          state._bindingOffsets.pop();
+          // Push an Error node from where it first errored to where it recovered
+          const matchLength = endPos - originalPos;
+          const failure = new FailureNode(matchLength);
+          // TODO Add the error to the failure
+          state.pushBinding(failure, originalPos);
+          state.inputStream.pos = endPos;
+          break;
+        } else {
+          state.inputStream.pos += 1;
+        }
+      }
+    }
   }
   return state.eval(join);
 };
