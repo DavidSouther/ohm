@@ -39,7 +39,7 @@ Ohm {
     = NonemptyListOf<Seq, "|">
 
   Fallible 
-    = Seq "!" Pred
+    = Seq "!" Seq
 
   Seq
     = Iter*

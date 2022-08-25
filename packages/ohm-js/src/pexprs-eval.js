@@ -152,10 +152,9 @@ pexprs.Fallible.prototype.eval = function(state) {
           // Finding join means the parse can record an error and continue.
           state.truncateBindings(bindingsCount);
 
-          state.inputStream.pos = endPos - 1;
+          state.inputStream.pos = endPos;
 
           const failure = new FailureNode(makeError(state, factor), endPos - originalPos);
-          state.inputStream.pos = endPos;
           state.pushBinding(failure, originalPos);
 
           // TODO: If the join works and it's the end of the lhs, return now

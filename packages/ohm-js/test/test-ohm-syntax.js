@@ -528,6 +528,7 @@ describe('fallible', test => {
   test('semantic actions', t => {
     t.deepEqual(s(m.match('XYC')).X, [['X', 'Y'], 'C']);
     t.deepEqual(s(m.match('XC')).X, [['X!'], 'C']);
+    t.deepEqual(s(m.match('BC', 'A')).X, [['B!'], ['!'], 'C']);
   });
 
   test('repeats', t => {
@@ -567,12 +568,14 @@ describe('fallible', test => {
     });
 
     t.deepEqual(e(m.match('XC')).X, ['Line 1, col 2: expected "Y"', 'C']);
-    t.deepEqual(m.match('A', 'B').shortMessage, 'Line 1, col 1: expected "X"');
-    t.deepEqual(e(m.match('AC')).X, ['Line 1, col 1: expected "X"', 'C']);
     t.deepEqual(e(m.match('XCAC', 'R')).X, [
       [ 'Line 1, col 2: expected "Y"', 'C' ],
       [ 'Line 1, col 3: expected "X"', 'C' ]
     ]);
+
+    // There is an off-by-one between AC and XC when creating the MatchResult for the B rule
+    t.deepEqual(m.match('A', 'B').shortMessage, 'Line 1, col 1: expected "X"');
+    t.deepEqual(e(m.match('AC')).X, ['Line 1, col 1: expected "X"', 'C']);
   });
 });
 
