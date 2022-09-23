@@ -24,13 +24,16 @@ pexprs.Alt.prototype.getArity = function() {
   return this.terms.length === 0 ? 0 : this.terms[0].getArity();
 };
 
-pexprs.Fallible.prototype.getArity =
 pexprs.Seq.prototype.getArity = function() {
   let arity = 0;
   for (let idx = 0; idx < this.factors.length; idx++) {
     arity += this.factors[idx].getArity();
   }
   return arity;
+};
+
+pexprs.Fallible.prototype.getArity = function () {
+  return pexprs.Seq.prototype.getArity.call(this) + 1;
 };
 
 pexprs.Iter.prototype.getArity = function() {

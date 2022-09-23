@@ -179,7 +179,7 @@ export class IterationNode extends Node {
 }
 
 export class FailureNode extends Node {
-  constructor(error, matchLength) {
+  constructor(matchLength, error) {
     super(matchLength);
     this.failure = error;
   }

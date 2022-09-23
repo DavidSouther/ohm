@@ -126,45 +126,61 @@ function makeError(state, factor) {
 }
 
 pexprs.Fallible.prototype.eval = function(state) {
+  console.log('Starting Fallible match');
   const [seq, join] = this.factors;
-
-  // Create one binding for each item in seq.
-  // The first item that does not match gets a FailureNode binding with a span
-  // from pos to the end of its error.
-  // The rest of the seq entries get a FailureNode with span 0.
-  // Run the input until join matches.
 
   const factors = seq instanceof pexprs.Seq ? seq.factors : [seq];
   let foundError = false;
   for (let idx = 0; idx < factors.length; idx++) {
     const factor = factors[idx];
     const originalPos = state.inputStream.pos;
-    if (foundError) {
-      // Create additional zero-width failure nodes for remaining seq terms
-      state.pushBinding(new FailureNode(makeError(state, factor), 0), 0);
-    } else if (!state.eval(factor)) {
-      foundError = true;
-      while (!state.inputStream.atEnd()) {
-        // Go position by position in the stream, looking for a match on `join`
-        const endPos = state.inputStream.pos;
-        const bindingsCount = state._bindings.length;
-        if (state.eval(join)) {
-          // Finding join means the parse can record an error and continue.
-          state.truncateBindings(bindingsCount);
-
-          state.inputStream.pos = endPos;
-
-          const failure = new FailureNode(makeError(state, factor), endPos - originalPos);
-          state.pushBinding(failure, originalPos);
-
-          // TODO: If the join works and it's the end of the lhs, return now
-          break;
-        } else {
-          state.inputStream.pos += 1;
-        }
+    if (!foundError) {
+      console.log('Attempting to match factor', factor.ruleName, originalPos);
+      if (state.eval(factor)) {
+        console.log('Matched factor', factor.ruleName, originalPos);
+      } else {
+        console.log('Failed to match factor', factor.ruleName);
+        foundError = true;
       }
+    } else {
+      console.log('Failed seq parse, skipping factor', factor.ruleName, originalPos);
+    }
+    // Not an else, it needs to run after the first error is found
+    if (foundError) {
+      const len = state.inputStream.pos - originalPos;
+      console.log('Adding failure binding', factor.ruleName, len);
+      // Create additional zero-width failure nodes for remaining seq terms
+      state.pushBinding(new FailureNode(0, makeError(state, factor)), len);
     }
   }
+
+  const originalPos = state.inputStream.pos;
+  while (!state.inputStream.atEnd()) {
+    console.log('Looking for join', originalPos);
+
+    // Go position by position in the stream, looking for a match on `join`
+    const endPos = state.inputStream.pos;
+    const bindingsCount = state._bindings.length;
+    if (state.eval(join)) {
+      state.inputStream.pos = endPos;
+      console.log('Matched join', endPos);
+      state.truncateBindings(bindingsCount);
+
+      // Finding join means the parse can record an error and continue.
+      const len = endPos - originalPos;
+      const MatchNode = foundError ? FailureNode : TerminalNode;
+      state.pushBinding(new MatchNode(len), originalPos);
+
+      // TODO: If the join works and it's the end of the lhs, return now
+      break;
+    } else {
+      state.inputStream.pos += 1;
+      foundError = true;
+    }
+  }
+
+  console.log('');
+
   return state.eval(join);
 };
 

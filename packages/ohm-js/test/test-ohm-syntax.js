@@ -500,11 +500,11 @@ describe('fallible', test => {
     }`);
 
   const s = m.createSemantics().addAttribute('X', {
-    A(a, b, c) {
-      return [a.X, b.X, c.X];
+    A(a, b, e, c) {
+      return [a.X, b.X, e.X, c.X];
     },
-    X(b, c) {
-      return [b.X, c.X];
+    X(b, e, c) {
+      return [b.X, e.X, c.X];
     },
     B(a, b) {
       return [a.X, b.X];
@@ -517,7 +517,7 @@ describe('fallible', test => {
     },
     _terminal() {
       return this.sourceString;
-    },
+    }
   });
 
   test('recognition', t => {
@@ -526,9 +526,9 @@ describe('fallible', test => {
   });
 
   test('semantic actions', t => {
-    t.deepEqual(s(m.match('XYC')).X, [['X', 'Y'], 'C']);
-    t.deepEqual(s(m.match('XC')).X, [['X!'], 'C']);
-    t.deepEqual(s(m.match('BC', 'A')).X, [['B!'], ['!'], 'C']);
+    t.deepEqual(s(m.match('XYC')).X, [['X', 'Y'], '', 'C']);
+    t.deepEqual(s(m.match('XC')).X, [['X!'], '', 'C']);
+    t.deepEqual(s(m.match('BC', 'A')).X, [['B!'], ['!'], '', 'C']);
   });
 
   test('repeats', t => {
