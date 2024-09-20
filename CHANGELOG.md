@@ -10,6 +10,41 @@
 
 - [#368]: The `primitiveValue` property of nodes, which was deprecated in Ohm v16, has now been removed.
 
+## 1.0.0 (2024-09-20)
+
+
+### Features
+
+* add `getLineAndColumn()` method to `Interval` ([#284](https://github.com/DavidSouther/ohm/issues/284)) ([b39b4f6](https://github.com/DavidSouther/ohm/commit/b39b4f61e9a72d8139e6a7f578c3592e8346d085))
+* add `toString()` method in `getLineAndColumn()` result object ([#285](https://github.com/DavidSouther/ohm/issues/285)) ([15c63a9](https://github.com/DavidSouther/ohm/commit/15c63a930337f0b389bd2b3ff2afc02305537c02))
+* Add built-in `experimentalApplySyntactic` rule ([#334](https://github.com/DavidSouther/ohm/issues/334)) ([1ba582a](https://github.com/DavidSouther/ohm/commit/1ba582aae4234c7b618d5c265f0ee0d3a8c45372))
+* Add proper support for ES modules via a Rollup build step ([#350](https://github.com/DavidSouther/ohm/issues/350)) ([4634cda](https://github.com/DavidSouther/ohm/commit/4634cdac220dac1ad9a9cdac04cc3870cf76bd01))
+* Add support for ES6-style unicode code point escapes ([#356](https://github.com/DavidSouther/ohm/issues/356)) ([32daf88](https://github.com/DavidSouther/ohm/commit/32daf889b48afa2ec60fd658365decbc922eaecc))
+* add type information for ohm.pexprs (fixes [#390](https://github.com/DavidSouther/ohm/issues/390)) ([#392](https://github.com/DavidSouther/ohm/issues/392)) ([2697f0f](https://github.com/DavidSouther/ohm/commit/2697f0f755084a637d3350810eee2b8de58d024d))
+* **cli:** Add `match` subcommand ([#340](https://github.com/DavidSouther/ohm/issues/340)) ([f28e745](https://github.com/DavidSouther/ohm/commit/f28e7457190c580ec567ef00677ad6bbcae20ee3))
+* **ecmascript:** Add support for template literals to ES6 grammar ([c9c314a](https://github.com/DavidSouther/ohm/commit/c9c314a53f56b3df3b10ac19a345049703963d9d))
+* implement "super-splice" operator (`...`) ([#267](https://github.com/DavidSouther/ohm/issues/267)) ([b519a05](https://github.com/DavidSouther/ohm/commit/b519a05bf54da5b9c731130409343dce6cc4153f))
+* Support multi-grammar .ohm files w/ generateRecipes ([#327](https://github.com/DavidSouther/ohm/issues/327)) ([26b25d1](https://github.com/DavidSouther/ohm/commit/26b25d1a8f9ba142605c872419f59d63293769d0))
+
+
+### Bug Fixes
+
+* 151: extraneous dependencies in npm package ([2e665eb](https://github.com/DavidSouther/ohm/commit/2e665ebf54081473221272976240a206cf96b8b1))
+* 188: Source property of _iter nodes is incorrect ([2e62fb6](https://github.com/DavidSouther/ohm/commit/2e62fb6467b7ac7e48b462b0db62a82d20ab420d))
+* 268: delete README symlink ([92c9d74](https://github.com/DavidSouther/ohm/commit/92c9d742d85a44a3c47f1533e4c2b079ee273509))
+* 282: single-line comment after case name ([#283](https://github.com/DavidSouther/ohm/issues/283)) ([255693c](https://github.com/DavidSouther/ohm/commit/255693c0b7927adf6cb9fbbdf5ec2b560f1fa956))
+* 321: Add fast-glob to the cli package.json ([a5fccaa](https://github.com/DavidSouther/ohm/commit/a5fccaa4e0ee11ba1249259317d4bb9f11491392))
+* 322: Don’t emit literal \u2028 or \u2029 in recipes ([#323](https://github.com/DavidSouther/ohm/issues/323)) ([dddf00b](https://github.com/DavidSouther/ohm/commit/dddf00b49ab0eb0f48d7f671a926aa4123fef144))
+* 324: Make signuture of _iter/_nonterminal compatible with Action&lt;T&gt; ([#326](https://github.com/DavidSouther/ohm/issues/326)) ([38baf3d](https://github.com/DavidSouther/ohm/commit/38baf3da4b4994cbfb3fa535445d70aee8ea286f))
+* 363 by removing imports of ohm-js from extras (it’s not required) ([#366](https://github.com/DavidSouther/ohm/issues/366)) ([4dae27a](https://github.com/DavidSouther/ohm/commit/4dae27a49e765a50cb7fdfb254af43fe1a42ab84))
+* broken git.io URL in error message ([#332](https://github.com/DavidSouther/ohm/issues/332)) ([5558589](https://github.com/DavidSouther/ohm/commit/5558589f992580e28b8f3d8db17952a0fa1e50b9))
+* grammars containing super-splice not working in editor ([#370](https://github.com/DavidSouther/ohm/issues/370)) ([6f2f498](https://github.com/DavidSouther/ohm/commit/6f2f49808b7afc1c770f4dda904f61a2c05e6e7e))
+* Make `message` and `shortMessage` props of errors enumerable ([1c286f6](https://github.com/DavidSouther/ohm/commit/1c286f687e5020f21d9bebd60283fbb25a9de0cc))
+* Node.hasChildren() off-by-one error 🙃 ([0af8165](https://github.com/DavidSouther/ohm/commit/0af8165c2ff0e4ddef28c71f56ef38c7310d2db9))
+* npm install fails due to dev-setup.js ([#260](https://github.com/DavidSouther/ohm/issues/260)) ([7857b8f](https://github.com/DavidSouther/ohm/commit/7857b8f1495cc30bec6a2f643685c064e6d83fb3))
+* TypeScript dependencies should be in devDependencies ([e5fa522](https://github.com/DavidSouther/ohm/commit/e5fa522a2e85f84dc020d5287908e3d5676c0ec9))
+* Wrong parameters ([#357](https://github.com/DavidSouther/ohm/issues/357)) ([08f2f3a](https://github.com/DavidSouther/ohm/commit/08f2f3a77ebec86d5e113eb145035b8961ce3afc))
+
 ## v16.3.1 - Feb 28, 2022
 
 ### Fixes:
