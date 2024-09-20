@@ -12,6 +12,7 @@ pexprs.PExpr.prototype.assertChoicesHaveUniformArity = abstract(
 
 pexprs.any.assertChoicesHaveUniformArity =
   pexprs.end.assertChoicesHaveUniformArity =
+  pexprs.Fallible.prototype.assertChoicesHaveUniformArity =
   pexprs.Terminal.prototype.assertChoicesHaveUniformArity =
   pexprs.Range.prototype.assertChoicesHaveUniformArity =
   pexprs.Param.prototype.assertChoicesHaveUniformArity =

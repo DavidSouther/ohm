@@ -44,6 +44,7 @@ Ohm {
     = Pred "*"  -- star
     | Pred "+"  -- plus
     | Pred "?"  -- opt
+    | Pred "!" Pred -- fallible
     | Pred
 
   Pred

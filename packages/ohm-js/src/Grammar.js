@@ -8,7 +8,7 @@ import * as pexprs from './pexprs.js';
 // Private stuff
 // --------------------------------------------------------------------
 
-const SPECIAL_ACTION_NAMES = ['_iter', '_terminal', '_nonterminal', '_default'];
+const SPECIAL_ACTION_NAMES = ['_iter', '_terminal', '_nonterminal', '_default', '_fail'];
 
 function getSortedRuleValues(grammar) {
   return Object.keys(grammar.rules)
@@ -155,9 +155,11 @@ export class Grammar {
     // All special actions have an expected arity of 0, though all but _terminal
     // are expected to use the rest parameter syntax (e.g. `_iter(...children)`).
     // This is considered to have arity 0, i.e. `((...args) => {}).length` is 0.
-    return SPECIAL_ACTION_NAMES.includes(actionName) ?
-      0 :
-      this.rules[actionName].body.getArity();
+    return actionName === '_fail'
+      ? 1
+      : SPECIAL_ACTION_NAMES.includes(actionName)
+      ? 0
+      : this.rules[actionName].body.getArity();
   }
 
   _inheritsFrom(grammar) {

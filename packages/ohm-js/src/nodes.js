@@ -106,6 +106,10 @@ export class Node {
   isOptional() {
     return false;
   }
+
+  isFailure() {
+    return false;
+  }
 }
 
 // Terminals
@@ -171,5 +175,20 @@ export class IterationNode extends Node {
 
   isOptional() {
     return this.optional;
+  }
+}
+
+export class FailureNode extends Node {
+  constructor(matchLength, error) {
+    super(matchLength);
+    this.failure = error;
+  }
+
+  get ctorName() {
+    return '_fail';
+  }
+
+  isFailure() {
+    return true;
   }
 }

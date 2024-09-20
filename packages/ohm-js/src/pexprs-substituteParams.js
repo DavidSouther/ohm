@@ -35,6 +35,13 @@ pexprs.Seq.prototype.substituteParams = function(actuals) {
   return new pexprs.Seq(this.factors.map(factor => factor.substituteParams(actuals)));
 };
 
+pexprs.Fallible.prototype.substituteParams = function(actuals) {
+  return new pexprs.Fallible(
+    this.fallible.substituteParams(actuals),
+    this.join.substituteParams(actuals),
+  )
+}
+
 pexprs.Iter.prototype.substituteParams =
   pexprs.Not.prototype.substituteParams =
   pexprs.Lookahead.prototype.substituteParams =

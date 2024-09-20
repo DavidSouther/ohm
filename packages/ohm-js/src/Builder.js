@@ -1,5 +1,5 @@
-import {Grammar} from './Grammar.js';
-import {GrammarDecl} from './GrammarDecl.js';
+import { Grammar } from './Grammar.js';
+import { GrammarDecl } from './GrammarDecl.js';
 import * as pexprs from './pexprs.js';
 
 // --------------------------------------------------------------------
@@ -21,7 +21,7 @@ export class Builder {
     if (superGrammar) {
       // `superGrammar` may be a recipe (i.e. an Array), or an actual grammar instance.
       gDecl.withSuperGrammar(
-        superGrammar instanceof Grammar ? superGrammar : this.fromRecipe(superGrammar),
+        superGrammar instanceof Grammar ? superGrammar : this.fromRecipe(superGrammar)
       );
     }
     if (defaultStartRule) {
@@ -45,8 +45,8 @@ export class Builder {
       let source;
       if (gDecl.source && metaInfo && metaInfo.sourceInterval) {
         source = gDecl.source.subInterval(
-            metaInfo.sourceInterval[0],
-            metaInfo.sourceInterval[1] - metaInfo.sourceInterval[0],
+          metaInfo.sourceInterval[0],
+          metaInfo.sourceInterval[1] - metaInfo.sourceInterval[0]
         );
       }
       gDecl[action](ruleName, formals, body, description, source);
@@ -118,6 +118,16 @@ export class Builder {
     return new pexprs.Opt(expr);
   }
 
+  bang(fExpr, jExpr) {
+    if (!(fExpr instanceof pexprs.PExpr)) {
+      fExpr = this.fromRecipe(fExpr);
+    }
+    if (!(jExpr instanceof pexprs.PExpr)) {
+      jExpr = this.fromRecipe(jExpr);
+    }
+    return new pexprs.Fallible(fExpr, jExpr);
+  }
+
   not(expr) {
     if (!(expr instanceof pexprs.PExpr)) {
       expr = this.fromRecipe(expr);
@@ -141,7 +151,7 @@ export class Builder {
 
   app(ruleName, optParams) {
     if (optParams && optParams.length > 0) {
-      optParams = optParams.map(function(param) {
+      optParams = optParams.map(function (param) {
         return param instanceof pexprs.PExpr ? param : this.fromRecipe(param);
       }, this);
     }
@@ -153,10 +163,10 @@ export class Builder {
   // `this.currentDecl` and `this.currentRuleName` being set.
   splice(beforeTerms, afterTerms) {
     return new pexprs.Splice(
-        this.currentDecl.superGrammar,
-        this.currentRuleName,
-        beforeTerms.map(term => this.fromRecipe(term)),
-        afterTerms.map(term => this.fromRecipe(term)),
+      this.currentDecl.superGrammar,
+      this.currentRuleName,
+      beforeTerms.map(term => this.fromRecipe(term)),
+      afterTerms.map(term => this.fromRecipe(term))
     );
   }
 

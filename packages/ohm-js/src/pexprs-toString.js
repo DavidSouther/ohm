@@ -50,6 +50,10 @@ pexprs.Seq.prototype.toString = function() {
     '(' + this.factors.map(factor => factor.toString()).join(' ') + ')';
 };
 
+pexprs.Fallible.prototype.toString = function() {
+  return this.fallible + '!' + this.join;
+}
+
 pexprs.Iter.prototype.toString = function() {
   return this.expr + this.operator;
 };
