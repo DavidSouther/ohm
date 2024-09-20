@@ -1,8 +1,8 @@
 import ohmGrammar from '../dist/ohm-grammar.js';
-import {Builder} from './Builder.js';
+import { Builder } from './Builder.js';
 import * as common from './common.js';
 import * as errors from './errors.js';
-import {Grammar} from './Grammar.js';
+import { Grammar } from './Grammar.js';
 import * as pexprs from './pexprs.js';
 
 const superSplicePlaceholder = Object.create(pexprs.PExpr.prototype);
@@ -108,10 +108,10 @@ export function buildGrammar(match, namespace, optOhmGrammarForTesting) {
         });
 
         return new pexprs.Splice(
-            decl.superGrammar,
-            currentRuleName,
-            beforeTerms,
-            afterTerms,
+          decl.superGrammar,
+          currentRuleName,
+          beforeTerms,
+          afterTerms,
         ).withSource(this.source);
       } else {
         return builder.alt(...args).withSource(this.source);
@@ -152,7 +152,7 @@ export function buildGrammar(match, namespace, optOhmGrammarForTesting) {
       return builder.seq(...expr.children.map(c => c.visit())).withSource(this.source);
     },
 
-    Fallible(x, _, y) {
+    Iter_fallible(x, _, y) {
       return builder.bang(x.visit(), y.visit()).withSource(this.source);
     },
 
@@ -205,8 +205,8 @@ export function buildGrammar(match, namespace, optOhmGrammarForTesting) {
     name(first, rest) {
       return this.sourceString;
     },
-    nameFirst(expr) {},
-    nameRest(expr) {},
+    nameFirst(expr) { },
+    nameRest(expr) { },
 
     terminal(open, cs, close) {
       return cs.children.map(c => c.visit()).join('');

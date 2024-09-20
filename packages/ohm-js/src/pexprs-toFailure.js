@@ -64,3 +64,8 @@ pexprs.Iter.prototype.toFailure = function(grammar) {
   const description = '(' + this.expr.toFailure(grammar) + this.operator + ')';
   return new Failure(this, description, 'description');
 };
+
+pexprs.Fallible.prototype.toFailure = function(grammar) {
+  const description = '(' + this.fallible.toFailure(grammar) + '!' + this.join.toFailure(grammar) + ')';
+  return new Failure(this, description, 'description')
+}

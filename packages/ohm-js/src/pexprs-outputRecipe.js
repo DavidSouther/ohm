@@ -68,6 +68,15 @@ pexprs.Seq.prototype.outputRecipe = function(formals, grammarInterval) {
   );
 };
 
+pexprs.Fallible.prototype.outputRecipe = function (formals, grammarInterval) {
+  return [
+    'fallible',
+    getMetaInfo(this, grammarInterval),
+    this.fallible.outputRecipe(formals, grammarInterval),
+    this.join.outputRecipe(formals, grammarInterval)
+  ];
+};
+
 pexprs.Star.prototype.outputRecipe =
   pexprs.Plus.prototype.outputRecipe =
   pexprs.Opt.prototype.outputRecipe =
