@@ -2,12 +2,12 @@ import test from 'ava-spec';
 
 import fs from 'fs';
 import * as ohm from '../index.mjs';
-import {buildGrammar} from '../src/buildGrammar.js';
+import { buildGrammar } from '../src/buildGrammar.js';
 
 const arithmeticGrammarSource = fs.readFileSync('test/arithmetic.ohm').toString();
 const ohmGrammarSource = fs.readFileSync('src/ohm-grammar.ohm').toString();
 
-const {describe} = test;
+const { describe } = test;
 
 // --------------------------------------------------------------------
 // Helpers
@@ -486,6 +486,141 @@ describe('opt', test => {
     });
     t.deepEqual(s(m.match('drwarth')).v, ['dr', 'warth']);
     t.deepEqual(s(m.match('warth')).v, [undefined, 'warth']);
+  });
+});
+
+/* eslint-disable max-len -- ported WIP block, replaced in F1 */
+describe('fallible', test => {
+  // This grammar will match two "fallible" productions:
+  //   A: "A" B ! "C" wants to match a literal "A" and then a "B" rule, with an error join, and then a final "C".
+  //     "A" "X" "Y" "C" => [["A", ["X", "Y"]], null, ["C"]] (notice the ! is its own empty production)
+  //     "A" "Z" "C" => ["A", {fail: "Z"}, ["C"]] (Notice the ! is a "fail" production, and the B node becomes empty)
+  //     "X" "Y" "C" => {fail: "XYC"} (The failure was at "A", but it won't even attempt B and pulls the full stream until "C" into the ! production)
+  //   X: B ! "C"
+  //     "X" "Y" "C" => [["X", "Y"], null, ["C"]] (notice the ! is its own empty production)
+  //     "Z" "C" => [null, {fail: "Z"}, ["C"]] (Notice the ! is a "fail" production, and the B node becomes empty)
+  //     "X" "C" => [null, {fail: "X"}, ["C"]] (The failure was at "Y" in B, but it captures the entirety of the B attempt)
+  //   B: Only matches the literal stream "X" "Y", errors reported "normally"
+  //   R: X*
+  //     "X" "Y" "C" "Z" "C" "X" "C" "X" "Y" "C" => [
+  //         [["X", "Y"], null, ["C"]] (notice the ! is its own empty production)
+  //         [null, {fail: "Z"}, ["C"]] (Notice the ! is a "fail" production, and the B node becomes empty)
+  //         [null, {fail: "X"}, ["C"]] (The failure was at "Y" in B, but it captures the entirety of the B attempt)
+  //         [["X", "Y"], null, ["C"]] (notice the ! is its own empty production)
+  //      ] // Each failure was able to recover
+  const m = ohm.grammar(`
+    M {
+      A = "A" B ! "C"
+      B = "X" "Y"
+      X = B ! "C"
+      R = X*
+    }`);
+
+  const s = m.createSemantics().addAttribute('X', {
+    A(a, b, c) {
+      return [a.X, b.X, c.X];
+    },
+    X(b, c) {
+      return [b.X, c.X];
+    },
+    B(x, y) {
+      return [x.X, y.X];
+    },
+    _iter() {
+      return this.children.map(({ X }) => X);
+    },
+    _fail(_) {
+      return this.sourceString ? this.sourceString + '!' : '?';
+    },
+    _terminal() {
+      return this.sourceString || undefined;
+    }
+  });
+
+  test('recognition', t => {
+    assertSucceeds(t, m.match('AXYC', 'A'));
+    assertSucceeds(t, m.match('AZC', 'A'));
+    assertFails(t, m.match('XYC', 'A'));
+
+    assertSucceeds(t, m.match('XY', 'B'));
+    assertFails(t, m.match('Y', 'B'));
+    assertFails(t, m.match('X', 'B'));
+    assertFails(t, m.match('Z', 'B'));
+
+    assertSucceeds(t, m.match('XYC', 'X'));
+    assertSucceeds(t, m.match('ZC', 'X'));
+    assertSucceeds(t, m.match('YC', 'X'));
+
+    assertSucceeds(t, m.match('XYCZCXCXYC', 'R'));
+  });
+
+  test('semantic actions', t => {
+    t.deepEqual(s(m.match('XYC', 'X')).X, [['X', 'Y'], 'C']);
+    t.deepEqual(s(m.match('ZC', 'X')).X, ['Z!', 'C']);
+    t.deepEqual(s(m.match('YC', 'X')).X, ['Y!', 'C']);
+
+    t.deepEqual(s(m.match('AXYC', 'A')).X, ['A', ['X', 'Y'], 'C']);
+    t.deepEqual(s(m.match('AZC', 'A')).X, ['A', 'Z!', 'C']);
+    // t.deepEqual(s(m.match('XYC', 'A')).X, [undefined, undefined, "XY!", "C"]);
+
+    t.deepEqual(s(m.match('XYC', 'R')).X, [[['X', 'Y'], 'C']]);
+    t.deepEqual(s(m.match('XC', 'R')).X, [['X!', 'C']]);
+    t.deepEqual(s(m.match('YC', 'R')).X, [['Y!', 'C']]);
+    t.deepEqual(s(m.match('XYCZCXCXYC', 'R')).X, [
+      [['X', 'Y'], 'C'],
+      ['Z!', 'C'],
+      ['X!', 'C'],
+      [['X', 'Y'], 'C']
+    ]);
+  });
+
+  test('repeats', t => {
+    t.deepEqual(s(m.match('XCXYC', 'R')).X, [
+      [undefined, 'X!', 'C'],
+      [['X', 'Y'], undefined, 'C']
+    ]);
+    t.deepEqual(s(m.match('XYCXC', 'R')).X, [
+      [['X', 'Y'], undefined, 'C'],
+      [undefined, 'X!', 'C']
+    ]);
+  });
+
+  // test('with sequence', t => {
+  //   const axyc = m.match('AXYC', 'A');
+  //   assertSucceeds(t, axyc);
+  //   t.deepEqual(s(axyc).X, ['A', ['X', 'Y'], 'C']);
+
+  //   const axc = m.match('AXC', 'A');
+  //   assertSucceeds(t, axc);
+  //   t.deepEqual(s(axc).X, ['A', ['X!'], 'C']);
+
+  //   const xac = m.match('XAC', 'A');
+  //   assertSucceeds(t, xac);
+  //   t.deepEqual(s(xac).X, [['XA!'], ['!'], 'C']);
+  // });
+
+  test('captures errors', t => {
+    const e = m.extendSemantics(s).extendAttribute('X', {
+      _fail(failure) {
+        return failure ?
+          failure.shortMessage ?? '?' :
+          '!';
+      }
+    });
+
+    t.deepEqual(e(m.match('XC', 'X')).X, [undefined, 'Line 1, col 2: expected "Y"', 'C']);
+    t.deepEqual(e(m.match('YC', 'X')).X, [undefined, 'Line 1, col 1: expected "X"', 'C']);
+    t.deepEqual(e(m.match('ZC', 'X')).X, [undefined, 'Line 1, col 1: expected "X"', 'C']);
+
+    // t.deepEqual(e(m.match('XC', 'R')).X, [['', 'Line 1, col 2: expected "Y"', 'C']]);
+    // t.deepEqual(e(m.match('XCAC', 'R')).X, [
+    //   [ 'Line 1, col 2: expected "Y"', 'C' ],
+    //   [ 'Line 1, col 3: expected "X"', 'C' ]
+    // ]);
+
+    //   // There is an off-by-one between AC and XC when creating the MatchResult for the B rule
+    //   t.deepEqual(m.match('A', 'B').shortMessage, 'Line 1, col 1: expected "X"');
+    //   t.deepEqual(e(m.match('AC')).X, ['Line 1, col 1: expected "X"', 'C']);
   });
 });
 
@@ -1364,7 +1499,7 @@ test('space skipping semantics', t => {
 
 // https://github.com/ohmjs/ohm/issues/282
 test('single-line comment after case name (#282)', t => {
-  const {ohmGrammar} = ohm;
+  const { ohmGrammar } = ohm;
   assertSucceeds(
     t,
     ohmGrammar.match(`G {

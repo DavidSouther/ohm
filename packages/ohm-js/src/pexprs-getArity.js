@@ -1,4 +1,4 @@
-import {abstract} from './common.js';
+import { abstract } from './common.js';
 import * as pexprs from './pexprs-main.js';
 
 // --------------------------------------------------------------------
@@ -22,6 +22,10 @@ pexprs.Alt.prototype.getArity = function () {
   // This is ok b/c all terms must have the same arity -- this property is
   // checked by the Grammar constructor.
   return this.terms.length === 0 ? 0 : this.terms[0].getArity();
+};
+
+pexprs.Fallible.prototype.getArity = function () {
+  return 2;
 };
 
 pexprs.Seq.prototype.getArity = function () {

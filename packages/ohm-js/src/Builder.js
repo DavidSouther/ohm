@@ -1,5 +1,5 @@
-import {Grammar} from './Grammar.js';
-import {GrammarDecl} from './GrammarDecl.js';
+import { Grammar } from './Grammar.js';
+import { GrammarDecl } from './GrammarDecl.js';
 import * as pexprs from './pexprs.js';
 
 // --------------------------------------------------------------------
@@ -117,6 +117,16 @@ export class Builder {
       expr = this.fromRecipe(expr);
     }
     return new pexprs.Opt(expr);
+  }
+
+  bang(fExpr, jExpr) {
+    if (!(fExpr instanceof pexprs.PExpr)) {
+      fExpr = this.fromRecipe(fExpr);
+    }
+    if (!(jExpr instanceof pexprs.PExpr)) {
+      jExpr = this.fromRecipe(jExpr);
+    }
+    return new pexprs.Fallible(fExpr, jExpr);
   }
 
   not(expr) {

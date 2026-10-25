@@ -1,4 +1,4 @@
-import {abstract} from './common.js';
+import { abstract } from './common.js';
 import * as pexprs from './pexprs-main.js';
 
 // --------------------------------------------------------------------
@@ -43,6 +43,10 @@ pexprs.Seq.prototype._isNullable = function (grammar, memo) {
   return this.factors.every(factor => factor._isNullable(grammar, memo));
 };
 
+pexprs.Fallible.prototype._isNullable = function (grammar, memo) {
+  return this.join._isNullable(grammar, memo);
+};
+
 pexprs.Star.prototype._isNullable =
   pexprs.Opt.prototype._isNullable =
   pexprs.Not.prototype._isNullable =
@@ -58,7 +62,7 @@ pexprs.Lex.prototype._isNullable = function (grammar, memo) {
 pexprs.Apply.prototype._isNullable = function (grammar, memo) {
   const key = this.toMemoKey();
   if (!Object.prototype.hasOwnProperty.call(memo, key)) {
-    const {body} = grammar.rules[this.ruleName];
+    const { body } = grammar.rules[this.ruleName];
     const inlined = body.substituteParams(this.args);
     memo[key] = false; // Prevent infinite recursion for recursive rules.
     memo[key] = inlined._isNullable(grammar, memo);

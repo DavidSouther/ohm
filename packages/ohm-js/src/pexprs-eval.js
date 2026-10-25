@@ -1,9 +1,17 @@
-import {Trace} from './Trace.js';
+import { Trace } from './Trace.js';
 import * as common from './common.js';
 import * as errors from './errors.js';
-import {IterationNode, ListNode, NonterminalNode, SeqNode, TerminalNode} from './nodes.js';
+import {
+  FailureNode,
+  IterationNode,
+  ListNode,
+  NonterminalNode,
+  SeqNode,
+  TerminalNode,
+} from './nodes.js';
 import * as pexprs from './pexprs-main.js';
 import {MAX_CODE_POINT} from './InputStream.js';
+import {MatchResult} from './MatchResult.js';
 
 // --------------------------------------------------------------------
 // Operations
@@ -111,6 +119,41 @@ pexprs.Seq.prototype.eval = function (state) {
     }
   }
   return true;
+};
+
+function makeError(state, factor) {
+  return new MatchResult(
+    state.matcher,
+    state.inputStream.source,
+    state.matcher._getStartExpr(factor.ruleName),
+    undefined,
+    undefined,
+    state.inputStream.pos,
+    undefined
+  );
+}
+
+pexprs.Fallible.prototype.eval = function (state) {
+  state.eval(this.fallible);
+  const startPos = state.inputStream.pos;
+
+  while (!state.inputStream.atEnd()) {
+    const endPos = state.inputStream.pos;
+    const bindingsCount = state._bindings.length;
+    const offsetsCount = state._bindingOffsets.length;
+    // Advance token by token, looking for match on `join`.
+    if (state.eval(this.join)) {
+      const binding = (endPos === startPos) ? new TerminalNode(0) :
+        new FailureNode(state.inputStream.pos - startPos, makeError(state, this.fallible));
+      state._bindings.splice(bindingsCount, 0, binding)
+      state._bindingOffsets.splice(offsetsCount, 0, state.posToOffset(startPos));
+      return true;
+    } else {
+      state.inputStream.pos += 1;
+    }
+  }
+
+  return false;
 };
 
 pexprs.Iter.prototype.eval = function (state) {
@@ -240,7 +283,7 @@ pexprs.Not.prototype.eval = function (state) {
       a failure for 'foo' instead.
   */
 
-  const {inputStream} = state;
+  const { inputStream } = state;
   const origPos = inputStream.pos;
   state.pushFailuresInfo();
 
@@ -292,7 +335,7 @@ pexprs.Apply.prototype.eval = function (state) {
 
 pexprs.Apply.prototype.handleCycle = function (state) {
   const posInfo = state.getCurrentPosInfo();
-  const {currentLeftRecursion} = posInfo;
+  const { currentLeftRecursion } = posInfo;
   const memoKey = this.toMemoKey();
   let memoRec = posInfo.memo[memoKey];
 
@@ -318,8 +361,8 @@ pexprs.Apply.prototype.reallyEval = function (state) {
   const origPos = inputStream.pos;
   const origPosInfo = state.getCurrentPosInfo();
   const ruleInfo = state.grammar.rules[this.ruleName];
-  const {body} = ruleInfo;
-  const {description} = ruleInfo;
+  const { body } = ruleInfo;
+  const { description } = ruleInfo;
 
   state.enterApplication(origPosInfo, this);
 
@@ -414,7 +457,7 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrMemoRe
     return false;
   }
 
-  const {inputStream} = state;
+  const { inputStream } = state;
 
   while (true) {
     lrMemoRec.matchLength = inputStream.pos - origPos;

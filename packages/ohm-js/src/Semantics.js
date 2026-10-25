@@ -1,5 +1,5 @@
 import {InputStream} from './InputStream.js';
-import {IterationNode} from './nodes.js';
+import {FailureNode, IterationNode} from './nodes.js';
 import {MatchResult} from './MatchResult.js';
 import * as common from './common.js';
 import * as errors from './errors.js';
@@ -626,12 +626,16 @@ class Operation {
     try {
       // Look for a semantic action whose name matches the node's constructor name, which is either
       // the name of a rule in the grammar, or '_terminal' (for a terminal node), or '_iter' (for an
-      // iteration node).
+      // iteration node), or '_fail' (for a failure node).
       const {ctorName} = nodeWrapper._node;
       let actionFn = this.actionDict[ctorName];
       if (actionFn) {
         globalActionStack.push([this, ctorName]);
-        return actionFn.apply(nodeWrapper, nodeWrapper._children());
+        if (ctorName === '_fail' && nodeWrapper._node instanceof FailureNode) {
+          return actionFn.call(nodeWrapper, nodeWrapper._node.failure);
+        } else {
+          return actionFn.apply(nodeWrapper, nodeWrapper._children());
+        }
       }
 
       // The action dictionary does not contain a semantic action for this specific type of node.

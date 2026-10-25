@@ -1,4 +1,4 @@
-import {abstract} from './common.js';
+import { abstract } from './common.js';
 import * as pexprs from './pexprs-main.js';
 
 // --------------------------------------------------------------------
@@ -35,6 +35,12 @@ pexprs.Seq.prototype.introduceParams = function (formals) {
   });
   return this;
 };
+
+pexprs.Fallible.prototype.introduceParams = function (formals) {
+  this.fallible = this.fallible.introduceParams(formals);
+  this.join = this.join.introduceParams(formals);
+  return this;
+}
 
 pexprs.Iter.prototype.introduceParams =
   pexprs.Not.prototype.introduceParams =
