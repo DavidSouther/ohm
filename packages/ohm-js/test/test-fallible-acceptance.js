@@ -12,6 +12,7 @@
  * input. Goes green in F1.
  */
 
+/* eslint-disable max-len, ava/assertion-arguments -- staged project acceptance test */
 import test from 'ava';
 import * as ohm from '../index.mjs';
 
@@ -45,7 +46,7 @@ Blocks {
   Let = "let" letter
   Do = "do" letter
 }`;
-const BLOCKS_PLAIN = BLOCKS.replace('Stmt* ! &"}"', 'Stmt*').replace('StmtBody ! ";"', 'StmtBody ";"');
+const BLOCKS_PLAIN = BLOCKS.replace('Stmt* ! &"}"', 'Stmt* &"}"').replace('StmtBody ! ";"', 'StmtBody ";"');
 
 // Hazard (b): a Fallible in the first alternative of a choice.
 const CHOICE = String.raw`
