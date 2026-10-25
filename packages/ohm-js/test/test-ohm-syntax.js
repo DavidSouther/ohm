@@ -2,12 +2,12 @@ import test from 'ava-spec';
 
 import fs from 'fs';
 import * as ohm from '../index.mjs';
-import { buildGrammar } from '../src/buildGrammar.js';
+import {buildGrammar} from '../src/buildGrammar.js';
 
 const arithmeticGrammarSource = fs.readFileSync('test/arithmetic.ohm').toString();
 const ohmGrammarSource = fs.readFileSync('src/ohm-grammar.ohm').toString();
 
-const { describe } = test;
+const {describe} = test;
 
 // --------------------------------------------------------------------
 // Helpers
@@ -1364,7 +1364,7 @@ test('space skipping semantics', t => {
 
 // https://github.com/ohmjs/ohm/issues/282
 test('single-line comment after case name (#282)', t => {
-  const { ohmGrammar } = ohm;
+  const {ohmGrammar} = ohm;
   assertSucceeds(
     t,
     ohmGrammar.match(`G {

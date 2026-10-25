@@ -1,4 +1,4 @@
-import { abstract } from './common.js';
+import {abstract} from './common.js';
 import * as pexprs from './pexprs-main.js';
 
 // --------------------------------------------------------------------

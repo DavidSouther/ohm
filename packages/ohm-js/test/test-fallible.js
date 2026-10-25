@@ -19,7 +19,10 @@ Stmts {
   ident = letter+
 }`;
 
-const PLAIN_STMTS = STMTS.replace('Stmt* ! &"}"', 'Stmt* &"}"').replace('Body ! ";"', 'Body ";"');
+const PLAIN_STMTS = STMTS.replace('Stmt* ! &"}"', 'Stmt* &"}"').replace(
+  'Body ! ";"',
+  'Body ";"'
+);
 
 function kinds(node) {
   return node.children.map(c => c.ctorName);
@@ -299,7 +302,9 @@ test('`!` is an operator token', t => {
     },
   });
   t.deepEqual(
-    s(r).kinds().filter(k => k !== 'any'),
+    s(r)
+      .kinds()
+      .filter(k => k !== 'any'),
     ['ident', 'operator', 'ident']
   );
 });
@@ -320,7 +325,9 @@ test('a recipe round trips a fallible', t => {
 
 test('`_fail` has arity 0 and reads its failure from the node', t => {
   const g = ohm.grammar(STMTS);
-  t.throws(() => g.createSemantics().addOperation('x', {_fail(f) {}}), {message: /_fail.*arity/});
+  t.throws(() => g.createSemantics().addOperation('x', {_fail(f) {}}), {
+    message: /_fail.*arity/,
+  });
 
   const s = g.createSemantics().addOperation('errs', {
     _nonterminal(...children) {
@@ -435,7 +442,10 @@ test('row based iteration: an iterated fallible gives one row per element', t =>
   const r = g.match('a;1;b;', undefined, RECOVER);
   t.true(r.succeeded());
   const rows = r._cst.children[0].children;
-  t.deepEqual(rows.map(row => row.ctorName), ['_seq', '_seq', '_seq']);
+  t.deepEqual(
+    rows.map(row => row.ctorName),
+    ['_seq', '_seq', '_seq']
+  );
   t.deepEqual(kinds(rows[1]), ['_fail', '_fail']);
   const plain = ohm.grammar('G { Start = (Body ";")*\n Body = letter }');
   t.deepEqual(messages(r), [plain.match('a;1;b;').shortMessage]);

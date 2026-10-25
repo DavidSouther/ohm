@@ -124,9 +124,9 @@ export class Iter extends PExpr {
   }
 }
 
-export class Star extends Iter { }
-export class Plus extends Iter { }
-export class Opt extends Iter { }
+export class Star extends Iter {}
+export class Plus extends Iter {}
+export class Opt extends Iter {}
 
 Star.prototype.operator = '*';
 Plus.prototype.operator = '+';
@@ -181,7 +181,7 @@ export class Apply extends PExpr {
   // This method just caches the result of `this.toString()` in a non-enumerable property.
   toMemoKey() {
     if (!this._memoKey) {
-      Object.defineProperty(this, '_memoKey', { value: this.toString() });
+      Object.defineProperty(this, '_memoKey', {value: this.toString()});
     }
     return this._memoKey;
   }

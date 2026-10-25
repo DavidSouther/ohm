@@ -73,7 +73,7 @@ pexprs.Fallible.prototype.outputRecipe = function (formals, grammarInterval) {
     'bang',
     getMetaInfo(this, grammarInterval),
     this.fallible.outputRecipe(formals, grammarInterval),
-    this.join.outputRecipe(formals, grammarInterval)
+    this.join.outputRecipe(formals, grammarInterval),
   ];
 };
 

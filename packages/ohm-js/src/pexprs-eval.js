@@ -1,4 +1,4 @@
-import { Trace } from './Trace.js';
+import {Trace} from './Trace.js';
 import * as common from './common.js';
 import * as errors from './errors.js';
 import {
@@ -283,10 +283,7 @@ pexprs.Fallible.prototype.recover = function (state, origPos, sync, permit, logM
   if (!keepsPrefix) {
     state.pushBinding(new FailureNode(0), scanStart);
   }
-  state.pushBinding(
-    new FailureNode(found.skipEnd - scanStart, recovered, nested),
-    scanStart
-  );
+  state.pushBinding(new FailureNode(found.skipEnd - scanStart, recovered, nested), scanStart);
   inputStream.pos = found.afterSync;
   state._recoveryLog.push(recovered, ...nested);
   if (outerTrace) {
@@ -457,7 +454,7 @@ pexprs.Not.prototype.eval = function (state) {
       a failure for 'foo' instead.
   */
 
-  const { inputStream } = state;
+  const {inputStream} = state;
   const origPos = inputStream.pos;
   state.pushFailuresInfo();
 
@@ -515,7 +512,7 @@ pexprs.Apply.prototype.eval = function (state) {
 
 pexprs.Apply.prototype.handleCycle = function (state) {
   const posInfo = state.getCurrentPosInfo();
-  const { currentLeftRecursion } = posInfo;
+  const {currentLeftRecursion} = posInfo;
   const memoKey = this.toMemoKey();
   let memoRec = posInfo.memo[memoKey];
 
@@ -541,8 +538,8 @@ pexprs.Apply.prototype.reallyEval = function (state) {
   const origPos = inputStream.pos;
   const origPosInfo = state.getCurrentPosInfo();
   const ruleInfo = state.grammar.rules[this.ruleName];
-  const { body } = ruleInfo;
-  const { description } = ruleInfo;
+  const {body} = ruleInfo;
+  const {description} = ruleInfo;
 
   state.enterApplication(origPosInfo, this);
 
@@ -644,7 +641,7 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrMemoRe
     return false;
   }
 
-  const { inputStream } = state;
+  const {inputStream} = state;
 
   while (true) {
     lrMemoRec.matchLength = inputStream.pos - origPos;

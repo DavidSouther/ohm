@@ -52,10 +52,10 @@ pexprs.Seq.prototype._assertAllApplicationsAreValid = function (ruleName, gramma
   }
 };
 
-pexprs.Fallible.prototype._assertAllApplicationsAreValid = function(ruleName, grammar) {
+pexprs.Fallible.prototype._assertAllApplicationsAreValid = function (ruleName, grammar) {
   this.fallible._assertAllApplicationsAreValid(ruleName, grammar);
   this.join._assertAllApplicationsAreValid(ruleName, grammar);
-}
+};
 
 pexprs.Iter.prototype._assertAllApplicationsAreValid =
   pexprs.Not.prototype._assertAllApplicationsAreValid =

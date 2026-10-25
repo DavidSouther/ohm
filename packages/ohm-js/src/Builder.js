@@ -1,5 +1,5 @@
-import { Grammar } from './Grammar.js';
-import { GrammarDecl } from './GrammarDecl.js';
+import {Grammar} from './Grammar.js';
+import {GrammarDecl} from './GrammarDecl.js';
 import * as pexprs from './pexprs.js';
 
 // --------------------------------------------------------------------

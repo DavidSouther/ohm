@@ -1,8 +1,8 @@
 import ohmGrammar from '../dist/ohm-grammar.js';
-import { Builder } from './Builder.js';
+import {Builder} from './Builder.js';
 import * as common from './common.js';
 import * as errors from './errors.js';
-import { Grammar } from './Grammar.js';
+import {Grammar} from './Grammar.js';
 import * as pexprs from './pexprs.js';
 
 const superSplicePlaceholder = Object.create(pexprs.PExpr.prototype);
@@ -111,7 +111,7 @@ export function buildGrammar(match, namespace, optOhmGrammarForTesting, options)
           decl.superGrammar,
           currentRuleName,
           beforeTerms,
-          afterTerms,
+          afterTerms
         ).withSource(this.source);
       } else {
         return builder.alt(...args).withSource(this.source);
@@ -208,8 +208,8 @@ export function buildGrammar(match, namespace, optOhmGrammarForTesting, options)
     name(first, rest) {
       return this.sourceString;
     },
-    nameFirst(expr) { },
-    nameRest(expr) { },
+    nameFirst(expr) {},
+    nameRest(expr) {},
 
     terminal(open, cs, close) {
       return cs.children.map(c => c.visit()).join('');

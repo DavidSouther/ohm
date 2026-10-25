@@ -106,7 +106,12 @@ export class Matcher {
     if (!opts.recovery) {
       this._memoMode = 'plain';
     }
-    const state = new MatchState(this, startExpr, opts.positionToRecordFailures, opts.recovery);
+    const state = new MatchState(
+      this,
+      startExpr,
+      opts.positionToRecordFailures,
+      opts.recovery
+    );
     return opts.tracing ? state.getTrace() : state.getMatchResult();
   }
 

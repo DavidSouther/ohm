@@ -1,4 +1,4 @@
-import { abstract } from './common.js';
+import {abstract} from './common.js';
 import * as errors from './errors.js';
 import * as pexprs from './pexprs-main.js';
 
@@ -44,7 +44,7 @@ pexprs.Iter.prototype.assertIteratedExprsAreNotNullable = function (grammar) {
 pexprs.Fallible.prototype.assertIteratedExprsAreNotNullable = function (grammar) {
   this.fallible.assertIteratedExprsAreNotNullable(grammar);
   this.join.assertIteratedExprsAreNotNullable(grammar);
-}
+};
 
 pexprs.Opt.prototype.assertIteratedExprsAreNotNullable =
   pexprs.Not.prototype.assertIteratedExprsAreNotNullable =

@@ -46,7 +46,10 @@ Blocks {
   Let = "let" letter
   Do = "do" letter
 }`;
-const BLOCKS_PLAIN = BLOCKS.replace('Stmt* ! &"}"', 'Stmt* &"}"').replace('StmtBody ! ";"', 'StmtBody ";"');
+const BLOCKS_PLAIN = BLOCKS.replace('Stmt* ! &"}"', 'Stmt* &"}"').replace(
+  'StmtBody ! ";"',
+  'StmtBody ";"'
+);
 
 // Hazard (b): a Fallible in the first alternative of a choice.
 const CHOICE = String.raw`
@@ -121,7 +124,11 @@ G {
   Semi = ";"
 }`);
   return JSON.stringify(g.rules.Start.body, (k, v) =>
-    k === 'source' ? undefined : v instanceof Object && !Array.isArray(v) ? {kind: v.constructor.name, ...v} : v
+    k === 'source'
+      ? undefined
+      : v instanceof Object && !Array.isArray(v)
+        ? {kind: v.constructor.name, ...v}
+        : v
   );
 }
 
@@ -149,7 +156,9 @@ test('syntax: `!` is looser than `*`, `&` and `~`, and tighter than sequence', t
 
   // toString round-trips: printing a body and parsing it again gives the same structure.
   for (const rhs of ['Stmt* ! &Close Close', 'A B ! C', 'A ! C+']) {
-    const printed = ohm.grammar(`G { Start = ${rhs}\n Stmt = "s"\n Close = "}"\n A = "a"\n B = "b"\n C = "c" }`).rules.Start.body.toString();
+    const printed = ohm
+      .grammar(`G { Start = ${rhs}\n Stmt = "s"\n Close = "}"\n A = "a"\n B = "b"\n C = "c" }`)
+      .rules.Start.body.toString();
     t.is(bodyShape(printed), bodyShape(rhs), printed);
   }
 });
@@ -165,15 +174,28 @@ test('with recover, one match reports every broken part', t => {
   t.deepEqual(run(FALLIBLE, VALID, RECOVER), {succeeded: true, recovered: []});
   t.deepEqual(cstShape(FALLIBLE, VALID, RECOVER), cstShape(PLAIN, VALID));
 
-  t.deepEqual(run(FALLIBLE, BROKEN, RECOVER), {succeeded: true, recovered: EXPECTED_RECOVERIES});
+  t.deepEqual(run(FALLIBLE, BROKEN, RECOVER), {
+    succeeded: true,
+    recovered: EXPECTED_RECOVERIES,
+  });
 
   const chip = cstShape(FALLIBLE, BROKEN, RECOVER);
   const parts = chip.children[3];
   // Each Part has two slots: the guarded PartBody (or an empty placeholder)
   // and the synchronizer `;` (or the skip region).
   t.deepEqual(
-    parts.map(p => p.children.map(c => (typeof c === 'string' ? c : `${c.ctorName}${c.skipped !== undefined ? `<${c.skipped}>` : ''}`))),
-    [['_fail<>', '_fail<N(a b)>'], ['PartBody', ';'], ['_fail<>', '_fail<X(>']]
+    parts.map(p =>
+      p.children.map(c =>
+        typeof c === 'string'
+          ? c
+          : `${c.ctorName}${c.skipped !== undefined ? `<${c.skipped}>` : ''}`
+      )
+    ),
+    [
+      ['_fail<>', '_fail<N(a b)>'],
+      ['PartBody', ';'],
+      ['_fail<>', '_fail<X(>'],
+    ]
   );
 
   // A parse that recovery cannot finish reports what a plain match reports.
@@ -199,7 +221,12 @@ test('hazard (a): recovery stops at an enclosing stop marker', t => {
 
   // A first-token typo before a `;` recovers just that statement.
   t.deepEqual(run(BLOCKS, 'sub { lt y; do x; } sub { do z; }', RECOVER).recovered, [
-    {startIdx: 6, endIdx: 10, position: 6, message: 'Line 1, col 7: expected "}", "do", or "let"'},
+    {
+      startIdx: 6,
+      endIdx: 10,
+      position: 6,
+      message: 'Line 1, col 7: expected "}", "do", or "let"',
+    },
   ]);
 
   // With no `;` before the closer, the statement's scan stops at `}` and the
@@ -207,12 +234,20 @@ test('hazard (a): recovery stops at an enclosing stop marker', t => {
   // starts where the statements stopped, and the closer and the next block survive.
   const broken = 'sub { let x; lt y } sub { do z; }';
   t.deepEqual(run(BLOCKS, broken, RECOVER).recovered, [
-    {startIdx: 13, endIdx: 17, position: 13, message: 'Line 1, col 14: expected "}", "do", or "let"'},
+    {
+      startIdx: 13,
+      endIdx: 17,
+      position: 13,
+      message: 'Line 1, col 14: expected "}", "do", or "let"',
+    },
   ]);
   const subs = cstShape(BLOCKS, broken, RECOVER).children[0];
   t.is(subs.length, 2);
   // The kept statements fill the guarded slot; the skip region fills the stop marker's slot.
-  t.deepEqual(subs[0].children[2].map(s => s.ctorName), ['Stmt']);
+  t.deepEqual(
+    subs[0].children[2].map(s => s.ctorName),
+    ['Stmt']
+  );
   t.deepEqual(subs[0].children[3], {ctorName: '_fail', skipped: 'lt y'});
   t.deepEqual(subs[1], cstShape(BLOCKS_PLAIN, 'sub { do z; }').children[0][0]);
 
@@ -220,7 +255,12 @@ test('hazard (a): recovery stops at an enclosing stop marker', t => {
   // is in failure position order, so the first entry stays today's error.
   t.deepEqual(run(BLOCKS, 'sub { let ; lt y } sub { do z; }', RECOVER).recovered, [
     {startIdx: 6, endIdx: 9, position: 10, message: 'Line 1, col 11: expected a letter'},
-    {startIdx: 12, endIdx: 16, position: 12, message: 'Line 1, col 13: expected "}", "do", or "let"'},
+    {
+      startIdx: 12,
+      endIdx: 16,
+      position: 12,
+      message: 'Line 1, col 13: expected "}", "do", or "let"',
+    },
   ]);
 });
 
@@ -265,7 +305,9 @@ function blockView(source, input) {
       return id.sourceString;
     },
     _fail() {
-      return this.sourceString === '' ? 'EMPTY' : `FAIL<${this.sourceString.replace(/\s+/g, ' ')}>`;
+      return this.sourceString === ''
+        ? 'EMPTY'
+        : `FAIL<${this.sourceString.replace(/\s+/g, ' ')}>`;
     },
   };
   if ('Simple' in g.rules) {
@@ -283,20 +325,54 @@ function blockView(source, input) {
 test('recovery keeps valid prior work', t => {
   const cases = [
     // The required example: aaa and bbb kept, xxx in the stop marker's slot, `}` matched normally.
-    [EXACT, '{\naaa;\nbbb;\nxxx\n}', 'Block[Stmt(aaa) Stmt(bbb) | FAIL<xxx>]', ['Line 5, col 1: expected ";"']],
+    [
+      EXACT,
+      '{\naaa;\nbbb;\nxxx\n}',
+      'Block[Stmt(aaa) Stmt(bbb) | FAIL<xxx>]',
+      ['Line 5, col 1: expected ";"'],
+    ],
     // Error at the first statement: nothing to keep.
     [EXACT, '{\nxxx\n}', 'Block[ | FAIL<xxx>]', ['Line 3, col 1: expected ";"']],
     // A first-token typo recovers at its own `;`; later statements are kept.
-    [EXACT, '{\n1aa;\nbbb;\n}', 'Block[Stmt(EMPTY FAIL<1aa>) Stmt(bbb)]', ['Line 2, col 1: expected "}" or a letter']],
+    [
+      EXACT,
+      '{\n1aa;\nbbb;\n}',
+      'Block[Stmt(EMPTY FAIL<1aa>) Stmt(bbb)]',
+      ['Line 2, col 1: expected "}" or a letter'],
+    ],
     // An error in the middle recovers at its `;`; statements on both sides are kept.
-    [EXACT, '{\naaa;\nb b;\nccc;\n}', 'Block[Stmt(aaa) Stmt(EMPTY FAIL<b b>) Stmt(ccc)]', ['Line 3, col 3: expected ";"']],
+    [
+      EXACT,
+      '{\naaa;\nb b;\nccc;\n}',
+      'Block[Stmt(aaa) Stmt(EMPTY FAIL<b b>) Stmt(ccc)]',
+      ['Line 3, col 3: expected ";"'],
+    ],
     // An empty block is valid.
     [EXACT, '{\n}', 'Block[]', []],
     // Every independent error in one block is reported from one parse.
-    [EXACT, '{\naaa;\nb b;\nc c;\nddd;\nxxx\n}', 'Block[Stmt(aaa) Stmt(EMPTY FAIL<b b>) Stmt(EMPTY FAIL<c c>) Stmt(ddd) | FAIL<xxx>]', ['Line 3, col 3: expected ";"', 'Line 4, col 3: expected ";"', 'Line 7, col 1: expected ";"']],
+    [
+      EXACT,
+      '{\naaa;\nb b;\nc c;\nddd;\nxxx\n}',
+      'Block[Stmt(aaa) Stmt(EMPTY FAIL<b b>) Stmt(EMPTY FAIL<c c>) Stmt(ddd) | FAIL<xxx>]',
+      [
+        'Line 3, col 3: expected ";"',
+        'Line 4, col 3: expected ";"',
+        'Line 7, col 1: expected ";"',
+      ],
+    ],
     // Nested blocks: each block keeps its own prefix.
-    [NESTED, '{\naaa;\n{\nbbb;\nxxx\n}\nccc;\n}', 'Block[Stmt(aaa) Block[Stmt(bbb) | FAIL<xxx>] Stmt(ccc)]', ['Line 6, col 1: expected ";"']],
-    [NESTED, '{\naaa;\n{\nbbb;\n}\nyyy\n}', 'Block[Stmt(aaa) Block[Stmt(bbb)] | FAIL<yyy>]', ['Line 7, col 1: expected ";"']],
+    [
+      NESTED,
+      '{\naaa;\n{\nbbb;\nxxx\n}\nccc;\n}',
+      'Block[Stmt(aaa) Block[Stmt(bbb) | FAIL<xxx>] Stmt(ccc)]',
+      ['Line 6, col 1: expected ";"'],
+    ],
+    [
+      NESTED,
+      '{\naaa;\n{\nbbb;\n}\nyyy\n}',
+      'Block[Stmt(aaa) Block[Stmt(bbb)] | FAIL<yyy>]',
+      ['Line 7, col 1: expected ";"'],
+    ],
     [NESTED, '{\naaa;\n{\n}\n}', 'Block[Stmt(aaa) Block[]]', []],
     // A guarded `+` keeps its prefix too; with no element matched, its slot holds an empty iteration.
     [PLUS, '{\naaa;\nxxx\n}', 'Block[Stmt(aaa) | FAIL<xxx>]', ['Line 4, col 1: expected ";"']],
@@ -314,7 +390,11 @@ test('a parse recovery cannot finish reports every error it found', t => {
   t.is(r.shortMessage, ohm.grammar(PLAIN).match('CHIP A { N(a b); X(; M(c').shortMessage);
   t.deepEqual(
     r.getRecoveredFailures().map(f => f.shortMessage),
-    ['Line 1, col 14: expected ")"', 'Line 1, col 20: expected a letter', 'Line 1, col 25: expected ")"']
+    [
+      'Line 1, col 14: expected ")"',
+      'Line 1, col 20: expected a letter',
+      'Line 1, col 25: expected ")"',
+    ]
   );
 });
 
@@ -341,10 +421,18 @@ test('hazard (b): recovery never preempts an alternative that matches', t => {
 
   const broken = 'do x; dx y; let z;';
   t.deepEqual(run(CHOICE, broken, RECOVER).recovered, [
-    {startIdx: 6, endIdx: 10, position: 6, message: 'Line 1, col 7: expected end of input, "do", or "let"'},
+    {
+      startIdx: 6,
+      endIdx: 10,
+      position: 6,
+      message: 'Line 1, col 7: expected end of input, "do", or "let"',
+    },
   ]);
   const stmts = cstShape(CHOICE, broken, RECOVER).children[0];
-  t.deepEqual(stmts.map(s => s.children[0].ctorName), ['Do', '_fail', 'Let']);
+  t.deepEqual(
+    stmts.map(s => s.children[0].ctorName),
+    ['Do', '_fail', 'Let']
+  );
 });
 
 test('hazard (c): every recovery consumes input, so recovery terminates', t => {
