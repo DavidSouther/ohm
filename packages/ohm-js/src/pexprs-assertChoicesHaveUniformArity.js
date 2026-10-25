@@ -12,7 +12,6 @@ pexprs.PExpr.prototype.assertChoicesHaveUniformArity = abstract(
 
 pexprs.any.assertChoicesHaveUniformArity =
   pexprs.end.assertChoicesHaveUniformArity =
-  pexprs.Fallible.prototype.assertChoicesHaveUniformArity =
   pexprs.Terminal.prototype.assertChoicesHaveUniformArity =
   pexprs.Range.prototype.assertChoicesHaveUniformArity =
   pexprs.Param.prototype.assertChoicesHaveUniformArity =
@@ -50,6 +49,24 @@ pexprs.Extend.prototype.assertChoicesHaveUniformArity = function (ruleName) {
 pexprs.Seq.prototype.assertChoicesHaveUniformArity = function (ruleName) {
   for (let idx = 0; idx < this.factors.length; idx++) {
     this.factors[idx].assertChoicesHaveUniformArity(ruleName);
+  }
+};
+
+// Also the static checks for a fallible `B ! C`: both operands have arity 1,
+// and the guarded expression is not a `~` or `&` expression.
+pexprs.Fallible.prototype.assertChoicesHaveUniformArity = function (ruleName) {
+  this.fallible.assertChoicesHaveUniformArity(ruleName);
+  this.join.assertChoicesHaveUniformArity(ruleName);
+  if (this.fallible instanceof pexprs.Not || this.fallible instanceof pexprs.Lookahead) {
+    throw errors.fallibleGuardIsPredicate(ruleName, this.fallible);
+  }
+  const guardedArity = this.fallible.getArity();
+  if (guardedArity !== 1) {
+    throw errors.invalidFallibleOperand(ruleName, 'guarded', guardedArity, this.fallible);
+  }
+  const syncArity = this.join.getArity();
+  if (syncArity !== 1) {
+    throw errors.invalidFallibleOperand(ruleName, 'synchronizer', syncArity, this.join);
   }
 };
 

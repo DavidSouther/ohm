@@ -38,13 +38,17 @@ Ohm {
     = NonemptyListOf<Seq, "|">
 
   Seq
-    = Iter*
+    = Fallible*
+
+  Fallible
+    = Iter "!" Iter  -- fallible
+    | Iter "!"       -- trailing
+    | Iter
 
   Iter
     = Pred "*"  -- star
     | Pred "+"  -- plus
     | Pred "?"  -- opt
-    | Pred "!" Pred -- fallible
     | Pred
 
   Pred
@@ -119,7 +123,7 @@ Ohm {
 
   token = caseName | comment | ident | operator | punctuation | terminal | any
 
-  operator = "<:" | "=" | ":=" | "+=" | "*" | "+" | "?" | "~" | "&"
+  operator = "<:" | "=" | ":=" | "+=" | "*" | "+" | "?" | "~" | "&" | "!"
 
   punctuation = "<" | ">" | "," | "--"
 }

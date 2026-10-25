@@ -43,8 +43,9 @@ pexprs.Seq.prototype._isNullable = function (grammar, memo) {
   return this.factors.every(factor => factor._isNullable(grammar, memo));
 };
 
+// A fallible is nullable only when `B C` is.
 pexprs.Fallible.prototype._isNullable = function (grammar, memo) {
-  return this.join._isNullable(grammar, memo);
+  return this.fallible._isNullable(grammar, memo) && this.join._isNullable(grammar, memo);
 };
 
 pexprs.Star.prototype._isNullable =

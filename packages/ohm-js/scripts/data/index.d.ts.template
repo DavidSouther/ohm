@@ -1,25 +1,25 @@
 {{doNotEditBanner}}
 /**
-  * Instantiate the Grammar defined by source. If specified, namespace is
-  * the Namespace to use when resolving external references in the grammar.
-  */
+ * Instantiate the Grammar defined by source. If specified, namespace is
+ * the Namespace to use when resolving external references in the grammar.
+ */
 export function grammar(source: string, namespace?: Namespace): Grammar;
 
 /**
-  * Create a new Namespace containing Grammar instances for all of the
-  * grammars defined in source.
-  * If namespace is specified, it will be the prototype of the new
-  * Namespace.
-  */
+ * Create a new Namespace containing Grammar instances for all of the
+ * grammars defined in source.
+ * If namespace is specified, it will be the prototype of the new
+ * Namespace.
+ */
 export function grammars(source: string, namespace?: Namespace): Namespace;
 
 export const ohmGrammar: Grammar;
 export const ExperimentalIndentationSensitive: Grammar;
 
 /**
-  * Constructors for parsing expressions (aka pexprs). (Except for `any`
-  * and `end`, which are not constructors but singleton instances.)
-  */
+ * Constructors for parsing expressions (aka pexprs). (Except for `any`
+ * and `end`, which are not constructors but singleton instances.)
+ */
 export const pexprs: {
   PExpr: typeof PExpr;
   Terminal: typeof Terminal;
@@ -46,15 +46,15 @@ export const pexprs: {
 export const version: string;
 
 /**
-  * A Namespace is a dictionary of Grammars
-  */
+ * A Namespace is a dictionary of Grammars
+ */
 export interface Namespace {
   [index: string]: Grammar;
 }
 
 /**
-  * An Ohm Grammar.
-  */
+ * An Ohm Grammar.
+ */
 export interface Grammar {
   name: string;
   superGrammar: Grammar;
@@ -64,37 +64,37 @@ export interface Grammar {
   isBuiltIn(): boolean;
 
   /**
-    * Try to match input with this grammar, returning a MatchResult. If
-    * startRule is given, it specifies the rule on which to start
-    * matching. By default, the start rule is inherited from the
-    * supergrammar, or if there is no supergrammar specified, it is the
-    * first rule in this grammar.
-    */
-  match(input: string, startRule?: string): MatchResult;
+   * Try to match input with this grammar, returning a MatchResult. If
+   * startRule is given, it specifies the rule on which to start
+   * matching. By default, the start rule is inherited from the
+   * supergrammar, or if there is no supergrammar specified, it is the
+   * first rule in this grammar.
+   */
+  match(input: string, startRule?: string, options?: MatchOptions): MatchResult;
 
   /**
-    * Create a new Matcher object which supports incrementally matching
-    * this grammar against a changing input string.
-    */
+   * Create a new Matcher object which supports incrementally matching
+   * this grammar against a changing input string.
+   */
   matcher(): Matcher;
 
   /**
-    * Like match() except returns a trace object whose toString() returns
-    * a summary of each parsing step useful for debugging.
-    */
-  trace(input: string, startRule?: string): Object;
+   * Like match() except returns a trace object whose toString() returns
+   * a summary of each parsing step useful for debugging.
+   */
+  trace(input: string, startRule?: string, options?: MatchOptions): Object;
 
   /**
-    * Create a new Semantics object for this Grammar.
-    */
+   * Create a new Semantics object for this Grammar.
+   */
   createSemantics(): Semantics;
 
   /**
-    * Create a new Semantics object for this Grammar that inherits all
-    * of the operations and attributes in superSemantics.
-    * This Grammar must be a descendant of the grammar associated with
-    * superSemantics.
-    */
+   * Create a new Semantics object for this Grammar that inherits all
+   * of the operations and attributes in superSemantics.
+   * This Grammar must be a descendant of the grammar associated with
+   * superSemantics.
+   */
   extendSemantics(superSemantics: Semantics): Semantics;
 }
 
@@ -127,60 +127,94 @@ export class UnicodeChar extends PExpr {}
 export class CaseInsensitiveTerminal extends PExpr {}
 
 /**
-  * Matcher objects are used to incrementally match a changing input
-  * against a Grammar, e.g. in an editor or IDE.
-  */
+ * Options for Grammar#match, Grammar#trace, Matcher#match and Matcher#trace.
+ */
+export interface MatchOptions {
+  /** Recover at `B ! C` recovery points. Default false; the only switch. */
+  recover?: boolean;
+}
+
+/**
+ * A rightmost failure of a match.
+ */
+export interface Failure {
+  toString(): string;
+}
+
+/**
+ * A failure that a recovery point skipped over.
+ */
+export interface RecoveredFailure {
+  /** Skip region; empty for the final failure of a parse recovery cannot finish. */
+  readonly interval: Interval;
+  /** The permitting pass's farthest failure. */
+  readonly position: number;
+  /** That pass's message, today's format. */
+  readonly shortMessage: string;
+  getExpectedText(): string;
+  getRightmostFailures(): Failure[];
+}
+
+/**
+ * Matcher objects are used to incrementally match a changing input
+ * against a Grammar, e.g. in an editor or IDE.
+ */
 export interface Matcher {
   grammar: Grammar;
 
   /**
-    * Return the current input string.
-    */
+   * Return the current input string.
+   */
   getInput(): string;
 
   /**
-    * Set the input string to `str`.
-    */
+   * Set the input string to `str`.
+   */
   setInput(str: string): void;
 
   /**
-    * Edit the current input string, replacing the characters between
-    * `startIdx` and `endIdx` with `str`.
-    */
+   * Edit the current input string, replacing the characters between
+   * `startIdx` and `endIdx` with `str`.
+   */
   replaceInputRange(startIdx: number, endIdx: number, str: string): Matcher;
 
   /**
-    * Like Grammar#match, but operates incrementally.
-    */
-  match(optStartRule?: string): MatchResult;
+   * Like Grammar#match, but operates incrementally.
+   */
+  match(optStartRule?: string, options?: MatchOptions): MatchResult;
 
   /**
-    * Like Grammar#trace, but operates incrementally.
-    */
-  trace(optStartRule?: string): Object;
+   * Like Grammar#trace, but operates incrementally.
+   */
+  trace(optStartRule?: string, options?: MatchOptions): Object;
 }
 
 /**
-  * Result of Grammar#match
-  */
+ * Result of Grammar#match
+ */
 export interface MatchResult {
   matcher: Matcher;
   input: string;
 
-
   /**
-    * True iff match succeeded
-    */
+   * True iff match succeeded
+   */
   succeeded(): this is SucceededMatchResult;
 
   /**
-    * True iff match did not succeed
-    */
+   * True iff match did not succeed
+   */
   failed(): this is FailedMatchResult;
+
+  /**
+   * Succeeded: every recovery, in failure position order, read from the CST;
+   * [] when none. Failed with `recover`: every recovery the last pass made,
+   * then the final failure. `shortMessage` stays today's.
+   */
+  getRecoveredFailures(): RecoveredFailure[];
 }
 
-export interface SucceededMatchResult extends MatchResult {
-}
+export interface SucceededMatchResult extends MatchResult {}
 
 export interface FailedMatchResult extends MatchResult {
   /**
@@ -209,7 +243,6 @@ export interface FailedMatchResult extends MatchResult {
    */
   getExpectedText(): string;
 
-
   /**
    * If this MatchResult is a failure, returns an Interval indicating
    * the position of the rightmost failure.
@@ -218,157 +251,168 @@ export interface FailedMatchResult extends MatchResult {
 }
 
 /**
-  * A Semantics is a family of operations and/or attributes for a given
-  * grammar. Each operation/attribute has a unique name within the
-  * Semantics. A grammar may have any number of Semantics instances
-  * associated with it -- this means that the clients of a grammar
-  * (even in the same program) never have to worry about
-  * operation/attribute name clashes.
-  */
+ * A Semantics is a family of operations and/or attributes for a given
+ * grammar. Each operation/attribute has a unique name within the
+ * Semantics. A grammar may have any number of Semantics instances
+ * associated with it -- this means that the clients of a grammar
+ * (even in the same program) never have to worry about
+ * operation/attribute name clashes.
+ */
 export interface Semantics {
   /**
-    * Returns a dictionary containing operations and attributes defined by
-    * this Semantics on the result of a matched grammar. Operations are
-    * no-arg functions and attributes are properties.
-    */
+   * Returns a dictionary containing operations and attributes defined by
+   * this Semantics on the result of a matched grammar. Operations are
+   * no-arg functions and attributes are properties.
+   */
   (match: MatchResult): Dict;
 
   /**
-    * Add a new operation named name to this Semantics, using the
-    * semantic actions contained in actionDict. It is an error if there
-    * is already an operation or attribute called name in this semantics.
-    * Returns this Semantics.
-    */
+   * Add a new operation named name to this Semantics, using the
+   * semantic actions contained in actionDict. It is an error if there
+   * is already an operation or attribute called name in this semantics.
+   * Returns this Semantics.
+   */
   addOperation<T>(name: string, actionDict: ActionDict<T>): Semantics;
 
   /**
-    * Add a new attribute named name to this Semantics, using the
-    * semantic actions contained in actionDict. It is an error if there
-    * is already an operation or attribute called name in this semantics.
-    * Returns this Semantics.
-    */
+   * Add a new attribute named name to this Semantics, using the
+   * semantic actions contained in actionDict. It is an error if there
+   * is already an operation or attribute called name in this semantics.
+   * Returns this Semantics.
+   */
   addAttribute<T>(name: string, actionDict: ActionDict<T>): Semantics;
 
   /**
-    * Extend the operation named name with the semantic actions contained
-    * in actionDict. name must be the name of an operation in the super
-    * semantics.
-    * Returns this Semantics.
-    */
+   * Extend the operation named name with the semantic actions contained
+   * in actionDict. name must be the name of an operation in the super
+   * semantics.
+   * Returns this Semantics.
+   */
   extendOperation<T>(name: string, actionDict: ActionDict<T>): Semantics;
 
   /**
-    * Extend the attribute named name with the semantic actions contained
-    * in actionDict. name must be the name of an attribute in the super
-    * semantics.
-    * Returns this Semantics.
-    */
+   * Extend the attribute named name with the semantic actions contained
+   * in actionDict. name must be the name of an attribute in the super
+   * semantics.
+   * Returns this Semantics.
+   */
   extendAttribute<T>(name: string, actionDict: ActionDict<T>): Semantics;
 }
 
 /**
-  * A dictionary is indexed by strings.
-  */
+ * A dictionary is indexed by strings.
+ */
 interface Dict {
   [index: string]: any;
 }
 
 /**
-  * An ActionDict is a dictionary of Actions indexed by rule names.
-  * This is a "pure" type that only contains keys for built-in rules.
-  */
+ * An ActionDict is a dictionary of Actions indexed by rule names.
+ * This is a "pure" type that only contains keys for built-in rules.
+ */
 export interface BaseActionDict<T> {
   _iter?: (this: IterationNode, ...children: Node[]) => T;
   _nonterminal?: (this: NonterminalNode, ...children: Node[]) => T;
   _terminal?: (this: TerminalNode) => T;
+  /**
+   * Arity 0, like _terminal. A _fail node has ctorName '_fail', its
+   * sourceString is the skip region, and it may carry a recoveredFailure.
+   * `B ! C` has two slots (arity(B) = arity(C) = 1). Clean: [B, C].
+   * Recovered: [kept work or an empty placeholder _fail with no
+   * recoveredFailure, the skip region's _fail].
+   */
+  _fail?: (this: Node) => T;
 
   // Built-in rules
   {{builtInRuleActions}}
 }
 
 /**
-  * An ActionDict is a dictionary of Actions indexed by rule names.
-  */
+ * An ActionDict is a dictionary of Actions indexed by rule names.
+ */
 export interface ActionDict<T> extends BaseActionDict<T> {
   [index: string]: Action<T> | undefined;
 }
 
 /**
-  * An Action is a function from ParseNodes, called with the children nodes
-  * of the node it is being executed on.
-  * The current node is passed as a dynamic this, requiring an ES5
-  * anonymous function with this typed as any.
-  */
+ * An Action is a function from ParseNodes, called with the children nodes
+ * of the node it is being executed on.
+ * The current node is passed as a dynamic this, requiring an ES5
+ * anonymous function with this typed as any.
+ */
 export type Action<T> = (this: Node, ...args: Node[]) => T;
 
 /**
-  * A node in the parse tree, passed to Action functions.
-  */
+ * A node in the parse tree, passed to Action functions.
+ */
 export interface Node {
+  /** Set on a `_fail` node that records a recovery; absent on a placeholder. */
+  recoveredFailure?: RecoveredFailure;
+
   /**
-    * Returns the child at index idx.
-    */
+   * Returns the child at index idx.
+   */
   child(idx: number): Node;
 
   /**
-    * true if the node is a terminal node, otherwise false.
-    */
+   * true if the node is a terminal node, otherwise false.
+   */
   isTerminal(): boolean;
 
   /**
-    * true if the node is an iteration node, which corresponds to a
-    * +, *, or ? expression in the grammar.
-    */
+   * true if the node is an iteration node, which corresponds to a
+   * +, *, or ? expression in the grammar.
+   */
   isIteration(): boolean;
 
   /**
-    * An array containing the node's children.
-    */
+   * An array containing the node's children.
+   */
   children: Node[];
 
   /**
-    * The name of grammar rule that created the node.
-    */
+   * The name of grammar rule that created the node.
+   */
   ctorName: string;
 
   /**
-    * Captures the portion of the input that was consumed by the node.
-    */
+   * Captures the portion of the input that was consumed by the node.
+   */
   source: Interval;
 
   /**
-    * Returns the contents of the input stream consumed by this node.
-    */
+   * Returns the contents of the input stream consumed by this node.
+   */
   sourceString: string;
 
   /**
-    * The number of child nodes that the node has.
-    */
+   * The number of child nodes that the node has.
+   */
   numChildren: number;
 
   /**
-    * True if Node is ? option
-    */
+   * True if Node is ? option
+   */
   isOptional(): boolean;
 
   /**
-    * A built-in operation which can convert certain NonterminalNodes into
-    * IterationNodes. This operation is defined for the built-in list rules
-    * (ListOf, EmptyListOf, NonemptyListOf, listOf, ...), and can also be
-    * defined for user-defined rules.
-    */
+   * A built-in operation which can convert certain NonterminalNodes into
+   * IterationNodes. This operation is defined for the built-in list rules
+   * (ListOf, EmptyListOf, NonemptyListOf, listOf, ...), and can also be
+   * defined for user-defined rules.
+   */
   asIteration(): IterationNode;
 
   /**
-    * In addition to the properties defined above, within a given
-    * semantics, every node also has a method/property corresponding to
-    * each operation/attribute in the semantics.
-    * For example, in a semantics that has an operation named 'prettyPrint'
-    * and an attribute named 'freeVars', every node has a prettyPrint()
-    * method and a freeVars property.
-    * NOTE this means the above node properties can not be used as
-    * operation/attribute names.
-    */
+   * In addition to the properties defined above, within a given
+   * semantics, every node also has a method/property corresponding to
+   * each operation/attribute in the semantics.
+   * For example, in a semantics that has an operation named 'prettyPrint'
+   * and an attribute named 'freeVars', every node has a prettyPrint()
+   * method and a freeVars property.
+   * NOTE this means the above node properties can not be used as
+   * operation/attribute names.
+   */
   [index: string]: any;
 }
 
@@ -377,79 +421,79 @@ export interface NonterminalNode extends Node {}
 export interface TerminalNode extends Node {}
 
 /**
-  * An Interval represents a subset of a string.
-  */
+ * An Interval represents a subset of a string.
+ */
 export interface Interval {
   /**
-    * The string containing the interval.
-    */
+   * The string containing the interval.
+   */
   sourceString: string;
 
   /**
-    * The start index of the interval in `sourceString`.
-    */
+   * The start index of the interval in `sourceString`.
+   */
   startIdx: number;
 
   /**
-    * The end index of the interval in `sourceString`.
-    */
+   * The end index of the interval in `sourceString`.
+   */
   endIdx: number;
 
   /**
-    * Contents of interval
-    */
+   * Contents of interval
+   */
   contents: string;
 
   /**
-    * Returns a new Interval at the start of this one
-    */
+   * Returns a new Interval at the start of this one
+   */
   collapsedLeft(): Interval;
 
   /**
-    * Returns a new Interval at the end of this one
-    */
+   * Returns a new Interval at the end of this one
+   */
   collapsedRight(): Interval;
 
   /**
-    * Returns a new Interval that covers this Interval and all the
-    * argument Intervals. The new Interval will start at the lowest start
-    * index and end at the largest end index.
-    */
+   * Returns a new Interval that covers this Interval and all the
+   * argument Intervals. The new Interval will start at the lowest start
+   * index and end at the largest end index.
+   */
   coverageWith(...intervals: Interval[]): Interval;
 
   /**
-    * Returns a nicely-formatted string describing the start of the Interval.
-    */
+   * Returns a nicely-formatted string describing the start of the Interval.
+   */
   getLineAndColumnMessage(): string;
 
   /**
-    * Returns a structure containing information about the location of the
-    * interval in the source string, including the line and column number.
-    */
+   * Returns a structure containing information about the location of the
+   * interval in the source string, including the line and column number.
+   */
   getLineAndColumn(): LineAndColumnInfo;
 
   /**
-    * Returns an array of 0, 1, or 2 intervals that represents the result of the
-    * interval difference operation.
-    */
+   * Returns an array of 0, 1, or 2 intervals that represents the result of the
+   * interval difference operation.
+   */
   minus(that: Interval): Interval[];
 
   /**
-    * Returns a new Interval that has the same extent as this one, but which is relative
-    * to `that`, an Interval that fully covers this one.
-    */
+   * Returns a new Interval that has the same extent as this one, but which is relative
+   * to `that`, an Interval that fully covers this one.
+   */
   relativeTo(that: Interval): Interval;
 
   /**
-    * Returns a new Interval which contains the same contents as this one,
-    * but with whitespace trimmed from both ends.
-    */
+   * Returns a new Interval which contains the same contents as this one,
+   * but with whitespace trimmed from both ends.
+   */
   trimmed(): Interval;
 
   /**
-    * Returns a new Interval on the same source string, with the given length
-    * and beginning at `startIdx + offset`.
-    */
+   * Returns a new Interval on the same source string, with the given length
+   * and beginning at `startIdx + offset`.
+   */
   subInterval(offset: number, len: number): Interval;
 }
 

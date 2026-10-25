@@ -105,7 +105,8 @@ export class Seq extends PExpr {
   }
 }
 
-// Fallible Continuation
+// A fallible `B ! C`: `fallible` is the guarded expression B, and `join` is
+// the synchronizer C, where recovery resumes.
 export class Fallible extends PExpr {
   constructor(fallible, join) {
     super();

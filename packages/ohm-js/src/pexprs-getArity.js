@@ -24,8 +24,10 @@ pexprs.Alt.prototype.getArity = function () {
   return this.terms.length === 0 ? 0 : this.terms[0].getArity();
 };
 
+// The guarded slot and the synchronizer slot. Grammar construction requires
+// both operands to have arity 1 (see assertChoicesHaveUniformArity).
 pexprs.Fallible.prototype.getArity = function () {
-  return 2;
+  return this.fallible.getArity() + this.join.getArity();
 };
 
 pexprs.Seq.prototype.getArity = function () {
