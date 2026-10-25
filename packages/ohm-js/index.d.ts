@@ -71,7 +71,7 @@ export interface Grammar {
    * supergrammar, or if there is no supergrammar specified, it is the
    * first rule in this grammar.
    */
-  match(input: string, startRule?: string): MatchResult;
+  match(input: string, startRule?: string, options?: MatchOptions): MatchResult;
 
   /**
    * Create a new Matcher object which supports incrementally matching
@@ -83,7 +83,7 @@ export interface Grammar {
    * Like match() except returns a trace object whose toString() returns
    * a summary of each parsing step useful for debugging.
    */
-  trace(input: string, startRule?: string): Object;
+  trace(input: string, startRule?: string, options?: MatchOptions): Object;
 
   /**
    * Create a new Semantics object for this Grammar.
@@ -128,6 +128,35 @@ export class UnicodeChar extends PExpr {}
 export class CaseInsensitiveTerminal extends PExpr {}
 
 /**
+ * Options for Grammar#match, Grammar#trace, Matcher#match and Matcher#trace.
+ */
+export interface MatchOptions {
+  /** Recover at `B ! C` recovery points. Default false; the only switch. */
+  recover?: boolean;
+}
+
+/**
+ * A rightmost failure of a match.
+ */
+export interface Failure {
+  toString(): string;
+}
+
+/**
+ * A failure that a recovery point skipped over.
+ */
+export interface RecoveredFailure {
+  /** Skip region; empty for the final failure of a parse recovery cannot finish. */
+  readonly interval: Interval;
+  /** The permitting pass's farthest failure. */
+  readonly position: number;
+  /** That pass's message, today's format. */
+  readonly shortMessage: string;
+  getExpectedText(): string;
+  getRightmostFailures(): Failure[];
+}
+
+/**
  * Matcher objects are used to incrementally match a changing input
  * against a Grammar, e.g. in an editor or IDE.
  */
@@ -153,12 +182,12 @@ export interface Matcher {
   /**
    * Like Grammar#match, but operates incrementally.
    */
-  match(optStartRule?: string): MatchResult;
+  match(optStartRule?: string, options?: MatchOptions): MatchResult;
 
   /**
    * Like Grammar#trace, but operates incrementally.
    */
-  trace(optStartRule?: string): Object;
+  trace(optStartRule?: string, options?: MatchOptions): Object;
 }
 
 /**
@@ -177,6 +206,13 @@ export interface MatchResult {
    * True iff match did not succeed
    */
   failed(): this is FailedMatchResult;
+
+  /**
+   * Succeeded: every recovery, in failure position order, read from the CST;
+   * [] when none. Failed with `recover`: every recovery the last pass made,
+   * then the final failure. `shortMessage` stays today's.
+   */
+  getRecoveredFailures(): RecoveredFailure[];
 }
 
 export interface SucceededMatchResult extends MatchResult {}
@@ -279,6 +315,14 @@ export interface BaseActionDict<T> {
   _iter?: (this: IterationNode, ...children: Node[]) => T;
   _nonterminal?: (this: NonterminalNode, ...children: Node[]) => T;
   _terminal?: (this: TerminalNode) => T;
+  /**
+   * Arity 0, like _terminal. A _fail node has ctorName '_fail', its
+   * sourceString is the skip region, and it may carry a recoveredFailure.
+   * `B ! C` has two slots (arity(B) = arity(C) = 1). Clean: [B, C].
+   * Recovered: [kept work or an empty placeholder _fail with no
+   * recoveredFailure, the skip region's _fail].
+   */
+  _fail?: (this: Node) => T;
 
   // Built-in rules
 
@@ -324,6 +368,9 @@ export type Action<T> = (this: Node, ...args: Node[]) => T;
  * A node in the parse tree, passed to Action functions.
  */
 export interface Node {
+  /** Set on a `_fail` node that records a recovery; absent on a placeholder. */
+  recoveredFailure?: RecoveredFailure;
+
   /**
    * Returns the child at index idx.
    */
