@@ -18,7 +18,7 @@ util.awaitBuiltInRules(builtInRules => {
 const applySpaces = new pexprs.Apply('spaces');
 
 export class MatchState {
-  constructor(matcher, startExpr, optPositionToRecordFailures) {
+  constructor(matcher, startExpr, optPositionToRecordFailures, optRecovery) {
     this.matcher = matcher;
     this.startExpr = startExpr;
 
@@ -40,6 +40,15 @@ export class MatchState {
     this.rightmostFailurePosition = -1;
     this._rightmostFailurePositionStack = [];
     this._recordedFailuresStack = [];
+
+    // Recovery at `B ! C` (see Recovery.js). `recovery` is the RecoveryContext
+    // shared by the passes of a recovering match, or undefined.
+    this.recovery = optRecovery;
+    this._syncStack = []; // synchronizers of the enclosing active fallibles
+    this._recoveryLog = []; // RecoveredFailures made so far in this pass
+    this._noRecoveryDepth = 0; // > 0 inside `~`, `&` and recovery scans
+    this._recoveryTaint = 0; // bumped by every recovery scan
+    this._traceRecovered = false;
 
     if (optPositionToRecordFailures !== undefined) {
       this.positionToRecordFailures = optPositionToRecordFailures;
@@ -323,6 +332,10 @@ export class MatchState {
       const traceEntry = this.getTraceEntry(memoPos, expr, ans, bindings);
       traceEntry.isImplicitSpaces = expr === applySpaces;
       traceEntry.isRootNode = expr === this.startExpr;
+      if (this._traceRecovered) {
+        traceEntry.isRecovered = true;
+        this._traceRecovered = false;
+      }
       origTrace.push(traceEntry);
       this.trace = origTrace;
     }

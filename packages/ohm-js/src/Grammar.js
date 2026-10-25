@@ -84,16 +84,16 @@ export class Grammar {
     );
   }
 
-  match(input, optStartApplication) {
+  match(input, optStartApplication, options = {}) {
     const m = this.matcher();
     m.replaceInputRange(0, 0, input);
-    return m.match(optStartApplication);
+    return m.match(optStartApplication, options);
   }
 
-  trace(input, optStartApplication) {
+  trace(input, optStartApplication, options = {}) {
     const m = this.matcher();
     m.replaceInputRange(0, 0, input);
-    return m.trace(optStartApplication);
+    return m.trace(optStartApplication, options);
   }
 
   createSemantics() {
@@ -154,8 +154,9 @@ export class Grammar {
     // All special actions have an expected arity of 0, though all but _terminal
     // are expected to use the rest parameter syntax (e.g. `_iter(...children)`).
     // This is considered to have arity 0, i.e. `((...args) => {}).length` is 0.
-    return actionName === '_fail' ? 1
-      : (SPECIAL_ACTION_NAMES.includes(actionName) ? 0 : this.rules[actionName].body.getArity());
+    return SPECIAL_ACTION_NAMES.includes(actionName)
+      ? 0
+      : this.rules[actionName].body.getArity();
   }
 
   _inheritsFrom(grammar) {

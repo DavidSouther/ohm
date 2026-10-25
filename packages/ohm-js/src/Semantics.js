@@ -1,5 +1,5 @@
 import {InputStream} from './InputStream.js';
-import {FailureNode, IterationNode} from './nodes.js';
+import {IterationNode} from './nodes.js';
 import {MatchResult} from './MatchResult.js';
 import * as common from './common.js';
 import * as errors from './errors.js';
@@ -126,6 +126,12 @@ class Wrapper {
   // Returns an array containing the children of this CST node.
   get children() {
     return this._children();
+  }
+
+  // For a `_fail` node that records a recovery, its RecoveredFailure; undefined
+  // for an empty placeholder and for every other node.
+  get recoveredFailure() {
+    return this._node.recoveredFailure;
   }
 
   // Returns the name of grammar rule that created this CST node.
@@ -631,11 +637,13 @@ class Operation {
       let actionFn = this.actionDict[ctorName];
       if (actionFn) {
         globalActionStack.push([this, ctorName]);
-        if (ctorName === '_fail' && nodeWrapper._node instanceof FailureNode) {
-          return actionFn.call(nodeWrapper, nodeWrapper._node.failure);
-        } else {
-          return actionFn.apply(nodeWrapper, nodeWrapper._children());
-        }
+        return actionFn.apply(nodeWrapper, nodeWrapper._children());
+      }
+
+      // `_nonterminal` and `_default` never receive a `_fail` node.
+      if (nodeWrapper._node.isFailure()) {
+        globalActionStack.push([this, '_fail']);
+        throw errors.missingFailAction(this.name, this.typeName, nodeWrapper.recoveredFailure);
       }
 
       // The action dictionary does not contain a semantic action for this specific type of node.

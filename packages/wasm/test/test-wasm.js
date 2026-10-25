@@ -1198,3 +1198,8 @@ test.failing('ranges w/ code points > 0xFFFF', async t => {
 
   t.true(g.match('x', 'notFace').succeeded());
 });
+
+test('a grammar with a recovery point is rejected clearly', t => {
+  const g = ohm.grammar('G { start = item*\n item = "a" ! ";" }');
+  t.throws(() => new Compiler(g), {message: /recovery operator '!'.*not supported/});
+});

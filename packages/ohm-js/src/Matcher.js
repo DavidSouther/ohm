@@ -1,5 +1,6 @@
 import {grammarDoesNotSupportIncrementalParsing} from './errors.js';
 import {MatchState} from './MatchState.js';
+import {matchRecovering} from './Recovery.js';
 import * as pexprs from './pexprs.js';
 
 export class Matcher {
@@ -8,6 +9,8 @@ export class Matcher {
     this._memoTable = [];
     this._input = '';
     this._isMemoTableStale = false;
+    // 'plain' or 'recover': the kind of match that filled the memo table.
+    this._memoMode = undefined;
   }
 
   _resetMemoTable() {
@@ -66,16 +69,18 @@ export class Matcher {
     return this;
   }
 
-  match(optStartApplicationStr, options = {incremental: true}) {
+  match(optStartApplicationStr, options = {}) {
     return this._match(this._getStartExpr(optStartApplicationStr), {
-      incremental: options.incremental,
+      incremental: options.incremental ?? true,
+      recover: !!options.recover,
       tracing: false,
     });
   }
 
-  trace(optStartApplicationStr, options = {incremental: true}) {
+  trace(optStartApplicationStr, options = {}) {
     return this._match(this._getStartExpr(optStartApplicationStr), {
-      incremental: options.incremental,
+      incremental: options.incremental ?? true,
+      recover: !!options.recover,
       tracing: true,
     });
   }
@@ -85,15 +90,23 @@ export class Matcher {
       tracing: false,
       incremental: true,
       positionToRecordFailures: undefined,
+      recover: false, // run the recovery pass driver
+      recovery: undefined, // one pass of a recovering match (a RecoveryContext)
       ...options,
     };
+    if (opts.recover) {
+      return matchRecovering(this, startExpr, opts);
+    }
     if (!opts.incremental) {
       this._resetMemoTable();
     } else if (this._isMemoTableStale && !this.grammar.supportsIncrementalParsing) {
       throw grammarDoesNotSupportIncrementalParsing(this.grammar);
     }
 
-    const state = new MatchState(this, startExpr, opts.positionToRecordFailures);
+    if (!opts.recovery) {
+      this._memoMode = 'plain';
+    }
+    const state = new MatchState(this, startExpr, opts.positionToRecordFailures, opts.recovery);
     return opts.tracing ? state.getTrace() : state.getMatchResult();
   }
 

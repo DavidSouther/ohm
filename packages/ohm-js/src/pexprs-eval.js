@@ -11,7 +11,8 @@ import {
 } from './nodes.js';
 import * as pexprs from './pexprs-main.js';
 import {MAX_CODE_POINT} from './InputStream.js';
-import {MatchResult} from './MatchResult.js';
+import {Interval} from './Interval.js';
+import {RecoveredFailure} from './RecoveredFailure.js';
 
 // --------------------------------------------------------------------
 // Operations
@@ -121,39 +122,212 @@ pexprs.Seq.prototype.eval = function (state) {
   return true;
 };
 
-function makeError(state, factor) {
-  return new MatchResult(
-    state.matcher,
-    state.inputStream.source,
-    state.matcher._getStartExpr(factor.ruleName),
-    undefined,
-    undefined,
-    state.inputStream.pos,
-    undefined
-  );
+// --------------------------------------------------------------------
+// Fallible: `B ! C`
+// --------------------------------------------------------------------
+
+/*
+  Without recovery, a fallible is the sequence `B C`. During a recovering
+  match (`state.recovery` is set), it records each failed attempt for the pass
+  driver, and recovers only at a point a failed pass permitted. See
+  Recovery.js for the driver and design.md's invariants for the rules.
+*/
+
+const fallibleIds = new WeakMap();
+let nextFallibleId = 0;
+
+// A recovery point is a fallible at a start position. A fallible in a
+// parameterized rule is also distinguished by the actual parameters.
+function recoveryKey(fallible, state, pos) {
+  let id = fallibleIds.get(fallible);
+  if (id === undefined) {
+    id = ++nextFallibleId;
+    fallibleIds.set(fallible, id);
+  }
+  const app = state.currentApplication();
+  return app && app.args.length > 0 ? `${id}@${pos}@${app.toMemoKey()}` : `${id}@${pos}`;
+}
+
+// The synchronizer as an enclosing stop marker: resolved against the current
+// application's parameters, because a scan evaluates it in another context.
+function activeSynchronizer(fallible, state) {
+  const app = state.currentApplication();
+  return app && app.args.length > 0 ? fallible.join.substituteParams(app.args) : fallible.join;
+}
+
+function matchesAt(state, expr, pos) {
+  const {inputStream} = state;
+  const origNumBindings = state._bindings.length;
+  inputStream.pos = pos;
+  const ans = state.eval(expr);
+  state.truncateBindings(origNumBindings);
+  inputStream.pos = pos;
+  return ans;
+}
+
+function emptyIteration(state) {
+  return state._rowBasedIteration
+    ? new ListNode([], [], 0, false)
+    : new IterationNode([], [], 0, false);
 }
 
 pexprs.Fallible.prototype.eval = function (state) {
-  state.eval(this.fallible);
-  const startPos = state.inputStream.pos;
-
-  while (!state.inputStream.atEnd()) {
-    const endPos = state.inputStream.pos;
-    const bindingsCount = state._bindings.length;
-    const offsetsCount = state._bindingOffsets.length;
-    // Advance token by token, looking for match on `join`.
-    if (state.eval(this.join)) {
-      const binding = (endPos === startPos) ? new TerminalNode(0) :
-        new FailureNode(state.inputStream.pos - startPos, makeError(state, this.fallible));
-      state._bindings.splice(bindingsCount, 0, binding)
-      state._bindingOffsets.splice(offsetsCount, 0, state.posToOffset(startPos));
-      return true;
-    } else {
-      state.inputStream.pos += 1;
-    }
+  const ctx = state.recovery;
+  if (!ctx) {
+    return state.eval(this.fallible) && state.eval(this.join);
+  }
+  const {inputStream} = state;
+  const origPos = inputStream.pos;
+  if (state._noRecoveryDepth > 0) {
+    // Inside `~`, `&` and recovery scans, a fallible is `B C` and records no
+    // attempt. The result must not be memoized, because every memoized
+    // evaluation has recorded its attempts for the pass driver.
+    state._recoveryTaint++;
+    return state.eval(this.fallible) && state.eval(this.join);
   }
 
-  return false;
+  const key = recoveryKey(this, state, origPos);
+  const origNumBindings = state._bindings.length;
+  const logMark = state._recoveryLog.length;
+  const sync = activeSynchronizer(this, state);
+
+  // The attempt `B C`, with its failures isolated (invariant 2).
+  state.pushFailuresInfo();
+  state.rightmostFailurePosition = -1;
+  state._syncStack.push(sync);
+  const ok = state.eval(this.fallible) && state.eval(this.join);
+  state._syncStack.pop();
+  const attemptRightmost = state.rightmostFailurePosition;
+  const attemptFailures = state.recordedFailures;
+  state.popFailuresInfo();
+
+  const permit = ok ? undefined : ctx.permitted.get(key);
+  if (permit) {
+    state._recoveryTaint++;
+    state.truncateBindings(origNumBindings);
+    if (this.recover(state, origPos, sync, permit, logMark)) {
+      return true;
+    }
+    state.truncateBindings(origNumBindings);
+    inputStream.pos = origPos;
+  } else if (!ok) {
+    ctx.attempts.set(key, {
+      key,
+      start: origPos,
+      rightmost: attemptRightmost,
+      depth: state._applicationStack.length,
+    });
+  }
+  // A clean match, or a failure that did not recover: merge the attempt's
+  // failures back, position and expected set both.
+  state.rightmostFailurePosition = Math.max(state.rightmostFailurePosition, attemptRightmost);
+  state.recordedFailures = attemptFailures;
+  return ok;
+};
+
+/*
+  Recover a permitted fallible whose attempt failed. A guarded `*` or `+`
+  keeps the elements it matched; any other guarded expression keeps nothing
+  and its slot holds an empty placeholder. The skip region starts at the next
+  token and ends where the synchronizer matches; its `_fail` node takes the
+  synchronizer's slot. Returns false, with bindings and the recovery log as
+  they were, when the scan reaches the end of the input or a stop marker.
+*/
+pexprs.Fallible.prototype.recover = function (state, origPos, sync, permit, logMark) {
+  const {inputStream} = state;
+  const attemptLog = state._recoveryLog.splice(logMark);
+  const outerTrace = state.trace;
+  if (outerTrace) {
+    state.trace = [];
+  }
+  state.pushFailuresInfo();
+
+  inputStream.pos = origPos;
+  const keepsPrefix =
+    this.fallible instanceof pexprs.Iter && !(this.fallible instanceof pexprs.Opt);
+  if (keepsPrefix) {
+    // Evaluate the guarded iteration again, under the same permissions and
+    // stop markers, so it keeps what this pass matched.
+    state._syncStack.push(sync);
+    const kept = state.eval(this.fallible);
+    state._syncStack.pop();
+    if (!kept) {
+      inputStream.pos = origPos;
+      state.pushBinding(emptyIteration(state), origPos);
+    }
+  }
+  const scanStart = state.skipSpacesIfInSyntacticContext();
+  const found = this.scan(state, scanStart);
+  state.popFailuresInfo();
+
+  let syncTrace;
+  if (outerTrace) {
+    syncTrace = found && state.trace[state.trace.length - 1];
+    state.trace = outerTrace;
+  }
+  if (!found) {
+    state._recoveryLog.length = logMark;
+    state._recoveryLog.push(...attemptLog);
+    return false;
+  }
+
+  const recovered = new RecoveredFailure(
+    new Interval(inputStream.source, scanStart, found.skipEnd),
+    permit.position,
+    permit.result
+  );
+  // Recoveries inside kept elements stay in their own nodes.
+  const nested = keepsPrefix
+    ? attemptLog.filter(f => f.interval.startIdx >= scanStart)
+    : attemptLog;
+  if (!keepsPrefix) {
+    state.pushBinding(new FailureNode(0), scanStart);
+  }
+  state.pushBinding(
+    new FailureNode(found.skipEnd - scanStart, recovered, nested),
+    scanStart
+  );
+  inputStream.pos = found.afterSync;
+  state._recoveryLog.push(recovered, ...nested);
+  if (outerTrace) {
+    outerTrace.push(syncTrace);
+    state._traceRecovered = true;
+  }
+  return true;
+};
+
+/*
+  Scan forward from `scanStart` for the synchronizer. At each candidate
+  position, try this fallible's own synchronizer first; where it fails and an
+  enclosing active synchronizer matches, stop. The skipped text and the
+  synchronizer must cover at least one code unit. Comments are stepped over
+  whole, by the ordinary space skipping of a syntactic rule.
+*/
+pexprs.Fallible.prototype.scan = function (state, scanStart) {
+  const {inputStream} = state;
+  const enclosing = state._syncStack;
+  const end = inputStream.source.length;
+  let found = null;
+  state._noRecoveryDepth++;
+  for (let p = scanStart; p <= end; ) {
+    inputStream.pos = p;
+    const numBindings = state._bindings.length;
+    if (state.eval(this.join)) {
+      const afterSync = inputStream.pos;
+      state.truncateBindings(numBindings);
+      if (afterSync > scanStart) {
+        found = {skipEnd: p, afterSync};
+      }
+      break;
+    }
+    if (enclosing.some(stop => matchesAt(state, stop, p))) {
+      break;
+    }
+    inputStream.pos = p;
+    p = Math.max(state.skipSpacesIfInSyntacticContext(), p) + 1;
+  }
+  state._noRecoveryDepth--;
+  return found;
 };
 
 pexprs.Iter.prototype.eval = function (state) {
@@ -287,7 +461,10 @@ pexprs.Not.prototype.eval = function (state) {
   const origPos = inputStream.pos;
   state.pushFailuresInfo();
 
+  // No fallible recovers inside `~` or `&`.
+  state._noRecoveryDepth++;
   const ans = state.eval(this.expr);
+  state._noRecoveryDepth--;
 
   state.popFailuresInfo();
   if (ans) {
@@ -302,7 +479,10 @@ pexprs.Not.prototype.eval = function (state) {
 pexprs.Lookahead.prototype.eval = function (state) {
   const {inputStream} = state;
   const origPos = inputStream.pos;
-  if (state.eval(this.expr)) {
+  state._noRecoveryDepth++;
+  const ans = state.eval(this.expr);
+  state._noRecoveryDepth--;
+  if (ans) {
     inputStream.pos = origPos;
     return true;
   } else {
@@ -375,6 +555,10 @@ pexprs.Apply.prototype.reallyEval = function (state) {
   const origInputStreamExaminedLength = inputStream.examinedLength;
   inputStream.examinedLength = 0;
 
+  // A result that depends on a recovery scan (or on a permitted recovery that
+  // was suppressed) depends on the enclosing stop markers: never memoize it.
+  const origRecoveryTaint = state._recoveryTaint;
+
   let value = this.evalOnce(body, state);
   const currentLR = origPosInfo.currentLeftRecursion;
   const memoKey = this.toMemoKey();
@@ -390,7 +574,10 @@ pexprs.Apply.prototype.reallyEval = function (state) {
     memoRec.examinedLength = inputStream.examinedLength - origPos;
     memoRec.rightmostFailureOffset = state._getRightmostFailureOffset();
     origPosInfo.memoize(memoKey, memoRec); // updates origPosInfo's maxExaminedLength
-  } else if (!currentLR || !currentLR.isInvolved(memoKey)) {
+  } else if (
+    (!currentLR || !currentLR.isInvolved(memoKey)) &&
+    state._recoveryTaint === origRecoveryTaint
+  ) {
     // This application is not involved in left recursion, so it's ok to memoize it.
     memoRec = origPosInfo.memoize(memoKey, {
       matchLength: inputStream.pos - origPos,

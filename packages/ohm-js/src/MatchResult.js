@@ -1,6 +1,7 @@
 import * as common from './common.js';
 import * as util from './util.js';
 import {Interval} from './Interval.js';
+import {collectRecoveredFailures} from './RecoveredFailure.js';
 
 // --------------------------------------------------------------------
 // Private stuff
@@ -23,6 +24,10 @@ export class MatchResult {
     this._cstOffset = cstOffset;
     this._rightmostFailurePosition = rightmostFailurePosition;
     this._rightmostFailures = optRecordedFailures;
+
+    // Set by the recovery pass driver (Recovery.js).
+    this._recovery = undefined;
+    this._recoveredFailures = undefined;
 
     if (this.failed()) {
       common.defineLazyProperty(this, 'message', function () {
@@ -60,10 +65,22 @@ export class MatchResult {
       const matchResultWithFailures = this.matcher._match(this.startExpr, {
         tracing: false,
         positionToRecordFailures: this.getRightmostFailurePosition(),
+        recovery: this._recovery,
       });
       this._rightmostFailures = matchResultWithFailures.getRightmostFailures();
     }
     return this._rightmostFailures;
+  }
+
+  // Succeeded: every recovery, in failure position order, read from the CST.
+  // Failed with recovery: every recovery the last pass made, then the final
+  // failure. Empty otherwise.
+  getRecoveredFailures() {
+    if (!this._recoveredFailures) {
+      this._recoveredFailures =
+        this.succeeded() && this._recovery ? collectRecoveredFailures(this._cst) : [];
+    }
+    return this._recoveredFailures.slice();
   }
 
   toString() {
