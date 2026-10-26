@@ -482,3 +482,48 @@ test('an unterminated string still recovers at its own line', t => {
   t.true(r.succeeded());
   t.deepEqual(skipped(r), ['f("abc)', 'h(']);
 });
+
+const NESTED = String.raw`
+Nested {
+  Outer = "{" Item* ! "}"
+  Item  = Inner | Stmt
+  Inner = "(" Stmt* ! ")"
+  Stmt  = Body ! ";"
+  Body  = letter+
+}`;
+
+test('a block missing its closer at the end of the input recovers by inserting it', t => {
+  const g = ohm.grammar(CALLS);
+  const source = '{\nf(x);\ng(y);';
+  const plain = g.match(source);
+  const r = g.match(source, undefined, RECOVER);
+  t.true(r.succeeded());
+  const [missing] = r.getRecoveredFailures();
+  t.is(r.getRecoveredFailures().length, 1);
+  t.is(missing.shortMessage, plain.shortMessage);
+  t.true(missing.missing);
+  t.is(missing.interval.contents, '');
+});
+
+test('a nested block missing its closer is closed at an enclosing synchronizer', t => {
+  const g = ohm.grammar(NESTED);
+  const r = g.match('{ a; ( b; c; } ', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(
+    r.getRecoveredFailures().map(f => [f.position, f.missing]),
+    [[13, true]]
+  );
+});
+
+test('two blocks missing their closers report one entry each', t => {
+  const g = ohm.grammar(NESTED);
+  const r = g.match('{ a; ( b;', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.is(r.getRecoveredFailures().length, 2);
+});
+
+test('a block marked with a stop marker still escalates instead of inserting', t => {
+  const g = ohm.grammar(STMTS);
+  const r = g.match('{ a; b;', undefined, RECOVER);
+  t.true(r.failed());
+});

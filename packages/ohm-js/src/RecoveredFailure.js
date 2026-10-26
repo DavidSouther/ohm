@@ -2,12 +2,14 @@
   A failure that a recovery point skipped over. `interval` is the skip region
   (empty for the final failure of a parse that recovery cannot finish), and
   `position`, `shortMessage` and the expected failures are those of the pass
-  that permitted the recovery: that pass's farthest failure.
+  that permitted the recovery: that pass's farthest failure. `missing` is true
+  when a block recovered by inserting its missing synchronizer.
 */
 export class RecoveredFailure {
-  constructor(interval, position, passResult) {
+  constructor(interval, position, passResult, missing = false) {
     this.interval = interval;
     this.position = position;
+    this.missing = missing;
     this._passResult = passResult;
     this.shortMessage = passResult.shortMessage;
   }

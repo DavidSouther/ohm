@@ -164,6 +164,20 @@ function matchesAt(state, expr, pos) {
   return ans;
 }
 
+/*
+  A block is a fallible whose guarded side is a `*` or `+` and whose
+  synchronizer consumes input, such as `Stmt* ! "}"`. Only a block can recover
+  by inserting its missing synchronizer; `Stmt* ! &"}" "}"` cannot, because its
+  closer lies outside the fallible.
+*/
+function isBlock(fallible) {
+  return (
+    fallible.fallible instanceof pexprs.Iter &&
+    !(fallible.fallible instanceof pexprs.Opt) &&
+    !(fallible.join instanceof pexprs.Lookahead)
+  );
+}
+
 function emptyIteration(state) {
   return state._rowBasedIteration
     ? new ListNode([], [], 0, false)
@@ -241,8 +255,13 @@ pexprs.Fallible.prototype.eval = function (state) {
   synchronizer's slot. The synchronizer is only looked for after `tokenEnd`,
   the end of the last complete token the failed attempt matched, so text
   already matched as a token, such as a string literal, never ends the region.
-  Returns false, with bindings and the recovery log as they were, when the
-  scan reaches the end of the input or a stop marker.
+
+  When the scan reaches the end of the input or a stop marker, a block
+  recovers by inserting its missing synchronizer: the skip region ends there,
+  nothing more is consumed, and the recovered failure is marked `missing`. It
+  does so only when the fallible or its rule application has consumed input,
+  so every recovery inside an iteration still advances it. Otherwise this
+  returns false, with bindings and the recovery log as they were.
 */
 pexprs.Fallible.prototype.recover = function (
   state,
@@ -277,12 +296,21 @@ pexprs.Fallible.prototype.recover = function (
     }
   }
   const scanStart = state.skipSpacesIfInSyntacticContext();
-  const found = this.scan(state, scanStart, Math.max(scanStart, tokenEnd));
+  let found = this.scan(state, scanStart, Math.max(scanStart, tokenEnd));
   state.popFailuresInfo();
 
   let syncTrace;
+  if (found && found.stoppedAt !== undefined) {
+    const appStart = state._posStack[state._posStack.length - 1];
+    const consumed = found.stoppedAt > origPos || origPos > appStart;
+    found =
+      isBlock(this) && consumed
+        ? {skipEnd: found.stoppedAt, afterSync: found.stoppedAt, missing: true}
+        : null;
+  } else if (outerTrace && found) {
+    syncTrace = state.trace[state.trace.length - 1];
+  }
   if (outerTrace) {
-    syncTrace = found && state.trace[state.trace.length - 1];
     state.trace = outerTrace;
   }
   if (!found) {
@@ -294,11 +322,13 @@ pexprs.Fallible.prototype.recover = function (
   const recovered = new RecoveredFailure(
     new Interval(inputStream.source, scanStart, found.skipEnd),
     permit.position,
-    permit.result
+    permit.result,
+    !!found.missing
   );
-  // Recoveries inside kept elements stay in their own nodes.
+  // Recoveries inside kept elements stay in their own nodes. A zero-width one
+  // at `scanStart` closed the last kept element.
   const nested = keepsPrefix
-    ? attemptLog.filter(f => f.interval.startIdx >= scanStart)
+    ? attemptLog.filter(f => f.interval.endIdx > scanStart || f.interval.startIdx > scanStart)
     : attemptLog;
   if (!keepsPrefix) {
     state.pushBinding(new FailureNode(0), scanStart);
@@ -307,7 +337,7 @@ pexprs.Fallible.prototype.recover = function (
   inputStream.pos = found.afterSync;
   state._recoveryLog.push(recovered, ...nested);
   if (outerTrace) {
-    outerTrace.push(syncTrace);
+    if (syncTrace) outerTrace.push(syncTrace);
     state._traceRecovered = true;
   }
   return true;
@@ -321,12 +351,16 @@ pexprs.Fallible.prototype.recover = function (
   matches, stop. The skipped text and the synchronizer must cover at least one
   code unit. Comments are stepped over whole, by the ordinary space skipping
   of a syntactic rule.
+
+  Returns `{skipEnd, afterSync}` when the synchronizer matched, `{stoppedAt}`
+  when a stop marker or the end of the input ended the scan, and null when
+  the synchronizer matched without progress.
 */
 pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
   const {inputStream} = state;
   const enclosing = state._syncStack;
   const end = inputStream.source.length;
-  let found = null;
+  let found = {stoppedAt: end};
   const origTokenEnd = state._tokenEnd;
   state._noRecoveryDepth++;
   for (let p = scanStart; p <= end; ) {
@@ -341,12 +375,11 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
     if (state.eval(this.join)) {
       const afterSync = inputStream.pos;
       state.truncateBindings(numBindings);
-      if (afterSync > scanStart) {
-        found = {skipEnd: p, afterSync};
-      }
+      found = afterSync > scanStart ? {skipEnd: p, afterSync} : null;
       break;
     }
     if (enclosing.some(stop => matchesAt(state, stop, p))) {
+      found = {stoppedAt: p};
       break;
     }
     inputStream.pos = p;
