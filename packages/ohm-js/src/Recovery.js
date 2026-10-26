@@ -1,6 +1,6 @@
 import {Interval} from './Interval.js';
 import {MatchState} from './MatchState.js';
-import {RecoveredFailure, byPosition} from './RecoveredFailure.js';
+import {RecoveredFailure, distinctByPosition} from './RecoveredFailure.js';
 
 // --------------------------------------------------------------------
 // Recovery at `B ! C` recovery points
@@ -88,7 +88,9 @@ export function matchRecovering(matcher, startExpr, opts) {
         position,
         result
       );
-      first._recoveredFailures = [...state._recoveryLog].sort(byPosition).concat(finalFailure);
+      // An application that is not memoized can run more than once in a
+      // pass, logging its recoveries each time.
+      first._recoveredFailures = [...distinctByPosition(state._recoveryLog), finalFailure];
       if (opts.tracing) {
         const {trace} = runPass(matcher, startExpr, ctx, true);
         trace.result = first;

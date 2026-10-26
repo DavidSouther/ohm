@@ -489,3 +489,233 @@ test('row based iteration: an iterated fallible gives one row per element', t =>
   const plain = ohm.grammar('G { Start = (Body ";")*\n Body = letter }');
   t.deepEqual(messages(r), [plain.match('a;1;b;').shortMessage]);
 });
+
+// --------------------------------------------------------------------
+// Unbalanced blocks and delimiters inside tokens
+// --------------------------------------------------------------------
+
+const CALLS = String.raw`
+Calls {
+  Body   = "{" Stmt* ! "}"
+  Stmt   = Call ! ";"
+  Call   = ident "(" Arg ")"
+  Arg    = string | ident
+  string = "\"" (~"\"" ~"\n" any)* "\""
+  ident  = letter+
+}`;
+
+function skipped(result) {
+  return result.getRecoveredFailures().map(f => f.interval.contents);
+}
+
+test('a synchronizer inside a matched string literal never ends a skip region', t => {
+  const g = ohm.grammar(CALLS);
+  const r = g.match('{\nf("a;b" x);\ng(y);\nh(;\n}', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(skipped(r), ['f("a;b" x)', 'h(']);
+});
+
+test('an unterminated string recovers at its own line', t => {
+  const g = ohm.grammar(CALLS);
+  const r = g.match('{\nf("abc);\ng(y);\nh(;\n}', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(skipped(r), ['f("abc)', 'h(']);
+});
+
+const NESTED = String.raw`
+Nested {
+  Outer = "{" Item* ! "}"
+  Item  = Inner | Stmt
+  Inner = "(" Stmt* ! ")"
+  Stmt  = Body ! ";"
+  Body  = letter+
+}`;
+
+test('a block missing its closer at the end of the input recovers by inserting it', t => {
+  const g = ohm.grammar(CALLS);
+  const source = '{\nf(x);\ng(y);';
+  const plain = g.match(source);
+  const r = g.match(source, undefined, RECOVER);
+  t.true(r.succeeded());
+  const [missing] = r.getRecoveredFailures();
+  t.is(r.getRecoveredFailures().length, 1);
+  t.is(missing.shortMessage, plain.shortMessage);
+  t.true(missing.missing);
+  t.is(missing.interval.contents, '');
+});
+
+test('a nested block missing its closer is closed at an enclosing synchronizer', t => {
+  const g = ohm.grammar(NESTED);
+  const r = g.match('{ a; ( b; c; } ', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(
+    r.getRecoveredFailures().map(f => [f.position, f.missing]),
+    [[13, true]]
+  );
+});
+
+test('two blocks missing their closers report one entry each', t => {
+  const g = ohm.grammar(NESTED);
+  const r = g.match('{ a; ( b;', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.is(r.getRecoveredFailures().length, 2);
+});
+
+test('a block marked with a stop marker escalates instead of inserting', t => {
+  const g = ohm.grammar(STMTS);
+  const r = g.match('{ a; b;', undefined, RECOVER);
+  t.true(r.failed());
+});
+
+const UNITS = String.raw`
+Units {
+  File = Unit* ! end
+  Unit = unit ident "{" Stmt* ! "}"
+  Stmt = Body ! ";"
+  Body = ident ident?
+  unit = "unit" ~alnum
+  ident = ~unit letter+
+  recoveryStop = unit
+}`;
+
+test('recoveryStop closes a nested block that lost its closer', t => {
+  const g = ohm.grammar(UNITS);
+  const source = 'unit a { x; y;\nunit b { zz z z; }';
+  const r = g.match(source, undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(
+    r.getRecoveredFailures().map(f => [source.slice(f.position, f.position + 6), f.missing]),
+    [
+      ['unit b', true],
+      ['z; }', false],
+    ]
+  );
+});
+
+test('recoveryStop is inert without recovery and ignored at the outermost block', t => {
+  const g = ohm.grammars(UNITS).Units;
+  const plain = ohm.grammar(UNITS.replace('recoveryStop = unit', ''));
+  const source = 'unit a { x y z; } unit b { w; }';
+  t.is(g.match(source).shortMessage, plain.match(source).shortMessage);
+  const outer = g.match('unit a { x; } x y z unit b { w; }', undefined, RECOVER);
+  t.true(outer.succeeded());
+  t.deepEqual(
+    outer.getRecoveredFailures().map(f => f.interval.contents),
+    ['x y z unit b { w; }']
+  );
+});
+
+// --------------------------------------------------------------------
+// Token-wise scanning with `recoveryToken`
+// --------------------------------------------------------------------
+
+const TOKENS = String.raw`
+Tokens {
+  Body    = "{" Stmt* ! "}"
+  Stmt    = Call ! ";"
+  Call    = ident "(" ListOf<Arg, ","> ")"
+  Arg     = string | ident
+  string  = "\"" (~"\"" ~"\n" any)* "\""
+  ident   = letter+
+  space  += comment
+  comment = "//" (~"\n" any)*
+  recoveryToken = string | ident
+}`;
+
+const CHARS = TOKENS.replace('recoveryToken = string | ident', '');
+
+function scanBoth(source) {
+  const tokens = ohm.grammar(TOKENS);
+  const chars = ohm.grammar(CHARS);
+  return {
+    tokens: tokens.match(source, undefined, RECOVER),
+    chars: chars.match(source, undefined, RECOVER),
+  };
+}
+
+test('recoveryToken: a synchronizer inside a string after the failure is skipped whole', t => {
+  const {tokens, chars} = scanBoth('{\nf(x y, "a;b");\ng(y);\nh(;\n}');
+  t.deepEqual(skipped(tokens), ['f(x y, "a;b")', 'h(']);
+  t.deepEqual(skipped(chars), ['f(x y, "a', 'b")', 'h(']);
+});
+
+test('recoveryToken: an enclosing closer inside a string after the failure is skipped whole', t => {
+  const {tokens, chars} = scanBoth('{\nf(x y, "a}b");\ng(y);\n}');
+  t.true(tokens.succeeded());
+  t.deepEqual(skipped(tokens), ['f(x y, "a}b")']);
+  t.notDeepEqual(skipped(chars), skipped(tokens));
+});
+
+test('recoveryToken: a recoveryStop inside a string after the failure is skipped whole', t => {
+  const grammar = String.raw`
+    Units {
+      File = Unit* ! end
+      Unit = unit ident "{" Stmt* ! "}"
+      Stmt = Body ! ";"
+      Body = ident (ident | string)?
+      unit = "unit" ~alnum
+      ident = ~unit letter+
+      string = "\"" (~"\"" ~"\n" any)* "\""
+      recoveryStop = unit
+      recoveryToken = string | letter+
+    }`;
+  const source = 'unit a { x y "unit b"; z; }\nunit c { w; }';
+  const tokens = ohm.grammar(grammar).match(source, undefined, RECOVER);
+  const chars = ohm
+    .grammar(grammar.replace('recoveryToken = string | letter+', ''))
+    .match(source, undefined, RECOVER);
+  t.deepEqual(
+    tokens.getRecoveredFailures().map(f => [f.interval.contents, f.missing]),
+    [['x y "unit b"', false]]
+  );
+  t.true(chars.getRecoveredFailures().some(f => f.missing));
+});
+
+test('recoveryToken: an unterminated string falls back to stepping one character', t => {
+  const {tokens, chars} = scanBoth('{\nf("abc);\ng(y);\nh(;\n}');
+  t.deepEqual(skipped(tokens), ['f("abc)', 'h(']);
+  t.deepEqual(skipped(chars), skipped(tokens));
+});
+
+test('recoveryToken: comments are skipped whole and `//` inside a string is no comment', t => {
+  const comment = scanBoth('{\nf(x y // a;b\n);\ng(y);\n}');
+  t.deepEqual(skipped(comment.tokens), ['f(x y // a;b\n)']);
+  t.deepEqual(skipped(comment.chars), skipped(comment.tokens));
+  const inString = scanBoth('{\nf(x y, "a//b");\ng(y);\n}');
+  t.deepEqual(skipped(inString.tokens), ['f(x y, "a//b")']);
+  t.deepEqual(skipped(inString.chars), ['f(x y, "a//b");\ng(y)']);
+});
+
+test('recoveryToken: first errors are unchanged, with and without recovery', t => {
+  const tokens = ohm.grammar(TOKENS);
+  const chars = ohm.grammar(CHARS);
+  for (const source of [
+    '{\nf(x y, "a;b");\ng(y);\n}',
+    '{\nf(x y, "a}b");\ng(y);\n}',
+    '{\nf("abc);\ng(y);\n}',
+    '{\nf(x y // a;b\n);\n}',
+    '{\nf(x);\ng(y);',
+    '{ f(x); } g',
+  ]) {
+    t.is(tokens.match(source).shortMessage, chars.match(source).shortMessage);
+    t.deepEqual(messages(tokens.match(source, undefined, RECOVER)).slice(0, 1), [
+      chars.match(source).shortMessage,
+    ]);
+  }
+});
+
+test('identical recovered failures at one position are reported once', t => {
+  const g = ohm.grammar(String.raw`
+    Blocks {
+      Block = "{" Item* ! "}"
+      Item  = Block | Stmt
+      Stmt  = Body ! ";"
+      Body  = letter+
+    }`);
+  const r = g.match('{ a; { b;', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(
+    r.getRecoveredFailures().map(f => [f.position, f.shortMessage, f.missing]),
+    [[9, 'Line 1, col 10: expected "}"', true]]
+  );
+});

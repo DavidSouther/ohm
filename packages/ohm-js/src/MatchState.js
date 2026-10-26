@@ -47,6 +47,8 @@ export class MatchState {
     // Stop markers: join expressions of the fallibles whose attempt is in
     // progress. A scan stops where any of them matches.
     this._syncStack = [];
+    // Number of blocks whose guarded attempt is active.
+    this._blockDepth = 0;
     this._recoveryLog = []; // RecoveredFailures made so far in this pass
     this._noRecoveryDepth = 0; // > 0 inside `~`, `&` and recovery scans
     // Changes whenever an evaluation depends on stop markers or skipped
@@ -55,6 +57,12 @@ export class MatchState {
     this._recoveryTaint = 0;
     // Marks the next trace entry (the Fallible that just recovered) as recovered.
     this._traceRecovered = false;
+    // The end of the last complete token matched in the current application:
+    // the farthest position reached by a successful evaluation in a syntactic
+    // context, or -1. Matches inside `~`, `&` and recovery scans do not count.
+    // Tracked only while recovering.
+    this._tokenEnd = -1;
+    this._tokenEndStack = [];
 
     if (optPositionToRecordFailures !== undefined) {
       this.positionToRecordFailures = optPositionToRecordFailures;
@@ -63,11 +71,14 @@ export class MatchState {
   }
 
   _suspendRecovery() {
+    const tokenEnd = this._tokenEnd;
     this._noRecoveryDepth++;
+    return tokenEnd;
   }
 
-  _resumeRecovery() {
+  _resumeRecovery(tokenEnd) {
     this._noRecoveryDepth--;
+    this._tokenEnd = tokenEnd;
   }
 
   posToOffset(pos) {
@@ -81,6 +92,10 @@ export class MatchState {
     posInfo.enter(app);
     this._rightmostFailurePositionStack.push(this.rightmostFailurePosition);
     this.rightmostFailurePosition = -1;
+    if (this.recovery) {
+      this._tokenEndStack.push(this._tokenEnd);
+      this._tokenEnd = -1;
+    }
   }
 
   exitApplication(posInfo, optNode) {
@@ -93,6 +108,9 @@ export class MatchState {
       this.rightmostFailurePosition,
       this._rightmostFailurePositionStack.pop()
     );
+    if (this.recovery) {
+      this._tokenEnd = Math.max(this._tokenEnd, this._tokenEndStack.pop());
+    }
 
     if (optNode) {
       this.pushBinding(optNode, origPos);
@@ -288,6 +306,10 @@ export class MatchState {
       this.trace.push(memoRec.traceEntry);
     }
 
+    if (this.recovery && memoRec.tokenEndOffset >= 0) {
+      this._tokenEnd = Math.max(this._tokenEnd, origPos + memoRec.tokenEndOffset);
+    }
+
     const memoRecRightmostFailurePosition =
       this.inputStream.pos + memoRec.rightmostFailureOffset;
     this.rightmostFailurePosition = Math.max(
@@ -355,6 +377,9 @@ export class MatchState {
     }
 
     if (ans) {
+      if (this.recovery && inputStream.pos > this._tokenEnd && this.inSyntacticContext()) {
+        this._tokenEnd = inputStream.pos;
+      }
       if (this.recordedFailures && inputStream.pos === this.positionToRecordFailures) {
         Object.keys(this.recordedFailures).forEach(key => {
           this.recordedFailures[key].makeFluffy();
