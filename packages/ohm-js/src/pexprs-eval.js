@@ -244,7 +244,10 @@ pexprs.Not.prototype.eval = function (state) {
   const origPos = inputStream.pos;
   state.pushFailuresInfo();
 
+  // Predicates inspect input without committing recovery.
+  state._suspendRecovery();
   const ans = state.eval(this.expr);
+  state._resumeRecovery();
 
   state.popFailuresInfo();
   if (ans) {
@@ -259,7 +262,10 @@ pexprs.Not.prototype.eval = function (state) {
 pexprs.Lookahead.prototype.eval = function (state) {
   const {inputStream} = state;
   const origPos = inputStream.pos;
-  if (state.eval(this.expr)) {
+  state._suspendRecovery();
+  const ans = state.eval(this.expr);
+  state._resumeRecovery();
+  if (ans) {
     inputStream.pos = origPos;
     return true;
   } else {
@@ -281,7 +287,10 @@ pexprs.Apply.prototype.eval = function (state) {
   const memoKey = app.toMemoKey();
   const memoRec = posInfo.memo[memoKey];
 
-  if (memoRec && posInfo.shouldUseMemoizedResult(memoRec)) {
+  if (memoRec && memoRec.isRecoveryTainted) {
+    // Remove the entry: invalidation enumerates keys and expects a record for each.
+    delete posInfo.memo[memoKey];
+  } else if (memoRec && posInfo.shouldUseMemoizedResult(memoRec)) {
     if (state.hasNecessaryInfo(memoRec)) {
       return state.useMemoizedResult(state.inputStream.pos, memoRec);
     }
@@ -332,6 +341,10 @@ pexprs.Apply.prototype.reallyEval = function (state) {
   const origInputStreamExaminedLength = inputStream.examinedLength;
   inputStream.examinedLength = 0;
 
+  // Never reuse a result that depends on enclosing stop markers or that
+  // skipped recording a fallible's attempt; see `_recoveryTaint`.
+  const origRecoveryTaint = state._recoveryTaint;
+
   let value = this.evalOnce(body, state);
   const currentLR = origPosInfo.currentLeftRecursion;
   const memoKey = this.toMemoKey();
@@ -346,9 +359,15 @@ pexprs.Apply.prototype.reallyEval = function (state) {
     memoRec = currentLR;
     memoRec.examinedLength = inputStream.examinedLength - origPos;
     memoRec.rightmostFailureOffset = state._getRightmostFailureOffset();
-    origPosInfo.memoize(memoKey, memoRec); // updates origPosInfo's maxExaminedLength
-  } else if (!currentLR || !currentLR.isInvolved(memoKey)) {
-    // This application is not involved in left recursion, so it's ok to memoize it.
+    // The seed must remain available during growth, and its trace entry is
+    // needed until the enclosing evaluation finishes. Prevent later reuse if
+    // this completed result depends on the recovery context.
+    memoRec.isRecoveryTainted = state._recoveryTaint !== origRecoveryTaint;
+    origPosInfo.memoize(memoKey, memoRec);
+  } else if (
+    (!currentLR || !currentLR.isInvolved(memoKey)) &&
+    state._recoveryTaint === origRecoveryTaint
+  ) {
     memoRec = origPosInfo.memoize(memoKey, {
       matchLength: inputStream.pos - origPos,
       examinedLength: inputStream.examinedLength - origPos,

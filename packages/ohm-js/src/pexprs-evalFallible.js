@@ -1,0 +1,214 @@
+import {Interval} from './Interval.js';
+import {RecoveredFailure} from './RecoveredFailure.js';
+import {FailureNode, IterationNode, ListNode} from './nodes.js';
+import * as pexprs from './pexprs-main.js';
+
+// --------------------------------------------------------------------
+// Fallible: `B ! C`
+// --------------------------------------------------------------------
+
+/*
+  Without recovery, a fallible is the sequence `B C`. During a recovering
+  match (`state.recovery` is set), it records each failed attempt for the pass
+  driver, and recovers only at a point a failed pass permitted.
+*/
+
+const fallibleIds = new WeakMap();
+let nextFallibleId = 0;
+
+// A recovery point is a fallible at a start position. A fallible in a
+// parameterized rule is also distinguished by the actual parameters.
+function recoveryKey(fallible, state, pos) {
+  let id = fallibleIds.get(fallible);
+  if (id === undefined) {
+    id = ++nextFallibleId;
+    fallibleIds.set(fallible, id);
+  }
+  const app = state.currentApplication();
+  return app && app.args.length > 0 ? `${id}@${pos}@${app.toMemoKey()}` : `${id}@${pos}`;
+}
+
+// The join expression as an enclosing stop marker: resolved against the current
+// application's parameters, because a scan evaluates it in another context.
+function activeJoin(fallible, state) {
+  const app = state.currentApplication();
+  return app && app.args.length > 0 ? fallible.join.substituteParams(app.args) : fallible.join;
+}
+
+function matchesAt(state, expr, pos) {
+  const {inputStream} = state;
+  const origNumBindings = state._bindings.length;
+  inputStream.pos = pos;
+  const ans = state.eval(expr);
+  state.truncateBindings(origNumBindings);
+  inputStream.pos = pos;
+  return ans;
+}
+
+function emptyIteration(state) {
+  return state._rowBasedIteration
+    ? new ListNode([], [], 0, false)
+    : new IterationNode([], [], 0, false);
+}
+
+pexprs.Fallible.prototype.eval = function (state) {
+  const ctx = state.recovery;
+  if (!ctx) {
+    return state.eval(this.fallible) && state.eval(this.join);
+  }
+  const {inputStream} = state;
+  const origPos = inputStream.pos;
+  if (state._noRecoveryDepth > 0) {
+    // Inside `~`, `&` and recovery scans, a fallible is `B C` and records no
+    // attempt. Prevent later reuse of this result, which has no attempts
+    // for the pass driver.
+    state._recoveryTaint++;
+    return state.eval(this.fallible) && state.eval(this.join);
+  }
+
+  const key = recoveryKey(this, state, origPos);
+  const origNumBindings = state._bindings.length;
+  const logMark = state._recoveryLog.length;
+  const sync = activeJoin(this, state);
+
+  // Isolate the attempt's failures so its own farthest failure can be recorded
+  // for the pass driver.
+  state.pushFailuresInfo();
+  state.rightmostFailurePosition = -1;
+  state._syncStack.push(sync);
+  const ok = state.eval(this.fallible) && state.eval(this.join);
+  state._syncStack.pop();
+  const attemptRightmost = state.rightmostFailurePosition;
+  const attemptFailures = state.recordedFailures;
+  state.popFailuresInfo();
+
+  const permit = ok ? undefined : ctx.permitted.get(key);
+  if (permit) {
+    state._recoveryTaint++;
+    state.truncateBindings(origNumBindings);
+    // A recovery discards the attempt's failures; the enclosing record is
+    // already restored.
+    if (this.recover(state, origPos, sync, permit, logMark)) {
+      return true;
+    }
+    state.truncateBindings(origNumBindings);
+    inputStream.pos = origPos;
+  } else if (!ok) {
+    ctx.attempts.set(key, {
+      key,
+      start: origPos,
+      rightmost: attemptRightmost,
+      depth: state._applicationStack.length,
+    });
+  }
+  // Merge the attempt's failures back, position and expected set both, so this
+  // reports what `B C` would; merging only the position leaves the message
+  // without expected text.
+  state.rightmostFailurePosition = Math.max(state.rightmostFailurePosition, attemptRightmost);
+  state.recordedFailures = attemptFailures;
+  return ok;
+};
+
+/*
+  Recover a permitted fallible whose attempt failed. A guarded `*` or `+`
+  keeps the elements it matched; any other guarded expression keeps nothing
+  and its slot holds an empty placeholder. The skip region starts at the next
+  token and ends where the join expression matches; its `_fail` node takes the
+  join expression's slot. Returns false, with bindings and the recovery log as
+  they were, when the scan reaches the end of the input or a stop marker.
+*/
+pexprs.Fallible.prototype.recover = function (state, origPos, sync, permit, logMark) {
+  const {inputStream} = state;
+  const attemptLog = state._recoveryLog.splice(logMark);
+  // Scan steps are not traced; only the matching join expression's entry joins the
+  // Fallible's children.
+  const outerTrace = state.trace;
+  if (outerTrace) {
+    state.trace = [];
+  }
+  state.pushFailuresInfo();
+
+  inputStream.pos = origPos;
+  const keepsPrefix =
+    this.fallible instanceof pexprs.Iter && !(this.fallible instanceof pexprs.Opt);
+  if (keepsPrefix) {
+    // Evaluate the guarded iteration again, under the same permissions and
+    // stop markers, so it keeps what this pass matched.
+    state._syncStack.push(sync);
+    const kept = state.eval(this.fallible);
+    state._syncStack.pop();
+    if (!kept) {
+      inputStream.pos = origPos;
+      state.pushBinding(emptyIteration(state), origPos);
+    }
+  }
+  const scanStart = state.skipSpacesIfInSyntacticContext();
+  const found = this.scan(state, scanStart);
+  state.popFailuresInfo();
+
+  let syncTrace;
+  if (outerTrace) {
+    syncTrace = found && state.trace[state.trace.length - 1];
+    state.trace = outerTrace;
+  }
+  if (!found) {
+    state._recoveryLog.length = logMark;
+    state._recoveryLog.push(...attemptLog);
+    return false;
+  }
+
+  const recovered = new RecoveredFailure(
+    new Interval(inputStream.source, scanStart, found.skipEnd),
+    permit.position,
+    permit.result
+  );
+  // Recoveries inside kept elements stay in their own nodes.
+  const nested = keepsPrefix
+    ? attemptLog.filter(f => f.interval.startIdx >= scanStart)
+    : attemptLog;
+  if (!keepsPrefix) {
+    state.pushBinding(new FailureNode(0), scanStart);
+  }
+  state.pushBinding(new FailureNode(found.skipEnd - scanStart, recovered, nested), scanStart);
+  inputStream.pos = found.afterSync;
+  state._recoveryLog.push(recovered, ...nested);
+  if (outerTrace) {
+    outerTrace.push(syncTrace);
+    state._traceRecovered = true;
+  }
+  return true;
+};
+
+/*
+  Scan forward from `scanStart` for the join expression. At each candidate
+  position, try this fallible's own join expression first; where it fails and an
+  enclosing active join expression matches, stop. The skipped text and the
+  join expression must cover at least one code unit. Comments are stepped over
+  whole, by the ordinary space skipping of a syntactic rule.
+*/
+pexprs.Fallible.prototype.scan = function (state, scanStart) {
+  const {inputStream} = state;
+  const enclosing = state._syncStack;
+  const end = inputStream.source.length;
+  let found = null;
+  state._suspendRecovery();
+  for (let p = scanStart; p <= end; ) {
+    inputStream.pos = p;
+    const numBindings = state._bindings.length;
+    if (state.eval(this.join)) {
+      const afterSync = inputStream.pos;
+      state.truncateBindings(numBindings);
+      if (afterSync > scanStart) {
+        found = {skipEnd: p, afterSync};
+      }
+      break;
+    }
+    if (enclosing.some(stop => matchesAt(state, stop, p))) {
+      break;
+    }
+    inputStream.pos = p;
+    p = Math.max(state.skipSpacesIfInSyntacticContext(), p) + 1;
+  }
+  state._resumeRecovery();
+  return found;
+};

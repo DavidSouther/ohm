@@ -1,6 +1,7 @@
 export class PosInfo {
   constructor() {
     this.applicationMemoKeyStack = []; // active applications at this position
+    // Used as a map from memo keys to records, not an object with fixed fields.
     this.memo = {};
     this.maxExaminedLength = 0;
     this.maxRightmostFailureOffset = -1;
@@ -78,8 +79,7 @@ export class PosInfo {
 
   clearObsoleteEntries(pos, invalidatedIdx) {
     if (pos + this.maxExaminedLength <= invalidatedIdx) {
-      // Optimization: none of the rule applications that were memoized here examined the
-      // interval of the input that changed, so nothing has to be invalidated.
+      // No memoized application here examined input beyond the invalidation boundary.
       return;
     }
 

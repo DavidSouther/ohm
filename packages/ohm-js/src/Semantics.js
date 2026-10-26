@@ -128,6 +128,12 @@ class Wrapper {
     return this._children();
   }
 
+  // For a `_fail` node that records a recovery, its RecoveredFailure; undefined
+  // for an empty placeholder and for every other node.
+  get recoveredFailure() {
+    return this._node.recoveredFailure;
+  }
+
   // Returns the name of grammar rule that created this CST node.
   get ctorName() {
     return this._node.ctorName;
@@ -624,9 +630,6 @@ class Operation {
   // given Semantics instance.
   execute(semantics, nodeWrapper) {
     try {
-      // Look for a semantic action whose name matches the node's constructor name, which is either
-      // the name of a rule in the grammar, or '_terminal' (for a terminal node), or '_iter' (for an
-      // iteration node).
       const {ctorName} = nodeWrapper._node;
       let actionFn = this.actionDict[ctorName];
       if (actionFn) {
@@ -634,9 +637,13 @@ class Operation {
         return actionFn.apply(nodeWrapper, nodeWrapper._children());
       }
 
-      // The action dictionary does not contain a semantic action for this specific type of node.
-      // If this is a nonterminal node and the programmer has provided a `_nonterminal` semantic
-      // action, we invoke it:
+      // `_nonterminal` and `_default` never receive a `_fail` node, so an operation
+      // must opt in to handling recovered input.
+      if (nodeWrapper._node.isFailure()) {
+        globalActionStack.push([this, '_fail']);
+        throw errors.missingFailAction(this.name, this.typeName, nodeWrapper.recoveredFailure);
+      }
+
       if (nodeWrapper.isNonterminal()) {
         actionFn = this.actionDict._nonterminal;
         if (actionFn) {
