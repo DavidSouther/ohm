@@ -22,9 +22,9 @@ export class RecoveryContext {
   }
 }
 
-// The recoveries a failed pass made, once each, in failure position order. An
-// application that is not memoized can run more than once in a pass, and logs
-// its recoveries each time.
+// Every recovery from a failed parse, in position order. An
+// application that is not memoized can run more than once in a pass,
+// logging recoveries each time.
 function loggedFailures(log) {
   const seen = new Set();
   const found = [];
