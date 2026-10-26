@@ -47,6 +47,10 @@ export class MatchState {
     // Stop markers: synchronizers of the fallibles whose attempt is in
     // progress. A scan stops where any of them matches.
     this._syncStack = [];
+    // How many blocks (see `isBlock` in pexprs-eval.js) have an attempt in
+    // progress. A grammar's `recoveryStop` rule applies to scans inside a block
+    // nested in another block.
+    this._blockDepth = 0;
     this._recoveryLog = []; // RecoveredFailures made so far in this pass
     this._noRecoveryDepth = 0; // > 0 inside `~`, `&` and recovery scans
     // Changes whenever an evaluation depends on stop markers or skipped
