@@ -191,12 +191,17 @@ pexprs.Fallible.prototype.eval = function (state) {
   const sync = activeSynchronizer(this, state);
 
   // Isolate the attempt's failures so its own farthest failure can be recorded
-  // for the pass driver.
+  // for the pass driver, and its last complete token so a recovery scan can
+  // start after it.
   state.pushFailuresInfo();
   state.rightmostFailurePosition = -1;
+  const outerTokenEnd = state._tokenEnd;
+  state._tokenEnd = origPos;
   state._syncStack.push(sync);
   const ok = state.eval(this.fallible) && state.eval(this.join);
   state._syncStack.pop();
+  const tokenEnd = state._tokenEnd;
+  state._tokenEnd = Math.max(outerTokenEnd, tokenEnd);
   const attemptRightmost = state.rightmostFailurePosition;
   const attemptFailures = state.recordedFailures;
   state.popFailuresInfo();
@@ -207,7 +212,7 @@ pexprs.Fallible.prototype.eval = function (state) {
     state.truncateBindings(origNumBindings);
     // A recovery discards the attempt's failures; the enclosing record is
     // already restored.
-    if (this.recover(state, origPos, sync, permit, logMark)) {
+    if (this.recover(state, origPos, sync, permit, logMark, tokenEnd)) {
       return true;
     }
     state.truncateBindings(origNumBindings);
@@ -233,10 +238,20 @@ pexprs.Fallible.prototype.eval = function (state) {
   keeps the elements it matched; any other guarded expression keeps nothing
   and its slot holds an empty placeholder. The skip region starts at the next
   token and ends where the synchronizer matches; its `_fail` node takes the
-  synchronizer's slot. Returns false, with bindings and the recovery log as
-  they were, when the scan reaches the end of the input or a stop marker.
+  synchronizer's slot. The synchronizer is only looked for after `tokenEnd`,
+  the end of the last complete token the failed attempt matched, so text
+  already matched as a token, such as a string literal, never ends the region.
+  Returns false, with bindings and the recovery log as they were, when the
+  scan reaches the end of the input or a stop marker.
 */
-pexprs.Fallible.prototype.recover = function (state, origPos, sync, permit, logMark) {
+pexprs.Fallible.prototype.recover = function (
+  state,
+  origPos,
+  sync,
+  permit,
+  logMark,
+  tokenEnd
+) {
   const {inputStream} = state;
   const attemptLog = state._recoveryLog.splice(logMark);
   // Scan steps are not traced; only the matching synchronizer's entry joins the
@@ -262,7 +277,7 @@ pexprs.Fallible.prototype.recover = function (state, origPos, sync, permit, logM
     }
   }
   const scanStart = state.skipSpacesIfInSyntacticContext();
-  const found = this.scan(state, scanStart);
+  const found = this.scan(state, scanStart, Math.max(scanStart, tokenEnd));
   state.popFailuresInfo();
 
   let syncTrace;
@@ -299,19 +314,28 @@ pexprs.Fallible.prototype.recover = function (state, origPos, sync, permit, logM
 };
 
 /*
-  Scan forward from `scanStart` for the synchronizer. At each candidate
-  position, try this fallible's own synchronizer first; where it fails and an
-  enclosing active synchronizer matches, stop. The skipped text and the
-  synchronizer must cover at least one code unit. Comments are stepped over
-  whole, by the ordinary space skipping of a syntactic rule.
+  Scan forward from `scanStart` for the synchronizer. Candidate positions are
+  those whose following spaces reach `searchFrom`, so the skip region still
+  ends before any spaces. At each candidate, try this fallible's own
+  synchronizer first; where it fails and an enclosing active synchronizer
+  matches, stop. The skipped text and the synchronizer must cover at least one
+  code unit. Comments are stepped over whole, by the ordinary space skipping
+  of a syntactic rule.
 */
-pexprs.Fallible.prototype.scan = function (state, scanStart) {
+pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
   const {inputStream} = state;
   const enclosing = state._syncStack;
   const end = inputStream.source.length;
   let found = null;
+  const origTokenEnd = state._tokenEnd;
   state._noRecoveryDepth++;
   for (let p = scanStart; p <= end; ) {
+    inputStream.pos = p;
+    const next = Math.max(state.skipSpacesIfInSyntacticContext(), p);
+    if (next < searchFrom) {
+      p = next + 1;
+      continue;
+    }
     inputStream.pos = p;
     const numBindings = state._bindings.length;
     if (state.eval(this.join)) {
@@ -329,6 +353,7 @@ pexprs.Fallible.prototype.scan = function (state, scanStart) {
     p = Math.max(state.skipSpacesIfInSyntacticContext(), p) + 1;
   }
   state._noRecoveryDepth--;
+  state._tokenEnd = origTokenEnd;
   return found;
 };
 
@@ -465,9 +490,11 @@ pexprs.Not.prototype.eval = function (state) {
 
   // A predicate discards its CST, so a recovery inside `~` or `&` would have no
   // `_fail` node; no fallible recovers here.
+  const origTokenEnd = state._tokenEnd;
   state._noRecoveryDepth++;
   const ans = state.eval(this.expr);
   state._noRecoveryDepth--;
+  state._tokenEnd = origTokenEnd;
 
   state.popFailuresInfo();
   if (ans) {
@@ -482,9 +509,11 @@ pexprs.Not.prototype.eval = function (state) {
 pexprs.Lookahead.prototype.eval = function (state) {
   const {inputStream} = state;
   const origPos = inputStream.pos;
+  const origTokenEnd = state._tokenEnd;
   state._noRecoveryDepth++;
   const ans = state.eval(this.expr);
   state._noRecoveryDepth--;
+  state._tokenEnd = origTokenEnd;
   if (ans) {
     inputStream.pos = origPos;
     return true;
@@ -589,6 +618,7 @@ pexprs.Apply.prototype.reallyEval = function (state) {
       value,
       failuresAtRightmostPosition: state.cloneRecordedFailures(),
       rightmostFailureOffset: state._getRightmostFailureOffset(),
+      tokenEndOffset: state._tokenEnd < 0 ? -1 : state._tokenEnd - origPos,
     });
   }
   const succeeded = !!value;
