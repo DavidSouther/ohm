@@ -553,7 +553,7 @@ test('recoveryStop closes a nested block that lost its closer', t => {
   );
 });
 
-test('recoveryStop is never evaluated without recovery and is ignored at the outermost block', t => {
+test('recoveryStop is inert without recovery and ignored at the outermost block', t => {
   const g = ohm.grammars(UNITS).Units;
   const plain = ohm.grammar(UNITS.replace('recoveryStop = unit', ''));
   const source = 'unit a { x y z; } unit b { w; }';
