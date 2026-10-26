@@ -9,7 +9,8 @@ export class Matcher {
     this._memoTable = [];
     this._input = '';
     this._isMemoTableStale = false;
-    // 'plain' or 'recover': the kind of match that filled the memo table.
+    // 'plain' or 'recover'. Plain matches memoize without recording recovery
+    // attempts, so their entries are unusable for recovery.
     this._memoMode = undefined;
   }
 

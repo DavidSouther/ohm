@@ -640,7 +640,8 @@ class Operation {
         return actionFn.apply(nodeWrapper, nodeWrapper._children());
       }
 
-      // `_nonterminal` and `_default` never receive a `_fail` node.
+      // `_nonterminal` and `_default` never receive a `_fail` node, so an operation
+      // must opt in to handling recovered input.
       if (nodeWrapper._node.isFailure()) {
         globalActionStack.push([this, '_fail']);
         throw errors.missingFailAction(this.name, this.typeName, nodeWrapper.recoveredFailure);

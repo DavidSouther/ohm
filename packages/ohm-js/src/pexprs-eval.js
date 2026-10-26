@@ -129,8 +129,7 @@ pexprs.Seq.prototype.eval = function (state) {
 /*
   Without recovery, a fallible is the sequence `B C`. During a recovering
   match (`state.recovery` is set), it records each failed attempt for the pass
-  driver, and recovers only at a point a failed pass permitted. See
-  Recovery.js for the driver and design.md's invariants for the rules.
+  driver, and recovers only at a point a failed pass permitted.
 */
 
 const fallibleIds = new WeakMap();
@@ -191,7 +190,8 @@ pexprs.Fallible.prototype.eval = function (state) {
   const logMark = state._recoveryLog.length;
   const sync = activeSynchronizer(this, state);
 
-  // The attempt `B C`, with its failures isolated (invariant 2).
+  // Isolate the attempt's failures so its own farthest failure can be recorded
+  // for the pass driver.
   state.pushFailuresInfo();
   state.rightmostFailurePosition = -1;
   state._syncStack.push(sync);
@@ -205,6 +205,8 @@ pexprs.Fallible.prototype.eval = function (state) {
   if (permit) {
     state._recoveryTaint++;
     state.truncateBindings(origNumBindings);
+    // A recovery discards the attempt's failures; the enclosing record is
+    // already restored.
     if (this.recover(state, origPos, sync, permit, logMark)) {
       return true;
     }
@@ -218,8 +220,9 @@ pexprs.Fallible.prototype.eval = function (state) {
       depth: state._applicationStack.length,
     });
   }
-  // A clean match, or a failure that did not recover: merge the attempt's
-  // failures back, position and expected set both.
+  // Merge the attempt's failures back, position and expected set both, so this
+  // reports what `B C` would; merging only the position leaves the message
+  // without expected text.
   state.rightmostFailurePosition = Math.max(state.rightmostFailurePosition, attemptRightmost);
   state.recordedFailures = attemptFailures;
   return ok;
@@ -236,6 +239,8 @@ pexprs.Fallible.prototype.eval = function (state) {
 pexprs.Fallible.prototype.recover = function (state, origPos, sync, permit, logMark) {
   const {inputStream} = state;
   const attemptLog = state._recoveryLog.splice(logMark);
+  // Scan steps are not traced; only the matching synchronizer's entry joins the
+  // Fallible's children.
   const outerTrace = state.trace;
   if (outerTrace) {
     state.trace = [];
@@ -458,7 +463,8 @@ pexprs.Not.prototype.eval = function (state) {
   const origPos = inputStream.pos;
   state.pushFailuresInfo();
 
-  // No fallible recovers inside `~` or `&`.
+  // A predicate discards its CST, so a recovery inside `~` or `&` would have no
+  // `_fail` node; no fallible recovers here.
   state._noRecoveryDepth++;
   const ans = state.eval(this.expr);
   state._noRecoveryDepth--;
@@ -552,8 +558,8 @@ pexprs.Apply.prototype.reallyEval = function (state) {
   const origInputStreamExaminedLength = inputStream.examinedLength;
   inputStream.examinedLength = 0;
 
-  // A result that depends on a recovery scan (or on a permitted recovery that
-  // was suppressed) depends on the enclosing stop markers: never memoize it.
+  // Never memoize a result that depends on enclosing stop markers or that
+  // skipped recording a fallible's attempt; see `_recoveryTaint`.
   const origRecoveryTaint = state._recoveryTaint;
 
   let value = this.evalOnce(body, state);
@@ -575,7 +581,8 @@ pexprs.Apply.prototype.reallyEval = function (state) {
     (!currentLR || !currentLR.isInvolved(memoKey)) &&
     state._recoveryTaint === origRecoveryTaint
   ) {
-    // This application is not involved in left recursion, so it's ok to memoize it.
+    // This application is not involved in left recursion and is not recovery-tainted,
+    // so it's ok to memoize it.
     memoRec = origPosInfo.memoize(memoKey, {
       matchLength: inputStream.pos - origPos,
       examinedLength: inputStream.examinedLength - origPos,

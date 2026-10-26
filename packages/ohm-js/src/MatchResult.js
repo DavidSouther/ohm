@@ -25,7 +25,9 @@ export class MatchResult {
     this._rightmostFailurePosition = rightmostFailurePosition;
     this._rightmostFailures = optRecordedFailures;
 
-    // Set by the recovery pass driver (Recovery.js).
+    // `_recovery`: the RecoveryContext when this result came from a recovering
+    // match. `_recoveredFailures`: preset when such a match fails; otherwise
+    // computed on demand.
     this._recovery = undefined;
     this._recoveredFailures = undefined;
 
@@ -65,6 +67,8 @@ export class MatchResult {
       const matchResultWithFailures = this.matcher._match(this.startExpr, {
         tracing: false,
         positionToRecordFailures: this.getRightmostFailurePosition(),
+        // Re-match under the same recovery permissions, or the expected text
+        // will not match this result's failure position.
         recovery: this._recovery,
       });
       this._rightmostFailures = matchResultWithFailures.getRightmostFailures();
@@ -72,9 +76,8 @@ export class MatchResult {
     return this._rightmostFailures;
   }
 
-  // Succeeded: every recovery, in failure position order, read from the CST.
-  // Failed with recovery: every recovery the last pass made, then the final
-  // failure. Empty otherwise.
+  // A successful result reads its list from the CST's `_fail` nodes; a failed
+  // recovering match presets it.
   getRecoveredFailures() {
     if (!this._recoveredFailures) {
       this._recoveredFailures =

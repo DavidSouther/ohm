@@ -1,6 +1,5 @@
 /**
- * Project acceptance test for the Fallible (`B ! C`) operator in Ohm v17.
- * Home: ohm/packages/ohm-js/test/test-fallible-acceptance.js
+ * Acceptance test for `B ! C` recovery.
  *
  * Story: a grammar author marks `Part` as a recovery point. Without asking
  * for recovery, the grammar matches exactly as if `!` were a plain sequence.
@@ -9,10 +8,10 @@
  * that mistake alone, and the CST holds a `_fail` node for each broken part.
  * Recovery never changes a valid parse, never preempts an alternative that
  * matches, never runs past an enclosing stop marker, and always consumes
- * input. Goes green in F1.
+ * input.
  */
 
-/* eslint-disable max-len, ava/assertion-arguments -- staged project acceptance test */
+/* eslint-disable max-len, ava/assertion-arguments -- expected messages and trees are long literals; t.deepEqual messages carry the input */
 import test from 'ava';
 import * as ohm from '../index.mjs';
 
@@ -36,7 +35,7 @@ const INPUTS = [VALID, BROKEN, UNCLOSED, FIRST_TOKEN, MISSING];
 
 const FIRST_TOKEN_MESSAGE = 'Line 1, col 10: expected "}" or a letter';
 
-// Hazard (a): an iteration followed by a closer, bounded by a stop marker.
+// An iteration followed by a closer, bounded by a stop marker.
 const BLOCKS = String.raw`
 Blocks {
   Prog = Sub*
@@ -51,7 +50,7 @@ const BLOCKS_PLAIN = BLOCKS.replace('Stmt* ! &"}"', 'Stmt* &"}"').replace(
   'StmtBody ";"'
 );
 
-// Hazard (b): a Fallible in the first alternative of a choice.
+// A Fallible in the first alternative of a choice.
 const CHOICE = String.raw`
 Choice {
   Prog = Stmt*
@@ -207,14 +206,14 @@ test('with recover, a part broken at its first character recovers', t => {
     succeeded: true,
     recovered: [{startIdx: 9, endIdx: 14, position: 9, message: FIRST_TOKEN_MESSAGE}],
   });
-  // A bare `;` is a missing part: nothing is skipped and the join is consumed.
+  // A bare `;` is a missing part: nothing is skipped and the synchronizer is consumed.
   t.deepEqual(run(FALLIBLE, MISSING, RECOVER), {
     succeeded: true,
     recovered: [{startIdx: 9, endIdx: 9, position: 9, message: FIRST_TOKEN_MESSAGE}],
   });
 });
 
-test('hazard (a): recovery stops at an enclosing stop marker', t => {
+test('recovery stops at an enclosing stop marker', t => {
   const valid = 'sub { let x; } sub { do y; }';
   t.deepEqual(run(BLOCKS, valid, RECOVER), {succeeded: true, recovered: []});
   t.deepEqual(cstShape(BLOCKS, valid, RECOVER), cstShape(BLOCKS_PLAIN, valid));
@@ -252,7 +251,7 @@ test('hazard (a): recovery stops at an enclosing stop marker', t => {
   t.deepEqual(subs[1], cstShape(BLOCKS_PLAIN, 'sub { do z; }').children[0][0]);
 
   // A recovery inside the kept statements stays in its own node, and the list
-  // is in failure position order, so the first entry stays today's error.
+  // is in failure position order, so the first entry equals the plain match's error.
   t.deepEqual(run(BLOCKS, 'sub { let ; lt y } sub { do z; }', RECOVER).recovered, [
     {startIdx: 6, endIdx: 9, position: 10, message: 'Line 1, col 11: expected a letter'},
     {
@@ -265,7 +264,7 @@ test('hazard (a): recovery stops at an enclosing stop marker', t => {
 });
 
 // Recovery keeps valid prior work: a guarded `*` keeps the elements it
-// matched, and the skip region becomes its last element.
+// matched, and the skip region fills the synchronizer's slot.
 const EXACT = String.raw`
 Exact {
   Block = "{" Stmt* ! &"}" "}"
@@ -285,9 +284,7 @@ Nested {
 
 const PLUS = EXACT.replace('Stmt* !', 'Stmt+ !');
 
-// Renders a block the way a grammar author's semantic actions see it. A
-// fallible has two slots: the guarded slot holds the kept work, and the
-// synchronizer slot holds the synchronizer or, after recovery, the skip region.
+// Renders a block the way a grammar author's semantic actions see it.
 function blockView(source, input) {
   const g = ohm.grammar(source);
   const r = g.match(input, undefined, RECOVER);
@@ -324,7 +321,7 @@ function blockView(source, input) {
 
 test('recovery keeps valid prior work', t => {
   const cases = [
-    // The required example: aaa and bbb kept, xxx in the stop marker's slot, `}` matched normally.
+    // aaa and bbb are kept, xxx fills the stop marker's slot, and `}` matches normally.
     [
       EXACT,
       '{\naaa;\nbbb;\nxxx\n}',
@@ -414,7 +411,7 @@ test('a guarded rule application or sequence keeps nothing', t => {
   ]);
 });
 
-test('hazard (b): recovery never preempts an alternative that matches', t => {
+test('recovery never preempts an alternative that matches', t => {
   const valid = 'do x; let y;';
   t.deepEqual(run(CHOICE, valid, RECOVER), {succeeded: true, recovered: []});
   t.deepEqual(cstShape(CHOICE, valid, RECOVER), cstShape(CHOICE_PLAIN, valid));
@@ -435,8 +432,8 @@ test('hazard (b): recovery never preempts an alternative that matches', t => {
   );
 });
 
-test('hazard (c): every recovery consumes input, so recovery terminates', t => {
-  // A zero-width join cannot recover a missing part; the match fails as plain.
+test('every recovery consumes input, so recovery terminates', t => {
+  // A zero-width synchronizer cannot recover a missing part; the match fails as plain.
   t.deepEqual(run(LOOKAHEAD, MISSING, RECOVER), run(PLAIN, MISSING));
 
   // Thirty stray separators give thirty recoveries, each consuming its `;`.
@@ -447,7 +444,7 @@ test('hazard (c): every recovery consumes input, so recovery terminates', t => {
   t.true(recovered.every((r, i) => r.position === 6 + 2 * i));
 });
 
-test('`B ! &C` stops before the join and recovers the same mistakes', t => {
+test('`B ! &C` stops before the synchronizer and recovers the same mistakes', t => {
   for (const input of INPUTS) {
     t.deepEqual(run(LOOKAHEAD, input), run(PLAIN, input), input);
   }

@@ -148,6 +148,8 @@ export class Builder {
     // For v18 compatibility, where we don't want a binding for lookahead.
     if (this.options.eliminateLookaheads) {
       const not = new pexprs.Not(new pexprs.Not(expr));
+      // Non-enumerable so recipes, JSON.stringify and structural comparisons
+      // of rule bodies do not see it; only `bang` reads it.
       Object.defineProperty(not, 'eliminatedLookahead', {value: expr});
       return not;
     }

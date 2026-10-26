@@ -41,13 +41,19 @@ export class MatchState {
     this._rightmostFailurePositionStack = [];
     this._recordedFailuresStack = [];
 
-    // Recovery at `B ! C` (see Recovery.js). `recovery` is the RecoveryContext
-    // shared by the passes of a recovering match, or undefined.
+    // Recovery at `B ! C`. `recovery` is the RecoveryContext shared by the
+    // passes of a recovering match, or undefined.
     this.recovery = optRecovery;
-    this._syncStack = []; // synchronizers of the enclosing active fallibles
+    // Stop markers: synchronizers of the fallibles whose attempt is in
+    // progress. A scan stops where any of them matches.
+    this._syncStack = [];
     this._recoveryLog = []; // RecoveredFailures made so far in this pass
     this._noRecoveryDepth = 0; // > 0 inside `~`, `&` and recovery scans
-    this._recoveryTaint = 0; // bumped by every recovery scan
+    // Changes whenever an evaluation depends on stop markers or skipped
+    // recording an attempt; an application whose evaluation changed it is not
+    // memoized.
+    this._recoveryTaint = 0;
+    // Marks the next trace entry (the Fallible that just recovered) as recovered.
     this._traceRecovered = false;
 
     if (optPositionToRecordFailures !== undefined) {

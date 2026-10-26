@@ -25,7 +25,8 @@ export function byPosition(a, b) {
   return a.position - b.position;
 }
 
-// Every recovery read from a CST, in failure position order.
+// A `_fail` node also carries the recoveries made inside the attempt it replaced,
+// whose nodes were discarded.
 export function collectRecoveredFailures(cst) {
   const found = [];
   const walk = node => {

@@ -131,7 +131,11 @@ export class CaseInsensitiveTerminal extends PExpr {}
  * Options for Grammar#match, Grammar#trace, Matcher#match and Matcher#trace.
  */
 export interface MatchOptions {
-  /** Recover at `B ! C` recovery points. Default false; the only switch. */
+  /**
+   * When true, a match that fails is retried with recovery at `B ! C`
+   * recovery points, and recovered input appears as `_fail` nodes. Default
+   * false. Without it, `B ! C` matches exactly as the sequence `B C`.
+   */
   recover?: boolean;
 }
 
@@ -146,13 +150,24 @@ export interface Failure {
  * A failure that a recovery point skipped over.
  */
 export interface RecoveredFailure {
-  /** Skip region; empty for the final failure of a parse recovery cannot finish. */
+  /**
+   * The input skipped by this recovery. For the last entry of a failed
+   * recovering match, this is an empty interval at the failure position.
+   */
   readonly interval: Interval;
-  /** The permitting pass's farthest failure. */
+  /**
+   * Input position of the error: the rightmost failure position that a match
+   * without `recover` would report for this mistake.
+   */
   readonly position: number;
-  /** That pass's message, today's format. */
+  /**
+   * The error message that a match without `recover` gives for this mistake,
+   * in the format of `MatchResult#shortMessage`.
+   */
   readonly shortMessage: string;
+  /** As on a failed MatchResult, for this mistake. */
   getExpectedText(): string;
+  /** As on a failed MatchResult, for this mistake. */
   getRightmostFailures(): Failure[];
 }
 
@@ -208,9 +223,10 @@ export interface MatchResult {
   failed(): this is FailedMatchResult;
 
   /**
-   * Succeeded: every recovery, in failure position order, read from the CST;
-   * [] when none. Failed with `recover`: every recovery the last pass made,
-   * then the final failure. `shortMessage` stays today's.
+   * Every error that recovery skipped over, in input order; empty without
+   * `recover`. On a failed match with `recover`, the list holds the errors
+   * recovered before the match gave up, followed by the final failure, and
+   * `shortMessage` is the same as for a match without `recover`.
    */
   getRecoveredFailures(): RecoveredFailure[];
 }
@@ -316,11 +332,12 @@ export interface BaseActionDict<T> {
   _nonterminal?: (this: NonterminalNode, ...children: Node[]) => T;
   _terminal?: (this: TerminalNode) => T;
   /**
-   * Arity 0, like _terminal. A _fail node has ctorName '_fail', its
-   * sourceString is the skip region, and it may carry a recoveredFailure.
-   * `B ! C` has two slots (arity(B) = arity(C) = 1). Clean: [B, C].
-   * Recovered: [kept work or an empty placeholder _fail with no
-   * recoveredFailure, the skip region's _fail].
+   * Called for `_fail` nodes, which have no children. `B ! C` always gives
+   * its rule two children. After a clean match, they are B and C. After
+   * recovery, the first is the kept iteration (for a guarded `*` or `+`) or
+   * an empty `_fail` node, and the second is a `_fail` node whose
+   * `sourceString` is the skipped input and whose `recoveredFailure`
+   * describes the error.
    */
   _fail?: (this: Node) => T;
 
@@ -368,7 +385,7 @@ export type Action<T> = (this: Node, ...args: Node[]) => T;
  * A node in the parse tree, passed to Action functions.
  */
 export interface Node {
-  /** Set on a `_fail` node that records a recovery; absent on a placeholder. */
+  /** The error that a `_fail` node recovered from; absent on the empty `_fail` node in a guarded slot. */
   recoveredFailure?: RecoveredFailure;
 
   /**

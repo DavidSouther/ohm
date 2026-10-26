@@ -1,8 +1,8 @@
 /**
- * Invariants of the Fallible (`B ! C`) operator, from design.md
- * ("Invariants the evaluators must respect"), plus the row based iteration
- * mode used by `ohm-js/v18`. The acceptance test in
- * test-fallible-acceptance.js covers the user facing behavior.
+ * Evaluator invariants of `B ! C`: bindings, failure scope and messages,
+ * memoization, the pass driver, incremental matching and static checks, plus
+ * `ohm-js/v18` row-based iteration. test-fallible-acceptance.js covers
+ * user-facing behavior.
  */
 
 import test from 'ava';
@@ -33,7 +33,7 @@ function messages(result) {
 }
 
 // --------------------------------------------------------------------
-// 1. Bindings: two slots, recovered or not
+// Bindings: two slots, recovered or not
 // --------------------------------------------------------------------
 
 test('a fallible always contributes two bindings', t => {
@@ -72,7 +72,7 @@ test('a guarded `?` keeps nothing', t => {
 });
 
 // --------------------------------------------------------------------
-// 2 and 3. Failure scope and messages
+// Failure scope and messages
 // --------------------------------------------------------------------
 
 test('a fallible that does not recover reports what `B C` reports', t => {
@@ -96,7 +96,7 @@ test('each recovered failure carries the message of the pass that permitted it',
   const failures = r.getRecoveredFailures();
   t.is(failures.length, 2);
 
-  // The first entry is today's error exactly.
+  // The first entry equals the plain match's error.
   const first = plain.match('{ a b; c d; e; }');
   t.is(failures[0].shortMessage, first.shortMessage);
   t.is(failures[0].position, first.getRightmostFailurePosition());
@@ -106,7 +106,7 @@ test('each recovered failure carries the message of the pass that permitted it',
     first.getRightmostFailures().map(f => f.toString())
   );
 
-  // The second is today's error once the first mistake is fixed.
+  // The second equals the plain match's error once the first mistake is fixed.
   const second = plain.match('{ a; c d; e; }');
   t.is(failures[1].shortMessage, second.shortMessage.replace('col 8', 'col 10'));
   t.is(failures[1].interval.contents, 'c d');
@@ -138,7 +138,7 @@ test('a parse recovery cannot finish lists its recoveries, then the final failur
 });
 
 // --------------------------------------------------------------------
-// 4. Memoization
+// Memoization
 // --------------------------------------------------------------------
 
 test('a fallible inside `&` or `~` never recovers', t => {
@@ -185,7 +185,7 @@ test('recovery is deterministic across calls on fresh matchers', t => {
 });
 
 // --------------------------------------------------------------------
-// 5. Pass driver: every error, no cap
+// Pass driver: every error, no cap
 // --------------------------------------------------------------------
 
 const HDL = String.raw`
@@ -228,7 +228,7 @@ for (const count of [100, 300]) {
 }
 
 // --------------------------------------------------------------------
-// 6. Incremental matching
+// Incremental matching
 // --------------------------------------------------------------------
 
 test('Matcher#match and Matcher#trace take the recover option', t => {
@@ -262,7 +262,7 @@ test('a matcher with a stale or plain memo table refuses to recover', t => {
 });
 
 // --------------------------------------------------------------------
-// 7. Static checks
+// Static checks
 // --------------------------------------------------------------------
 
 test('both operands must have arity 1', t => {

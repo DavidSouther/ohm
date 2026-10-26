@@ -1,7 +1,6 @@
 /* eslint-disable no-console */
 /*
-  Measurements for the Fallible (`B ! C`) operator. These are recorded for
-  comparison when tuning starts; they are not gates.
+  Timings for `B ! C` recovery, for comparison only; not a gate.
 
     node test/_bench-fallible.js [path/to/ohm-js-17.5.0/dist/ohm.cjs]
 
@@ -41,7 +40,7 @@ function chip(numParts, numBroken) {
   return `CHIP Big {\n PARTS:\n${parts.join('\n')}\n}\n`;
 }
 
-// Small inputs from the acceptance test, each with recovered errors.
+// Small inputs, each with recovered errors.
 const CORPUS = {
   'chip, two broken parts': [
     `Chips {

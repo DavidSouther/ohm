@@ -22,7 +22,9 @@ export class RecoveryContext {
   }
 }
 
-// The recoveries a failed pass made, once each, in failure position order.
+// The recoveries a failed pass made, once each, in failure position order. An
+// application that is not memoized can run more than once in a pass, and logs
+// its recoveries each time.
 function loggedFailures(log) {
   const seen = new Set();
   const found = [];
@@ -49,10 +51,10 @@ function runPass(matcher, startExpr, ctx, tracing) {
 }
 
 /*
-  The pass driver. Pass 1 is today's parse. Each failed pass permits the
-  innermost unpermitted attempt that reached its farthest failure, with that
-  pass's message, or ends the match. There is no pass cap: each pass adds a
-  distinct permission, so the match terminates.
+  The pass driver. Pass 1 has no permissions, so it is a plain parse. Each
+  failed pass permits the innermost unpermitted attempt that reached its
+  farthest failure, with that pass's message, or ends the match. There is no
+  pass cap: each pass adds a distinct permission, so the match terminates.
 
   All passes share the matcher's memo table. A new permission at `s` clears
   only the memo entries whose examined input reaches `s`, as
@@ -65,6 +67,9 @@ export function matchRecovering(matcher, startExpr, opts) {
   if (matcher._memoMode === 'plain') {
     throw errors.matcherCannotRecover('its memo table comes from a match without recovery');
   }
+  // A fresh RecoveryContext has no attempts for entries left by an earlier
+  // match, so start empty. A plain matcher is refused anyway, to keep
+  // incremental matching from mixing the two kinds of match.
   matcher._resetMemoTable();
   matcher._memoMode = 'recover';
 

@@ -707,10 +707,11 @@ Assembler.MEMO_COL_SIZE_BYTES = 4 * 256;
 
 Assembler.STACK_FRAME_SIZE_BYTES = 8;
 
-// Recovery points (`B ! C`, ohm-js 17.5 and later) are not supported by the
-// Wasm compiler yet. Returns the first Fallible pexpr in `exp`, if any.
+// The Wasm compiler has no recovery support, so grammars with `B ! C` are
+// rejected up front.
 function findFallible(exp) {
   if (!exp || typeof exp !== 'object') return undefined;
+  // Fallible is absent in ohm-js builds without recovery points.
   if (ohm.pexprs.Fallible && exp instanceof ohm.pexprs.Fallible) return exp;
   const children = [
     ...(exp.terms || []),
