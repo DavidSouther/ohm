@@ -476,7 +476,7 @@ test('a synchronizer inside a matched string literal never ends a skip region', 
   t.deepEqual(skipped(r), ['f("a;b" x)', 'h(']);
 });
 
-test('an unterminated string still recovers at its own line', t => {
+test('an unterminated string recovers at its own line', t => {
   const g = ohm.grammar(CALLS);
   const r = g.match('{\nf("abc);\ng(y);\nh(;\n}', undefined, RECOVER);
   t.true(r.succeeded());
@@ -522,7 +522,7 @@ test('two blocks missing their closers report one entry each', t => {
   t.is(r.getRecoveredFailures().length, 2);
 });
 
-test('a block marked with a stop marker still escalates instead of inserting', t => {
+test('a block marked with a stop marker escalates instead of inserting', t => {
   const g = ohm.grammar(STMTS);
   const r = g.match('{ a; b;', undefined, RECOVER);
   t.true(r.failed());
