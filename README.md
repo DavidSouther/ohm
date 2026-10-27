@@ -21,19 +21,6 @@ Some awesome things people have built using Ohm:
 - A [browser-based tool](https://www.arthurcarabott.com/konnakkol/) that turns written _Konnakkol_ (a South Indian vocal percussion art) into audio.
 - [Wildcard](https://www.geoffreylitt.com/wildcard/), a browser extension that empowers anyone to modify websites to meet their own specific needs, uses Ohm for its spreadsheet formulas.
 
-## Sponsors
-
-Since 2017, Ohm has been maintained by [@pdubroy](https://github.com/pdubroy) on an unpaid basis. Please consider [becoming a sponsor](http://github.com/sponsors/pdubroy/)!
-
-### Diamond 💎
-
-<table>
-  <tr>
-    <td><a href="https://shopify.com"><img alt="Shopify" src="./doc/images/shopify-logo.png" height="48"></a></td>
-    <td><a href="https://projectsubstrate.org"><img alt="Project Substrate" src="./doc/images/substrate-logo.png" height="128"></a></td>
-  </tr>
-</table>
-
 ## Getting Started
 
 The easiest way to get started with Ohm is to use the [interactive editor](https://ohmjs.org/editor/). Alternatively, you can play with one of the following examples on JSFiddle:
@@ -48,7 +35,17 @@ The easiest way to get started with Ohm is to use the [interactive editor](https
 - [Examples](https://github.com/ohmjs/ohm/tree/main/examples/)
 - [Documentation](doc/README.md)
 - For community support and discussion, join us on [Discord](https://discord.gg/KwxY5gegRQ), [GitHub Discussions](https://github.com/ohmjs/ohm/discussions), or the [ohm-discuss mailing list](https://groups.google.com/u/0/g/ohm-discuss).
-- For updates, follow [@\_ohmjs on Twitter](https://twitter.com/_ohmjs).
+- For updates, follow on [Bluesky](hhttps://bsky.app/profile/ohmjs.org) or [Mastodon](https://hachyderm.io/@ohmjs).
+
+### Docker
+
+You can use the Ohm CLI without a local Node.js installation via the Docker image:
+
+```sh
+docker run --rm -v $(pwd):/local ohmjs/ohm:latest compile my-grammar.ohm
+```
+
+For full usage instructions, including how to build the image locally and set up a development container, see [doc/docker.md](doc/docker.md).
 
 ### Installation
 

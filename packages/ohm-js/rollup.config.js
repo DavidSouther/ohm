@@ -17,9 +17,4 @@ export default [
     ],
     plugins: [resolve()],
   },
-  {
-    input: 'src/v18.js',
-    output: [{file: 'dist/ohm-v18.cjs', format: 'cjs', exports: 'named'}],
-    plugins: [resolve()],
-  },
 ];

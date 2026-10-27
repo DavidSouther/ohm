@@ -22,6 +22,7 @@ test('Extras exports (ESM)', async () => {
   assert.equal(typeof extras.VisitorFamily, 'function');
   assert.equal(typeof extras.toAST, 'function');
   assert.equal(typeof extras.extractExamples, 'function');
+  assert.equal(typeof extras.recoverSourceOrder, 'function');
   assert.ok(Object.keys(extras).length === 7);
 
   const exports = await import('ohm-js/extras');

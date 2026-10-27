@@ -440,39 +440,40 @@ test('a fallible that recovered is marked in the trace', t => {
 });
 
 // --------------------------------------------------------------------
-// Row based iteration (ohm-js/v18 compatibility mode)
+// v18 CST view (ohm-js/v18)
 // --------------------------------------------------------------------
 
-test('row based iteration: the kept prefix is a list and the slots are unchanged', t => {
+test('v18 CST view: the kept prefix is a list and the slots are unchanged', t => {
   const g = v18.grammar(STMTS);
   // `&"}"` keeps its binding as a synchronizer, so the slots match column mode.
-  t.is(g.rules.Block.body.getArity(), 4);
+  t.is(g.rules.Block.body.getArity(true), 4);
+
+  const rootKinds = match => match.getCstRoot().children.map(c => c.ctorName);
 
   const clean = g.match('{ a; b; }', undefined, RECOVER);
-  t.deepEqual(kinds(clean._cst), ['_terminal', '_list', '_terminal', '_terminal']);
+  t.deepEqual(rootKinds(clean), ['_terminal', '_list', '_terminal', '_terminal']);
 
   const r = g.match('{ a; b; c }', undefined, RECOVER);
   t.true(r.succeeded());
-  t.deepEqual(kinds(r._cst), ['_terminal', '_list', '_fail', '_terminal']);
-  t.deepEqual(kinds(r._cst.children[1]), ['Stmt', 'Stmt']);
+  const root = r.getCstRoot();
+  t.deepEqual(rootKinds(r), ['_terminal', '_list', '_fail', '_terminal']);
+  t.deepEqual(
+    root.children[1].children.map(c => c.ctorName),
+    ['Stmt', 'Stmt']
+  );
   t.deepEqual(messages(r), ['Line 1, col 11: expected ";"']);
 
   const plus = v18.grammar(STMTS.replace('Stmt* !', 'Stmt+ !'));
   const nothingKept = plus.match('{ c }', undefined, RECOVER);
-  t.deepEqual(kinds(nothingKept._cst), ['_terminal', '_list', '_fail', '_terminal']);
-  t.is(nothingKept._cst.children[1].children.length, 0);
+  t.deepEqual(rootKinds(nothingKept), ['_terminal', '_list', '_fail', '_terminal']);
+  t.is(nothingKept.getCstRoot().children[1].children.length, 0);
 
   // The v18 CST view shows the `_fail` nodes.
-  const root = r.getCstRoot();
-  t.deepEqual(
-    root.children.map(c => c.ctorName),
-    ['_terminal', '_list', '_fail', '_terminal']
-  );
   t.is(root.children[2].sourceString, 'c');
   t.is(root.children[2].recoveredFailure.shortMessage, 'Line 1, col 11: expected ";"');
 });
 
-test('row based iteration: an iterated fallible gives one row per element', t => {
+test('v18 CST view: an iterated fallible gives one row per element', t => {
   const g = v18.grammar(String.raw`
     G {
       Start = (Body ! ";")*
@@ -480,12 +481,15 @@ test('row based iteration: an iterated fallible gives one row per element', t =>
     }`);
   const r = g.match('a;1;b;', undefined, RECOVER);
   t.true(r.succeeded());
-  const rows = r._cst.children[0].children;
+  const rows = r.getCstRoot().children[0].children;
   t.deepEqual(
     rows.map(row => row.ctorName),
     ['_seq', '_seq', '_seq']
   );
-  t.deepEqual(kinds(rows[1]), ['_fail', '_fail']);
+  t.deepEqual(
+    rows[1].children.map(c => c.ctorName),
+    ['_fail', '_fail']
+  );
   const plain = ohm.grammar('G { Start = (Body ";")*\n Body = letter }');
   t.deepEqual(messages(r), [plain.match('a;1;b;').shortMessage]);
 });

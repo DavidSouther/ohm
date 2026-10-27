@@ -1,0 +1,41 @@
+{
+  "name": "ohm-js",
+  "version": "18.0.0-beta.10",
+  "description": "Ohm runtime — CST nodes, Grammar, and MatchResult",
+  "keywords": ["parser", "parsing", "ohm", "ohm-js", "runtime"],
+  "homepage": "https://github.com/ohmjs/ohm#readme",
+  "bugs": {
+    "url": "https://github.com/ohmjs/ohm/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ohmjs/ohm.git"
+  },
+  "license": "MIT",
+  "author": "Patrick Dubroy <pdubroy@gmail.com>",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./unstableDebug": {
+      "types": "./dist/src/unstableDebug.d.ts",
+      "default": "./dist/src/unstableDebug.js"
+    },
+    "./cstView": {
+      "types": "./dist/src/cstView.d.ts",
+      "default": "./dist/src/cstView.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "api-report": "api-extractor run",
+    "build": "tsdown",
+    "publish:next": "pnpm publish --tag beta --no-git-checks && npm dist-tag add $npm_package_name@$npm_package_version next"
+  }
+}

@@ -1,6 +1,7 @@
 {
-  "name": "ohm-js",
-  "version": "17.5.0",
+  "name": "ohm-js-legacy",
+  "private": true,
+  "version": "17.2.1",
   "description": "An object-oriented language for parsing and pattern matching",
   "repository": "https://github.com/ohmjs/ohm",
   "keywords": [
@@ -38,9 +39,13 @@
       "./dist/ohm-extras.cjs"
     ],
     "./v18": {
-      "import": "./src/v18.js",
-      "require": "./dist/ohm-v18.cjs"
-    }
+      "import": "./src/v18.js"
+    },
+    "./src/Grammar.js": "./src/Grammar.js",
+    "./src/GrammarDecl.js": "./src/GrammarDecl.js",
+    "./src/Interval.js": "./src/Interval.js",
+    "./src/errors.js": "./src/errors.js",
+    "./src/pexprs-build.js": "./src/pexprs-build.js"
   },
   "files": ["src", "dist", "extras", "index.mjs", "index.d.ts", "!**/*.old"],
   "types": "index.d.ts",
@@ -97,7 +102,6 @@
     "James Meng <35415298+jamesmengo@users.noreply.github.com>",
     "Julien Gonzalez <hello@spinjs.com>",
     "Justin Chase <justin.m.chase@gmail.com>",
-    "Karl Weber <me@kow.fm>",
     "Leslie Ying <acetophore@users.noreply.github.com>",
     "Luca Guzzon <luca.guzzon@gmail.com>",
     "Mike Niebling <(none)>",

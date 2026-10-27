@@ -1,38 +1,5 @@
 # Changelog
 
-## v17.5.0 - Feb 14, 2026
-
-### New features:
-
-- [4401f84a] feat: New forwards-compatible `ohm-js/v18` submodule
-
-### Fixes
-
-- [a19e69da] fix: `types` ordering in package.json exports
-
-## v17.4.0 - Feb 12, 2026
-
-### New features:
-
-- [77ad9240] feat: Add `recoverSourceOrder` to extras
-
-### Fixes
-
-- [c3042301] fix: bug with errors from partial failures in described rules
-- [4d602134] fix(extras types): incorrect type for `getLineAndColumn`
-
-## v17.3.0 - Dec 20, 2025
-
-### New features:
-
-- [d957ac78] typings: #494 - Typescript MatchResult object incomplete
-- [e1b82259] typings: add FailedMatchResult / SucceededMatchResult
-- [891b6d84] feat: Put Interval source string in a non-enumerable property
-
-### Fixes
-
-- [4df25915] fix #539: `letter` does not match double-struck capital A
-
 ## v17.2.1 - July 28, 2025
 
 ### New features:

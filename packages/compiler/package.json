@@ -1,0 +1,51 @@
+{
+  "name": "@ohm-js/compiler",
+  "version": "18.0.0-beta.10",
+  "description": "Compile Ohm.js grammars to WebAssembly",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./compat": {
+      "types": "./dist/src/compat.d.ts",
+      "default": "./dist/src/compat.js"
+    }
+  },
+  "bin": {
+    "ohm2wasm": "dist/src/cli.js"
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "api-report": "api-extractor run",
+    "build": "make",
+    "build-and-test": "make && ava test",
+    "publish:next": "pnpm publish --tag beta --no-git-checks && npm dist-tag add $npm_package_name@$npm_package_version next",
+    "test": "ava test"
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "Patrick Dubroy <pdubroy@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@ohm-js/to-ast-compat": "workspace:^",
+    "@shopify/liquid-html-parser": "github:pdubroy/theme-tools#path:/packages/liquid-html-parser",
+    "@thi.ng/leb128": "^3.1.48",
+    "@wasmgroundup/emit": "^2.1.0",
+    "assemblyscript": "^0.27.36",
+    "ava": "^6.2.0",
+    "fast-check": "^4.2.0",
+    "fast-glob": "^3.3.3",
+    "mitata": "^1.0.34",
+    "ohm-js-legacy": "workspace:^",
+    "tinybench": "^6.0.0",
+    "wabt": "1.0.37-nightly.20250428"
+  },
+  "peerDependencies": {
+    "ohm-js": "workspace:^"
+  }
+}

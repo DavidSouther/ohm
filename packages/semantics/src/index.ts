@@ -1,5 +1,6 @@
-import type {CstNode, NonterminalNode} from '@ohm-js/wasm';
-import type {ActionDict, VisitorCtx} from './types.ts';
+import type {CstNode, NonterminalNode} from 'ohm-js';
+import type {ActionDict, Operation, VisitorCtx} from './types.ts';
+export type {Operation} from './types.ts';
 
 const globalActionStack: [string, string, string][] = [];
 
@@ -9,18 +10,19 @@ const getActionStackTrace = () =>
       ([opName, actionName, ctorName], i) =>
         `\n  ${opName} > ${actionName}${actionName !== ctorName ? ` for '${ctorName}'` : ''}`
     )
-    .join('\n');
+    .join(''); // Each entry already starts with \n, so no separator needed.
 
 export function createOperation<R, T extends ActionDict<R>>(
   name: string,
   actionDict: T
-): (node: CstNode) => R {
+): Operation<R> {
   const doIt = (node: CstNode) => {
     const ctx: VisitorCtx = {
       thisNode: node,
     };
 
     // Ported from Operation.execute in ohm-js/src/Semantics.js
+    const stackLen = globalActionStack.length;
     try {
       // Look for a semantic action whose name matches the node's constructor name, which is either
       // the name of a rule in the grammar, or '_terminal' (for a terminal node), or '_iter' (for an
@@ -49,7 +51,7 @@ export function createOperation<R, T extends ActionDict<R>>(
       // Note: here we diverge from the original version in Operation.execute slightly.
       // It builds a new dictionary _default is always present — if the user doesn't
       // specify _default, there is a system-provided one (via `newDefaultAction`).
-      // We simply the logic from the system-provided one here.
+      // We simplify the logic from the system-provided one here.
 
       // Invoke the '_default' semantic action (if it exists).
       const defaultAction = actionDict._default;
@@ -66,7 +68,7 @@ export function createOperation<R, T extends ActionDict<R>>(
       throw new Error(`missing semantic action: ${ctorName}` + getActionStackTrace());
       // End inlined logic
     } finally {
-      globalActionStack.pop();
+      globalActionStack.length = stackLen;
     }
   };
   return doIt;

@@ -1,0 +1,35 @@
+{
+  "name": "@ohm-js/to-ast-compat",
+  "version": "18.0.0-beta.10",
+  "description": "Compatibility helper for migrating from ohm-js v17 toAST to v18",
+  "keywords": ["parser", "parsing", "ohm", "ohm-js", "ast"],
+  "homepage": "https://github.com/ohmjs/ohm#readme",
+  "bugs": {
+    "url": "https://github.com/ohmjs/ohm/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ohmjs/ohm.git"
+  },
+  "license": "MIT",
+  "author": "Patrick Dubroy <pdubroy@gmail.com>",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "publish:next": "pnpm publish --tag beta --no-git-checks && npm dist-tag add $npm_package_name@$npm_package_version next"
+  },
+  "peerDependencies": {
+    "ohm-js": ">= 17.5.0 || >= 18.0.0-0"
+  }
+}

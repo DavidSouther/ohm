@@ -164,9 +164,15 @@ export default defineConfig([
     '**/ava-ts.config.js',
     'visualizer/assets/**/*',
     'packages/cli/src/helpers/generateTypes.test.js',
-    'packages/wasm/build/**/*',
-    'packages/wasm/runtime/**/*',
+    'packages/compiler/build/**/*',
+    'packages/compiler/runtime/**/*',
   ]),
+  {
+    files: ['packages/compiler/test/**'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+    },
+  },
   {
     files: ['examples/nl-datalog-syntax/**'],
     rules: {

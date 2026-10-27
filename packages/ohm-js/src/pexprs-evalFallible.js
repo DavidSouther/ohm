@@ -1,6 +1,6 @@
 import {Interval} from './Interval.js';
 import {RecoveredFailure} from './RecoveredFailure.js';
-import {FailureNode, IterationNode, ListNode} from './nodes.js';
+import {FailureNode, IterationNode} from './nodes.js';
 import * as pexprs from './pexprs-main.js';
 
 // --------------------------------------------------------------------
@@ -78,9 +78,7 @@ function nextCandidate(state, tokenStart, stepsByToken) {
 }
 
 function emptyIteration(state) {
-  return state._rowBasedIteration
-    ? new ListNode([], [], 0, false)
-    : new IterationNode([], [], 0, false);
+  return new IterationNode([], [], 0, false);
 }
 
 pexprs.Fallible.prototype.eval = function (state) {

@@ -16,30 +16,16 @@
 import * as common from './common.js';
 import {_grammar, _grammars} from './main.js';
 import {MatchResult} from './MatchResult.js';
-import {ListNode as V17ListNode, Node, SeqNode as V17SeqNode} from './nodes.js';
+import {Node} from './nodes.js';
 
 const buildOptions = {eliminateLookaheads: true};
 
-function enableRowBased(g) {
-  const prev = g._matchStateInitializer;
-  g._matchStateInitializer = state => {
-    if (prev) prev(state);
-    state._rowBasedIteration = true;
-  };
-}
-
 export function grammar(source, optNamespace) {
-  const g = _grammar(source, optNamespace, buildOptions);
-  enableRowBased(g);
-  return g;
+  return _grammar(source, optNamespace, buildOptions);
 }
 
 export function grammars(source, optNamespace) {
-  const ns = _grammars(source, optNamespace, buildOptions);
-  for (const name of Object.keys(ns)) {
-    enableRowBased(ns[name]);
-  }
-  return ns;
+  return _grammars(source, optNamespace, buildOptions);
 }
 
 // ===== v18 CST node base and types =====
@@ -216,16 +202,6 @@ function adaptNode(node, absStart, baseStart, input) {
     return new FailureAdapter(absStart, absEnd, input, node.recoveredFailure);
   }
 
-  // v17 ListNode (row-based iteration) → v18 ListNode or OptNode
-  if (node.isList()) {
-    return adaptV17List(node, absStart, baseStart, input);
-  }
-
-  // v17 SeqNode (row-based iteration) → v18 SeqNode
-  if (node.isSeq()) {
-    return adaptV17Seq(node, absStart, baseStart, input);
-  }
-
   // For nonterminals, childOffsets are relative to their own start (absStart).
   // For iteration nodes, childOffsets are relative to the enclosing
   // nonterminal's base (baseStart).
@@ -263,55 +239,6 @@ function adaptNode(node, absStart, baseStart, input) {
     node.matchLength,
     adapted
   );
-}
-
-/**
- * Adapt a v17 ListNode (produced by row-based iteration) into a v18
- * ListNode or OptNode. ListNode childOffsets are relative to baseStart
- * (the enclosing nonterminal's absolute start).
- */
-function adaptV17List(node, absStart, baseStart, input) {
-  const absEnd = absStart + node.matchLength;
-  const source = {startIdx: absStart, endIdx: absEnd};
-  const sourceStr = input.slice(absStart, absEnd);
-
-  const adaptedChildren = [];
-  for (let i = 0; i < node.children.length; i++) {
-    const child = node.children[i];
-    const childAbsStart = baseStart + node.childOffsets[i];
-    const childBaseStart = child.isNonterminal() ? childAbsStart : baseStart;
-    adaptedChildren.push(adaptNode(child, childAbsStart, childBaseStart, input));
-  }
-
-  if (node.isOptional()) {
-    if (adaptedChildren.length === 0) {
-      return new OptNode(undefined, source, sourceStr);
-    }
-    return new OptNode(adaptedChildren[0], source, sourceStr);
-  }
-  return new ListNode(adaptedChildren, source, sourceStr);
-}
-
-/**
- * Adapt a v17 SeqNode (produced by row-based iteration) into a v18
- * SeqNode. SeqNode childOffsets are self-relative (relative to absStart).
- */
-function adaptV17Seq(node, absStart, baseStart, input) {
-  const absEnd = absStart + node.matchLength;
-  const source = {startIdx: absStart, endIdx: absEnd};
-  const sourceStr = input.slice(absStart, absEnd);
-
-  const adaptedChildren = [];
-  for (let i = 0; i < node.children.length; i++) {
-    const child = node.children[i];
-    const childAbsStart = absStart + node.childOffsets[i];
-    // For nonterminals, their childOffsets are self-relative; for everything
-    // else, thread through the enclosing nonterminal's base.
-    const childBaseStart = child.isNonterminal() ? childAbsStart : baseStart;
-    adaptedChildren.push(adaptNode(child, childAbsStart, childBaseStart, input));
-  }
-
-  return new SeqNode(adaptedChildren, source, sourceStr);
 }
 
 /**
@@ -423,5 +350,3 @@ patchProto(MatchResult.prototype, 'detach', () => {});
 // Node (v17 CST base class)
 patchProto(Node.prototype, 'isList', () => false);
 patchProto(Node.prototype, 'isSeq', () => false);
-V17ListNode.prototype.isList = () => true;
-V17SeqNode.prototype.isSeq = () => true;
