@@ -168,6 +168,21 @@ export default defineConfig([
     'packages/wasm/runtime/**/*',
   ]),
   {
+    files: ['benchmarks/fallible/**/*.mjs', 'doc/research/fallible-overhead/scripts/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: {
+        process: true,
+        Buffer: true,
+        setTimeout: true,
+        clearTimeout: true,
+      },
+    },
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  {
     files: ['examples/nl-datalog-syntax/**'],
     rules: {
       'no-unused-vars': 'off',
