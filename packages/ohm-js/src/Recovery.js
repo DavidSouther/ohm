@@ -1,6 +1,10 @@
 import {Interval} from './Interval.js';
 import {MatchState} from './MatchState.js';
 import {RecoveredFailure, distinctByPosition} from './RecoveredFailure.js';
+import {DiagnosticSnapshot} from './DiagnosticSnapshot.js';
+import {SourcePositions} from './SourcePositions.js';
+import {RecoveryCache} from './RecoveryCache.js';
+import {RecoveryAttempts} from './RecoveryAttempts.js';
 
 // --------------------------------------------------------------------
 // Recovery at `B ! C` recovery points
@@ -15,33 +19,24 @@ import {RecoveredFailure, distinctByPosition} from './RecoveredFailure.js';
     were memoized in an earlier pass do not run, or record attempts, again.
 */
 export class RecoveryContext {
-  constructor() {
+  constructor(input = '') {
     this.permitted = new Map();
-    this.attempts = new Map();
+    this.attempts = new RecoveryAttempts();
+    this.positionIndex = new SourcePositions(input);
+    this.cache = new RecoveryCache(this);
   }
 
   chooseAttempt(position) {
-    let chosen;
-    for (const attempt of this.attempts.values()) {
-      if (attempt.rightmost !== position || this.permitted.has(attempt.key)) continue;
-      if (
-        !chosen ||
-        attempt.start > chosen.start ||
-        (attempt.start === chosen.start && attempt.depth > chosen.depth)
-      ) {
-        chosen = attempt;
-      }
-    }
-    return chosen;
+    return this.attempts.choose(position, this.permitted);
   }
 
   permit(attempt, result) {
     this.permitted.set(attempt.key, {position: attempt.rightmost, result});
-    for (const [key, recorded] of this.attempts) {
-      if (recorded.start <= attempt.start && recorded.rightmost >= attempt.start) {
-        this.attempts.delete(key);
-      }
+    for (const retired of this.attempts.invalidateAt(attempt.start)) {
+      this.cache.attemptReplay.changed(retired.start);
+      this.cache.invalidate(retired.key);
     }
+    this.cache.invalidate(attempt.key);
   }
 }
 
@@ -64,17 +59,22 @@ function runPass(matcher, startExpr, ctx, tracing) {
 export function matchRecovering(matcher, startExpr, opts) {
   matcher._prepareForRecovery();
 
-  const ctx = new RecoveryContext();
+  const ctx = new RecoveryContext(matcher.getInput());
   let first;
   for (;;) {
     const {state, result} = runPass(matcher, startExpr, ctx, false);
     if (result.succeeded()) {
-      return opts.tracing ? runPass(matcher, startExpr, ctx, true).trace : result;
+      const answer = opts.tracing ? runPass(matcher, startExpr, ctx, true).trace : result;
+      ctx.cache.release(matcher);
+      ctx.attempts.clear();
+      return answer;
     }
+    ctx.cache.flushAttempts(state._attemptEffects);
 
     // Compute the message now, while this pass's permissions are in force.
     result.getRightmostFailures();
     void result.shortMessage;
+    const diagnostic = DiagnosticSnapshot.fromResult(result, ctx.positionIndex);
     first = first || result;
 
     const position = result.getRightmostFailurePosition();
@@ -86,20 +86,26 @@ export function matchRecovering(matcher, startExpr, opts) {
       const finalFailure = new RecoveredFailure(
         new Interval(result.input, position, position),
         position,
-        result
+        diagnostic
       );
       // An application that is not memoized can run more than once in a
       // pass, logging its recoveries each time.
-      first._recoveredFailures = [...distinctByPosition(state._recoveryLog), finalFailure];
+      const failures = [];
+      state._recoveryLog.forEachUnique(failure => failures.push(failure));
+      first._recoveredFailures = [...distinctByPosition(failures), finalFailure];
       if (opts.tracing) {
         const {trace} = runPass(matcher, startExpr, ctx, true);
         trace.result = first;
+        ctx.cache.release(matcher);
+        ctx.attempts.clear();
         return trace;
       }
+      ctx.cache.release(matcher);
+      ctx.attempts.clear();
       return first;
     }
 
-    ctx.permit(chosen, result);
-    matcher._invalidateMemoEntries(chosen.start, chosen.start + 1);
+    ctx.permit(chosen, diagnostic);
+    if (ctx.cache.disabled) matcher._invalidateMemoEntries(chosen.start, chosen.start + 1);
   }
 }
