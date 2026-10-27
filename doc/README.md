@@ -4,6 +4,7 @@
 - [Ohm Syntax Reference](./syntax-reference.md)
 - Learn more about the [Ohm philosophy](./philosophy.md)
 - See [Patterns and Pitfalls](./patterns-and-pitfalls.md) for some common Ohm patterns and solutions to frequently-encountered difficulties.
+- [Fallible expression complexity study](./research/fallible-overhead/) includes the historical analysis, reproducible experiments, and subsequent performance results.
 
 ## Examples
 
