@@ -409,6 +409,102 @@ test('`_nonterminal` and `_default` never receive a `_fail` node', t => {
 });
 
 // --------------------------------------------------------------------
+// Node.recoveredFailures
+// --------------------------------------------------------------------
+
+function recoveredFailuresSemantics(g) {
+  return g.createSemantics().addOperation('lists', {
+    _nonterminal(...children) {
+      return [[this.ctorName, this.recoveredFailures], ...children.flatMap(c => c.lists())];
+    },
+    _iter(...children) {
+      return [['_iter', this.recoveredFailures], ...children.flatMap(c => c.lists())];
+    },
+    _terminal() {
+      return [['_terminal', this.recoveredFailures]];
+    },
+    _fail() {
+      return [['_fail', this.recoveredFailures]];
+    },
+  });
+}
+
+test('recoveredFailures is empty on every node of a match without recovery', t => {
+  const g = ohm.grammar(STMTS);
+  const s = recoveredFailuresSemantics(g);
+  for (const r of [g.match('{ a; b; }'), g.match('{ a; b; }', undefined, RECOVER)]) {
+    const lists = s(r).lists();
+    t.true(lists.length > 1);
+    for (const [, list] of lists) t.deepEqual(list, []);
+  }
+});
+
+test('recoveredFailures at the root is getRecoveredFailures, object for object', t => {
+  const g = ohm.grammar(STMTS);
+  const r = g.match('{ a b; c d; e }', undefined, RECOVER);
+  const expected = r.getRecoveredFailures();
+  t.is(expected.length, 3);
+  const root = g.createSemantics()(r).recoveredFailures;
+  t.is(root.length, expected.length);
+  root.forEach((f, i) => t.is(f, expected[i]));
+});
+
+test('recoveredFailures lists only the failures under a node, in source order', t => {
+  const g = ohm.grammar(STMTS);
+  const r = g.match('{ a; b c; d; e f; }', undefined, RECOVER);
+  const all = r.getRecoveredFailures();
+  t.is(all.length, 2);
+  const stmts = g.createSemantics()(r).child(1).children;
+  t.deepEqual(
+    stmts.map(stmt => stmt.recoveredFailures.length),
+    [0, 1, 0, 1]
+  );
+  t.is(stmts[1].recoveredFailures[0], all[0]);
+  t.is(stmts[3].recoveredFailures[0], all[1]);
+
+  // The `_fail` node holds its own failure; the empty placeholder holds none.
+  const [placeholder, fail] = stmts[1].children;
+  t.is(placeholder.ctorName, '_fail');
+  t.deepEqual(placeholder.recoveredFailures, []);
+  t.deepEqual(fail.recoveredFailures, [all[0]]);
+});
+
+test('recoveredFailures includes the failures recovered inside a replaced attempt', t => {
+  const g = ohm.grammar(String.raw`
+    Blocks {
+      Block = "{" Item* ! "}"
+      Item  = Block | Stmt
+      Stmt  = Body ! ";"
+      Body  = letter+
+    }`);
+  const r = g.match('{ a; { b c; } d }', undefined, RECOVER);
+  t.true(r.succeeded());
+  const expected = r.getRecoveredFailures();
+  const root = g.createSemantics()(r).recoveredFailures;
+  t.deepEqual(
+    root.map(f => f.shortMessage),
+    expected.map(f => f.shortMessage)
+  );
+  root.forEach((f, i) => t.is(f, expected[i]));
+});
+
+test('recoveredFailures returns a fresh array', t => {
+  const g = ohm.grammar(STMTS);
+  const r = g.match('{ a b; }', undefined, RECOVER);
+  const node = g.createSemantics()(r);
+  const list = node.recoveredFailures;
+  list.length = 0;
+  t.is(node.recoveredFailures.length, 1);
+});
+
+test('recoveredFailures is a reserved name', t => {
+  const g = ohm.grammar(STMTS);
+  t.throws(() => g.createSemantics().addAttribute('recoveredFailures', {}), {
+    message: /reserved name/,
+  });
+});
+
+// --------------------------------------------------------------------
 // Tracing
 // --------------------------------------------------------------------
 
