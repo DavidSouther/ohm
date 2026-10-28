@@ -1,6 +1,7 @@
 import {InputStream} from './InputStream.js';
 import {IterationNode} from './nodes.js';
 import {MatchResult} from './MatchResult.js';
+import {collectRecoveredFailures} from './RecoveredFailure.js';
 import * as common from './common.js';
 import * as errors from './errors.js';
 import * as util from './util.js';
@@ -132,6 +133,14 @@ class Wrapper {
   // for an empty placeholder and for every other node.
   get recoveredFailure() {
     return this._node.recoveredFailure;
+  }
+
+  // The recovered failures at or under this node, in source order. Without
+  // recovery, or when nothing under this node recovered, the list is empty.
+  // Each element is a RecoveredFailure from this node's subtree, so a list
+  // read at the root holds the same objects as MatchResult#getRecoveredFailures().
+  get recoveredFailures() {
+    return collectRecoveredFailures(this._node);
   }
 
   // Returns the name of grammar rule that created this CST node.

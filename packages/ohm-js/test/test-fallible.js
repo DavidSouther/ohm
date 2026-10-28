@@ -412,6 +412,14 @@ test('`_nonterminal` and `_default` never receive a `_fail` node', t => {
 // Node.recoveredFailures
 // --------------------------------------------------------------------
 
+const NESTED_BLOCKS = String.raw`
+  Blocks {
+    Block = "{" Item* ! "}"
+    Item  = Block | Stmt
+    Stmt  = Body ! ";"
+    Body  = letter+
+  }`;
+
 function recoveredFailuresSemantics(g) {
   return g.createSemantics().addOperation('lists', {
     _nonterminal(...children) {
@@ -469,23 +477,29 @@ test('recoveredFailures lists only the failures under a node, in source order', 
   t.deepEqual(fail.recoveredFailures, [all[0]]);
 });
 
-test('recoveredFailures includes the failures recovered inside a replaced attempt', t => {
-  const g = ohm.grammar(String.raw`
-    Blocks {
-      Block = "{" Item* ! "}"
-      Item  = Block | Stmt
-      Stmt  = Body ! ";"
-      Body  = letter+
-    }`);
-  const r = g.match('{ a; { b c; } d }', undefined, RECOVER);
+test('recoveredFailures at the root of nested blocks lists every failure, object for object', t => {
+  const g = ohm.grammar(NESTED_BLOCKS);
+  const r = g.match('{ a; { b c; d }', undefined, RECOVER);
   t.true(r.succeeded());
   const expected = r.getRecoveredFailures();
+  t.is(expected.length, 2);
   const root = g.createSemantics()(r).recoveredFailures;
-  t.deepEqual(
-    root.map(f => f.shortMessage),
-    expected.map(f => f.shortMessage)
-  );
+  t.is(root.length, expected.length);
   root.forEach((f, i) => t.is(f, expected[i]));
+});
+
+test('below the root, a failure Ohm listed once may be an equal copy', t => {
+  // distinctByPosition keeps the first of equal failures, so a subtree that
+  // holds only the later copy lists that copy: equal by position and message,
+  // not the same object.
+  const g = ohm.grammar(NESTED_BLOCKS);
+  const r = g.match('{ a; { b;', undefined, RECOVER);
+  const [listed] = r.getRecoveredFailures();
+  const key = f => [f.interval.startIdx, f.interval.endIdx, f.position, f.shortMessage];
+  const items = g.createSemantics()(r).child(1).children;
+  const inner = items[1].recoveredFailures;
+  t.is(inner.length, 1);
+  t.deepEqual(key(inner[0]), key(listed));
 });
 
 test('recoveredFailures returns a fresh array', t => {
