@@ -52,6 +52,23 @@ pexprs.Seq.prototype.assertChoicesHaveUniformArity = function (ruleName) {
   }
 };
 
+// Also validate fallible operands here.
+pexprs.Fallible.prototype.assertChoicesHaveUniformArity = function (ruleName) {
+  this.fallible.assertChoicesHaveUniformArity(ruleName);
+  this.join.assertChoicesHaveUniformArity(ruleName);
+  if (this.fallible instanceof pexprs.Not || this.fallible instanceof pexprs.Lookahead) {
+    throw errors.fallibleGuardIsPredicate(ruleName, this.fallible);
+  }
+  const guardedArity = this.fallible.getArity();
+  if (guardedArity !== 1) {
+    throw errors.invalidFallibleOperand(ruleName, 'guarded', guardedArity, this.fallible);
+  }
+  const syncArity = this.join.getArity();
+  if (syncArity !== 1) {
+    throw errors.invalidFallibleOperand(ruleName, 'synchronizer', syncArity, this.join);
+  }
+};
+
 pexprs.Iter.prototype.assertChoicesHaveUniformArity = function (ruleName) {
   this.expr.assertChoicesHaveUniformArity(ruleName);
 };

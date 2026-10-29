@@ -218,6 +218,33 @@ export function invalidCodePoint(applyWrapper) {
   );
 }
 
+// ----------------- Fallible (`B ! C`) -----------------
+
+export function missingSynchronizer(bangInterval) {
+  return createError(
+    "Missing synchronizer after '!': a recovery point is written `B ! C`, " +
+      'where C is where recovery resumes',
+    bangInterval
+  );
+}
+
+export function invalidFallibleOperand(ruleName, which, arity, expr) {
+  const name = which === 'guarded' ? 'guarded expression' : 'synchronizer';
+  return createError(
+    `In rule ${ruleName}, the ${name} of '!' must have arity 1 (got ${arity}); ` +
+      'wrap it in a rule',
+    expr.source
+  );
+}
+
+export function fallibleGuardIsPredicate(ruleName, expr) {
+  return createError(
+    `In rule ${ruleName}, the guarded expression of '!' cannot be a '~' or '&' ` +
+      'expression, because it never consumes input',
+    expr.source
+  );
+}
+
 // ----------------- Kleene operators -----------------
 
 export function kleeneExprHasNullableOperand(kleeneExpr, applicationStack) {
