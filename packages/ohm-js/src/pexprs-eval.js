@@ -245,9 +245,9 @@ pexprs.Not.prototype.eval = function (state) {
   state.pushFailuresInfo();
 
   // Predicates inspect input without committing recovery.
-  state._suspendRecovery();
+  const origTokenEnd = state._suspendRecovery();
   const ans = state.eval(this.expr);
-  state._resumeRecovery();
+  state._resumeRecovery(origTokenEnd);
 
   state.popFailuresInfo();
   if (ans) {
@@ -262,9 +262,9 @@ pexprs.Not.prototype.eval = function (state) {
 pexprs.Lookahead.prototype.eval = function (state) {
   const {inputStream} = state;
   const origPos = inputStream.pos;
-  state._suspendRecovery();
+  const origTokenEnd = state._suspendRecovery();
   const ans = state.eval(this.expr);
-  state._resumeRecovery();
+  state._resumeRecovery(origTokenEnd);
   if (ans) {
     inputStream.pos = origPos;
     return true;
@@ -374,6 +374,7 @@ pexprs.Apply.prototype.reallyEval = function (state) {
       value,
       failuresAtRightmostPosition: state.cloneRecordedFailures(),
       rightmostFailureOffset: state._getRightmostFailureOffset(),
+      tokenEndOffset: state._tokenEnd < 0 ? -1 : state._tokenEnd - origPos,
     });
   }
   const succeeded = !!value;
