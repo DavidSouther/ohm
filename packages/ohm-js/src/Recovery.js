@@ -1,6 +1,7 @@
 import {Interval} from './Interval.js';
 import {MatchState} from './MatchState.js';
 import {RecoveredFailure, distinctByPosition} from './RecoveredFailure.js';
+import {SourcePositions} from './SourcePositions.js';
 
 // --------------------------------------------------------------------
 // Recovery at `B ! C` recovery points
@@ -15,9 +16,10 @@ import {RecoveredFailure, distinctByPosition} from './RecoveredFailure.js';
     were memoized in an earlier pass do not run, or record attempts, again.
 */
 export class RecoveryContext {
-  constructor() {
+  constructor(input = '') {
     this.permitted = new Map();
     this.attempts = new Map();
+    this.positionIndex = new SourcePositions(input);
   }
 
   chooseAttempt(position) {
@@ -64,7 +66,7 @@ function runPass(matcher, startExpr, ctx, tracing) {
 export function matchRecovering(matcher, startExpr, opts) {
   matcher._prepareForRecovery();
 
-  const ctx = new RecoveryContext();
+  const ctx = new RecoveryContext(matcher.getInput());
   let first;
   for (;;) {
     const {state, result} = runPass(matcher, startExpr, ctx, false);
