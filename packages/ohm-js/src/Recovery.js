@@ -40,6 +40,10 @@ export class RecoveryContext {
   }
 }
 
+// Whether the last recovering match of a grammar succeeded on its first pass; a performance hint
+// only, it never changes a result.
+const firstPassSucceeded = new WeakMap();
+
 function runPass(matcher, startExpr, ctx, tracing) {
   const state = new MatchState(matcher, startExpr, undefined, ctx);
   if (tracing) {
@@ -59,10 +63,29 @@ function runPass(matcher, startExpr, ctx, tracing) {
 export function matchRecovering(matcher, startExpr, opts) {
   matcher._prepareForRecovery();
 
-  const ctx = new RecoveryContext(matcher.getInput());
+  // Nothing is reused within a single pass, and valid input needs only one, so when the
+  // grammar's previous recovering match was valid, the first pass runs without the reuse cache
+  // and the match restarts with it enabled if that pass fails. Otherwise a failing probe would
+  // cost an extra pass on every invalid input.
+  let ctx = new RecoveryContext(matcher.getInput());
+  let probing = firstPassSucceeded.get(matcher.grammar) ?? true;
+  ctx.cache.disabled = probing;
   let first;
+  let firstPassSeen = false;
   for (;;) {
     const {state, result} = runPass(matcher, startExpr, ctx, false);
+    if (!firstPassSeen) {
+      firstPassSeen = true;
+      firstPassSucceeded.set(matcher.grammar, result.succeeded());
+    }
+    if (probing && !result.succeeded()) {
+      // The probe's memo entries have no recovery records, so later permits could not
+      // invalidate them.
+      probing = false;
+      matcher._resetMemoTable();
+      ctx = new RecoveryContext(matcher.getInput());
+      continue;
+    }
     if (result.succeeded()) {
       const answer = opts.tracing ? runPass(matcher, startExpr, ctx, true).trace : result;
       ctx.cache.release();

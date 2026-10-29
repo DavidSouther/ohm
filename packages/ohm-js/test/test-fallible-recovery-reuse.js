@@ -132,3 +132,19 @@ test.serial('dense recovery preserves corrected-prefix errors without quadratic 
   }
   t.deepEqual(violations, [], 'all semantics passed; recovery work must grow below quadratic');
 });
+
+test('valid and invalid matches of one grammar are independent of the cache-free first pass', t => {
+  // The first pass runs without the reuse cache after a valid match, and with it after an
+  // invalid one; the order of earlier matches must not change any later result.
+  const fresh = input => {
+    const result = ohm.grammar(HDL).match(input, undefined, {recover: true});
+    return [result.succeeded(), result.message, result.getRecoveredFailures().length];
+  };
+  const grammar = ohm.grammar(HDL);
+  const run = input => {
+    const result = grammar.match(input, undefined, {recover: true});
+    return [result.succeeded(), result.message, result.getRecoveredFailures().length];
+  };
+  const inputs = [source(0), source(2), source(0), source(0), source(3), source(1), source(0)];
+  for (const input of inputs) t.deepEqual(run(input), fresh(input));
+});
