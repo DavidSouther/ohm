@@ -7,6 +7,16 @@ import {RecoveryAttemptReplay} from './RecoveryAttemptReplay.js';
 
 export const noFailures = {position: -1, failures: []};
 
+// Two failures are the same expectation when their keys match; `toKey()` is
+// `toString()#type`, so equal types reduce to comparing the text.
+function sameFailure(a, b) {
+  return a.type === b.type ? a.text === b.text : a.toKey() === b.toKey();
+}
+
+// Failure objects in a summary are never mutated in place, so merged summaries share them and
+// only clone the one whose fluffy flag must change.
+const SMALL_MERGE = 64;
+
 // Failure order follows MatchState.eval: the newest expression's failures
 // precede those accumulated before it; a strong expectation wins over fluff.
 export function mergeFailureSummaries(newer, older) {
@@ -14,6 +24,26 @@ export function mergeFailureSummaries(newer, older) {
   if (older.position > newer.position) return older;
   if (!newer.failures.length) return older;
   if (!older.failures.length) return newer;
+  if (newer.failures.length * older.failures.length > SMALL_MERGE) {
+    return mergeLargeSummaries(newer, older);
+  }
+  const failures = newer.failures.slice();
+  for (const failure of older.failures) {
+    let at = failures.length - 1;
+    while (at >= 0 && !sameFailure(failures[at], failure)) at--;
+    if (at < 0) {
+      failures.push(failure);
+    } else if (!failure.isFluffy() && failures[at].isFluffy()) {
+      const copy = failures[at].clone();
+      copy.clearFluffy();
+      failures[at] = copy;
+    }
+  }
+  return {position: newer.position, failures};
+}
+
+// Keyed by `toKey()` so that large expectation sets stay linear.
+function mergeLargeSummaries(newer, older) {
   const failures = newer.failures.map(f => f.clone());
   const byKey = new Map(failures.map(f => [f.toKey(), f]));
   for (const failure of older.failures) {
