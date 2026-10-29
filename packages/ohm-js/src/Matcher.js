@@ -38,6 +38,14 @@ export class Matcher {
   replaceInputRange(startIdx, endIdx, str) {
     const prevInput = this._input;
     const memoTable = this._memoTable;
+
+    // Grammar.match() creates a fresh Matcher and calls replaceInputRange(0, 0, input).
+    // In that scenario, there is nothing to preserve or invalidate, so avoid extra work.
+    if (startIdx === 0 && endIdx === 0 && prevInput.length === 0 && memoTable.length === 0) {
+      this._input = '' + str;
+      memoTable.length = str.length;
+      return this;
+    }
     if (
       startIdx < 0 ||
       startIdx > prevInput.length ||
