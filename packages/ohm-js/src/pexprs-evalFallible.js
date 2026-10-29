@@ -72,12 +72,20 @@ pexprs.Fallible.prototype.eval = function (state) {
   const sync = activeJoin(this, state);
 
   // Isolate the attempt's failures so its own farthest failure can be recorded
-  // for the pass driver.
+  // for the pass driver, and its last complete token so a recovery scan can
+  // start after it.
   state.pushFailuresInfo();
   state.rightmostFailurePosition = -1;
+  const outerTokenEnd = state._tokenEnd;
+  state._tokenEnd = origPos;
   state._syncStack.push(sync);
+
+  // Try the guarded expression and its join before considering recovery.
   const ok = state.eval(this.fallible) && state.eval(this.join);
+
   state._syncStack.pop();
+  const tokenEnd = state._tokenEnd;
+  state._tokenEnd = Math.max(outerTokenEnd, tokenEnd);
   const attemptRightmost = state.rightmostFailurePosition;
   const attemptFailures = state.recordedFailures;
   state.popFailuresInfo();
@@ -88,7 +96,7 @@ pexprs.Fallible.prototype.eval = function (state) {
     state.truncateBindings(origNumBindings);
     // A recovery discards the attempt's failures; the enclosing record is
     // already restored.
-    if (this.recover(state, origPos, sync, permit, logMark)) {
+    if (this.recover(state, origPos, sync, permit, logMark, tokenEnd)) {
       return true;
     }
     state.truncateBindings(origNumBindings);
@@ -114,10 +122,20 @@ pexprs.Fallible.prototype.eval = function (state) {
   keeps the elements it matched; any other guarded expression keeps nothing
   and its slot holds an empty placeholder. The skip region starts at the next
   token and ends where the join expression matches; its `_fail` node takes the
-  join expression's slot. Returns false, with bindings and the recovery log as
-  they were, when the scan reaches the end of the input or a stop marker.
+  join expression's slot. The join is only looked for after `tokenEnd`,
+  the end of the last complete token the failed attempt matched, so text
+  already matched as a token, such as a string literal, never ends the region.
+  Returns false, with bindings and the recovery log as they were, when the scan
+  reaches the end of the input or a stop marker.
 */
-pexprs.Fallible.prototype.recover = function (state, origPos, sync, permit, logMark) {
+pexprs.Fallible.prototype.recover = function (
+  state,
+  origPos,
+  sync,
+  permit,
+  logMark,
+  tokenEnd
+) {
   const {inputStream} = state;
   const attemptLog = state._recoveryLog.splice(logMark);
   // Scan steps are not traced; only the matching join expression's entry joins the
@@ -143,7 +161,7 @@ pexprs.Fallible.prototype.recover = function (state, origPos, sync, permit, logM
     }
   }
   const scanStart = state.skipSpacesIfInSyntacticContext();
-  const found = this.scan(state, scanStart);
+  const found = this.scan(state, scanStart, Math.max(scanStart, tokenEnd));
   state.popFailuresInfo();
 
   let syncTrace;
@@ -180,35 +198,44 @@ pexprs.Fallible.prototype.recover = function (state, origPos, sync, permit, logM
 };
 
 /*
-  Scan forward from `scanStart` for the join expression. At each candidate
-  position, try this fallible's own join expression first; where it fails and an
-  enclosing active join expression matches, stop. The skipped text and the
-  join expression must cover at least one code unit. Comments are stepped over
-  whole, by the ordinary space skipping of a syntactic rule.
+  Scan forward from `scanStart` for the join expression. Candidate positions are
+  those whose following spaces reach `searchFrom`, so the skip region still
+  ends before any spaces. At each candidate, try this fallible's own
+  join first; where it fails and an enclosing active join matches, stop.
+  The skipped text and the join expression must cover at least one
+  code unit. Comments are stepped over whole, by the ordinary space skipping
+  of a syntactic rule.
+
+  Returns `{skipEnd, afterSync}` when the join expression matched, and null
+  when a stop marker or the end of the input ended the scan, or the join
+  expression matched without progress.
 */
-pexprs.Fallible.prototype.scan = function (state, scanStart) {
+pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
   const {inputStream} = state;
-  const enclosing = state._syncStack;
   const end = inputStream.source.length;
+  const enclosing = state._syncStack;
   let found = null;
-  state._suspendRecovery();
+  const origTokenEnd = state._suspendRecovery();
   for (let p = scanStart; p <= end; ) {
+    inputStream.pos = p;
+    const next = Math.max(state.skipSpacesIfInSyntacticContext(), p);
+    if (next < searchFrom) {
+      p = next + 1;
+      continue;
+    }
     inputStream.pos = p;
     const numBindings = state._bindings.length;
     if (state.eval(this.join)) {
       const afterSync = inputStream.pos;
       state.truncateBindings(numBindings);
-      if (afterSync > scanStart) {
-        found = {skipEnd: p, afterSync};
-      }
+      found = afterSync > scanStart ? {skipEnd: p, afterSync} : null;
       break;
     }
     if (enclosing.some(stop => matchesAt(state, stop, p))) {
       break;
     }
-    inputStream.pos = p;
-    p = Math.max(state.skipSpacesIfInSyntacticContext(), p) + 1;
+    p = next + 1;
   }
-  state._resumeRecovery();
+  state._resumeRecovery(origTokenEnd);
   return found;
 };

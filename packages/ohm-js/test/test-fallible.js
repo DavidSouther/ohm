@@ -483,3 +483,35 @@ test('row based iteration: an iterated fallible gives one row per element', t =>
   const plain = ohm.grammar('G { Start = (Body ";")*\n Body = letter }');
   t.deepEqual(messages(r), [plain.match('a;1;b;').shortMessage]);
 });
+
+// --------------------------------------------------------------------
+// Unbalanced blocks and delimiters inside tokens
+// --------------------------------------------------------------------
+
+const CALLS = String.raw`
+Calls {
+  Body   = "{" Stmt* ! "}"
+  Stmt   = Call ! ";"
+  Call   = ident "(" Arg ")"
+  Arg    = string | ident
+  string = "\"" (~"\"" ~"\n" any)* "\""
+  ident  = letter+
+}`;
+
+function skipped(result) {
+  return result.getRecoveredFailures().map(f => f.interval.contents);
+}
+
+test('a synchronizer inside a matched string literal never ends a skip region', t => {
+  const g = ohm.grammar(CALLS);
+  const r = g.match('{\nf("a;b" x);\ng(y);\nh(;\n}', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(skipped(r), ['f("a;b" x)', 'h(']);
+});
+
+test('an unterminated string recovers at its own line', t => {
+  const g = ohm.grammar(CALLS);
+  const r = g.match('{\nf("abc);\ng(y);\nh(;\n}', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(skipped(r), ['f("abc)', 'h(']);
+});
