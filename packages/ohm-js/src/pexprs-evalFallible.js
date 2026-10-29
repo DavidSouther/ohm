@@ -59,6 +59,8 @@ function isBlock(fallible) {
   );
 }
 
+const recoveryStop = new pexprs.Apply('recoveryStop');
+
 function emptyIteration(state) {
   return state._rowBasedIteration
     ? new ListNode([], [], 0, false)
@@ -92,11 +94,14 @@ pexprs.Fallible.prototype.eval = function (state) {
   state.rightmostFailurePosition = -1;
   const outerTokenEnd = state._tokenEnd;
   state._tokenEnd = origPos;
+  const blockDepth = isBlock(this) ? 1 : 0;
   state._syncStack.push(sync);
+  state._blockDepth += blockDepth;
 
   // Try the guarded expression and its join before considering recovery.
   const ok = state.eval(this.fallible) && state.eval(this.join);
 
+  state._blockDepth -= blockDepth;
   state._syncStack.pop();
   const tokenEnd = state._tokenEnd;
   state._tokenEnd = Math.max(outerTokenEnd, tokenEnd);
@@ -171,7 +176,11 @@ pexprs.Fallible.prototype.recover = function (
     // Evaluate the guarded iteration again, under the same permissions and
     // stop markers, so it keeps what this pass matched.
     state._syncStack.push(sync);
+    state._blockDepth++;
+
     const kept = state.eval(this.fallible);
+
+    state._blockDepth--;
     state._syncStack.pop();
     if (!kept) {
       inputStream.pos = origPos;
@@ -235,6 +244,12 @@ pexprs.Fallible.prototype.recover = function (
   code unit. Comments are stepped over whole, by the ordinary space skipping
   of a syntactic rule.
 
+  A grammar may define a rule named `recoveryStop`, such as the keywords that
+  begin a top-level item. A scan inside a block nested in another block also
+  stops where it matches, so a block that lost its closer ends at the next
+  item. Scans at the outermost block ignore it, because that is where those
+  items begin. Ordinary matching never evaluates it.
+
   Returns `{skipEnd, afterSync}` when the join expression matched, `{stoppedAt}`
   when a stop marker or the end of the input ended the scan, and null when
   the join expression matched without progress.
@@ -242,7 +257,11 @@ pexprs.Fallible.prototype.recover = function (
 pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
   const {inputStream} = state;
   const end = inputStream.source.length;
-  const enclosing = state._syncStack;
+  const nested = state._blockDepth + (isBlock(this) ? 1 : 0) >= 2;
+  const enclosing =
+    nested && state.grammar.rules.recoveryStop
+      ? [...state._syncStack, recoveryStop]
+      : state._syncStack;
   let found = {stoppedAt: end};
   const origTokenEnd = state._suspendRecovery();
   for (let p = scanStart; p <= end; ) {
