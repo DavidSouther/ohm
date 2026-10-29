@@ -5,6 +5,7 @@ import {
 } from './errors.js';
 import {MatchState} from './MatchState.js';
 import {MemoTable} from './MemoTable.js';
+import {memoTableView} from './MemoTableView.js';
 import {matchRecovering} from './Recovery.js';
 import * as pexprs from './pexprs.js';
 
@@ -18,7 +19,7 @@ function firstPassOption({firstPass = 'auto'}) {
 export class Matcher {
   constructor(grammar) {
     this.grammar = grammar;
-    this._memoTable = new MemoTable();
+    this._memo = new MemoTable();
     this._input = '';
     this._isMemoTableStale = false;
     // 'plain' or 'recover'. Plain matches memoize without recording recovery
@@ -26,8 +27,14 @@ export class Matcher {
     this._memoMode = undefined;
   }
 
+  // The memo table as a read-only array of PosInfo-shaped snapshots, one per input position, for
+  // tools that inspect memoization. The engine works on `_memo`.
+  get _memoTable() {
+    return memoTableView(this._memo);
+  }
+
   _resetMemoTable() {
-    this._memoTable = new MemoTable();
+    this._memo = new MemoTable();
     this._isMemoTableStale = false;
   }
 
@@ -44,7 +51,7 @@ export class Matcher {
   }
 
   _invalidateMemoEntries(invalidatedIdx, endPos) {
-    this._memoTable.invalidate(invalidatedIdx, endPos);
+    this._memo.invalidate(invalidatedIdx, endPos);
   }
 
   getInput() {
@@ -60,7 +67,7 @@ export class Matcher {
 
   replaceInputRange(startIdx, endIdx, str) {
     const prevInput = this._input;
-    const memoTable = this._memoTable;
+    const memoTable = this._memo;
 
     // Grammar.match() creates a fresh Matcher and calls replaceInputRange(0, 0, input).
     // In that scenario, there is nothing to preserve or invalidate, so avoid extra work.

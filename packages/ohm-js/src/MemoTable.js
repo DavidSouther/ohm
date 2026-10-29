@@ -285,13 +285,14 @@ export class MemoTable {
 
   // Marks `entry`, the seed memoized at `pos` for the application with key `headKey`, as the
   // innermost left recursion at `pos`. Applications that are active above the head are "involved".
-  startLeftRecursion(pos, entry, headKey) {
+  startLeftRecursion(pos, entry, headKey, headApplication) {
     const keys = this.activeKeys(pos);
     const first = keys.indexOf(headKey) + 1;
     this.flags[entry] |= LEFT_RECURSION;
     this.recursions.set(entry, {
       pos,
       headKey,
+      headApplication,
       active: true,
       next: this.recursionHeads[pos],
       first,
@@ -400,31 +401,5 @@ export class MemoTable {
       this.recursions = recursions;
     }
     this._reindex();
-  }
-
-  // ---- Inspection ---------------------------------------------------------------------------
-
-  // A snapshot of the entries at `pos`, or undefined if there are none: a `memo` map from key
-  // string to the entry's fields, and the largest examined length and rightmost failure offset.
-  positionInfo(pos) {
-    let info;
-    for (let e = 0; e < this.count; e++) {
-      if (this.key[e] === NONE || this.pos[e] !== pos) continue;
-      if (!info) info = {memo: new Map(), maxExaminedLength: 0, maxRightmostFailureOffset: -1};
-      info.memo.set(this.keyNames[this.key[e]], {
-        matchLength: this.matchLength[e],
-        examinedLength: this.examinedLength[e],
-        rightmostFailureOffset: this.rightmostFailureOffset[e],
-        tokenEndOffset: this.tokenEndOffset[e],
-        value: this.values[e],
-        isLeftRecursion: this.isLeftRecursion(e),
-      });
-      info.maxExaminedLength = Math.max(info.maxExaminedLength, this.examinedLength[e]);
-      info.maxRightmostFailureOffset = Math.max(
-        info.maxRightmostFailureOffset,
-        this.rightmostFailureOffset[e]
-      );
-    }
-    return info;
   }
 }

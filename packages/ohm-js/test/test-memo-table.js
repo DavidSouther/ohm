@@ -181,18 +181,47 @@ test('many removals are compacted away between matches without losing entries', 
   t.is(table.find(10, b), -1);
 });
 
-test('positionInfo summarizes the entries at a position', t => {
-  const table = new MemoTable();
-  const a = table.internKey('a');
-  const b = table.internKey('b');
-  add(table, 2, a, {examinedLength: 4, rightmostFailureOffset: 1});
-  add(table, 2, b, {examinedLength: 2, rightmostFailureOffset: 3});
-  const info = table.positionInfo(2);
-  t.is(info.maxExaminedLength, 4);
-  t.is(info.maxRightmostFailureOffset, 3);
-  t.deepEqual([...info.memo.keys()], ['a', 'b']);
-  t.is(info.memo.get('b').examinedLength, 2);
-  t.is(table.positionInfo(1), undefined);
+test('the _memoTable view has the shape the array of PosInfo objects had', t => {
+  const g = ohm.grammar('G { start = start letter  -- rec\n | letter }');
+  const matcher = g.matcher();
+  matcher.setInput('yo');
+  t.true(matcher.match().succeeded());
+
+  const view = matcher._memoTable;
+  t.true(Array.isArray(view));
+  t.is(view.length, 3);
+
+  const first = view[0];
+  t.deepEqual(Object.keys(first.memo).sort(), ['letter', 'lower', 'start']);
+  t.is(first.maxExaminedLength, 3);
+  t.is(first.maxRightmostFailureOffset, 2);
+  t.deepEqual(first.applicationMemoKeyStack, []);
+  t.is(first.currentLeftRecursion, undefined);
+
+  const {start} = first.memo;
+  t.is(start.matchLength, 2);
+  t.is(start.examinedLength, 3);
+  t.is(start.value.ctorName, 'start');
+  t.true(start.isLeftRecursion);
+  t.is(start.headApplication.toMemoKey(), 'start');
+  t.is(start.nextLeftRecursion, undefined);
+  t.false(start.isInvolved('letter'));
+  t.is(first.memo.letter.isLeftRecursion, undefined);
+  t.is(first.memo.letter.matchLength, 1);
+
+  t.false(first.isActive(first.memo.start.headApplication));
+});
+
+test('the _memoTable view leaves positions without entries undefined', t => {
+  const g = ohm.grammar('G { start = "ab" }');
+  const matcher = g.matcher();
+  matcher.setInput('ab');
+  matcher.match();
+  const view = matcher._memoTable;
+  t.is(view.length, 2);
+  t.not(view[0], undefined);
+  t.is(view[1], undefined);
+  t.deepEqual(g.matcher()._memoTable, []);
 });
 
 // ---------------------------------------------------------------------------------------------

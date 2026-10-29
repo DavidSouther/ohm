@@ -26,7 +26,7 @@ export class MatchState {
     this.grammar = matcher.grammar;
     this.input = matcher.getInput();
     this.inputStream = new InputStream(this.input);
-    this.memoTable = matcher._memoTable;
+    this.memoTable = matcher._memo;
     this.memoTable.beginPass(this.input.length);
     if (optRecovery) optRecovery.cache.memoTable = this.memoTable;
 
