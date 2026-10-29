@@ -147,12 +147,15 @@ pexprs.Iter.prototype.eval = function (state) {
     }
     prevPos = inputStream.pos;
     numMatches++;
-    const row = state._bindings.splice(state._bindings.length - arity, arity);
-    const rowOffsets = state._bindingOffsets.splice(
-      state._bindingOffsets.length - arity,
-      arity
-    );
-    for (idx = 0; idx < row.length; idx++) {
+    // Avoid using `splice` which allocates an array; use repeated `pop` which is faster
+    // in hot loops and preserves insertion order by filling from the end.
+    const row = new Array(arity);
+    const rowOffsets = new Array(arity);
+    for (let j = arity - 1; j >= 0; j--) {
+      row[j] = state._bindings.pop();
+      rowOffsets[j] = state._bindingOffsets.pop();
+    }
+    for (idx = 0; idx < arity; idx++) {
       cols[idx].push(row[idx]);
       colOffsets[idx].push(rowOffsets[idx]);
     }
@@ -296,13 +299,13 @@ pexprs.Apply.prototype.eval = function (state) {
   const memoRec = posInfo.memo[memoKey];
 
   if (memoRec && memoRec.isRecoveryTainted) {
-    // Remove the entry: invalidation enumerates keys and expects a record for each.
-    delete posInfo.memo[memoKey];
+    // Tombstone the entry; enumerations of `memo` skip undefined values.
+    posInfo.memo[memoKey] = undefined;
   } else if (memoRec && posInfo.shouldUseMemoizedResult(memoRec)) {
     if (state.hasNecessaryInfo(memoRec)) {
       return state.useMemoizedResult(state.inputStream.pos, memoRec);
     }
-    delete posInfo.memo[memoKey];
+    posInfo.memo[memoKey] = undefined;
   }
   return app.reallyEval(state);
 };
@@ -447,8 +450,13 @@ pexprs.Apply.prototype.evalOnce = function (expr, state) {
 
   if (state.eval(expr)) {
     const arity = state._bindings.length - origLen;
-    const bindings = state._bindings.splice(origLen, arity);
-    const offsets = state._bindingOffsets.splice(origLen, arity);
+    // Avoid Array.prototype.splice allocation in hot path; use pop into preallocated arrays
+    const bindings = new Array(arity);
+    const offsets = new Array(arity);
+    for (let j = arity - 1; j >= 0; j--) {
+      bindings[j] = state._bindings.pop();
+      offsets[j] = state._bindingOffsets.pop();
+    }
     const matchLength = inputStream.pos - origPos;
     return new NonterminalNode(this.ruleName, bindings, offsets, matchLength);
   } else {

@@ -242,7 +242,7 @@ export class RecoveryCache {
         node.iteration.dirtyFrom = Math.min(node.iteration.dirtyFrom, node.index);
       }
       if (node.memo && node.memo.table.memo[node.memo.key] === node.memo.value) {
-        delete node.memo.table.memo[node.memo.key];
+        node.memo.table.memo[node.memo.key] = undefined;
       }
       for (const user of node.users) pending.push(user);
     }
@@ -497,6 +497,7 @@ export class RecoveryCache {
     for (const table of matcher._memoTable) {
       if (!table) continue;
       for (const memo of Object.values(table.memo)) {
+        if (!memo) continue;
         if (memo.recoveryRecord) pending.push(memo.recoveryRecord);
         delete memo.recoveryRecord;
       }
