@@ -336,6 +336,15 @@ export interface BaseActionDict<T> {
   _iter?: (this: IterationNode, ...children: Node[]) => T;
   _nonterminal?: (this: NonterminalNode, ...children: Node[]) => T;
   _terminal?: (this: TerminalNode) => T;
+  /**
+   * Called for `_fail` nodes, which have no children. `B ! C` always gives
+   * its rule two children. After a clean match, they are B and C. After
+   * recovery, the first is the kept iteration (for a guarded `*` or `+`) or
+   * an empty `_fail` node, and the second is a `_fail` node whose
+   * `sourceString` is the skipped input and whose `recoveredFailure`
+   * describes the error.
+   */
+  _fail?: (this: Node) => T;
 
   // Built-in rules
   {{builtInRuleActions}}
@@ -360,6 +369,9 @@ export type Action<T> = (this: Node, ...args: Node[]) => T;
   * A node in the parse tree, passed to Action functions.
   */
 export interface Node {
+  /** The error that a `_fail` node recovered from; absent on the empty `_fail` node in a guarded slot. */
+  recoveredFailure?: RecoveredFailure;
+
   /**
     * Returns the child at index idx.
     */
