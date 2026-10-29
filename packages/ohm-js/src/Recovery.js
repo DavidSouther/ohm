@@ -80,7 +80,9 @@ export function matchRecovering(matcher, startExpr, opts) {
       );
       // An application that is not memoized can run more than once in a
       // pass, logging its recoveries each time.
-      first._recoveredFailures = [...distinctByPosition(state._recoveryLog), finalFailure];
+      const failures = [];
+      state._recoveryLog.forEachUnique(failure => failures.push(failure));
+      first._recoveredFailures = [...distinctByPosition(failures), finalFailure];
       if (opts.tracing) {
         const {trace} = runPass(matcher, startExpr, ctx, true);
         trace.result = first;
