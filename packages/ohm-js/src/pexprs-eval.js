@@ -380,14 +380,33 @@ pexprs.Apply.prototype.reallyEval = function (state) {
     (!currentLR || !currentLR.isInvolved(memoKey)) &&
     state._recoveryTaint === origRecoveryTaint
   ) {
-    memoRec = origPosInfo.memoize(memoKey, {
-      matchLength: inputStream.pos - origPos,
-      examinedLength: inputStream.examinedLength - origPos,
-      value,
-      failuresAtRightmostPosition: state.cloneRecordedFailures(),
-      rightmostFailureOffset: state._getRightmostFailureOffset(),
-      tokenEndOffset: state._tokenEnd < 0 ? -1 : state._tokenEnd - origPos,
-    });
+    const matchLength = inputStream.pos - origPos;
+    const examinedLength = inputStream.examinedLength - origPos;
+    const failuresAtRightmostPosition = state.cloneRecordedFailures();
+    const rightmostFailureOffset = state._getRightmostFailureOffset();
+    const tokenEndOffset = state._tokenEnd < 0 ? -1 : state._tokenEnd - origPos;
+    memoRec = origPosInfo.memoize(
+      memoKey,
+      state.recovery
+        ? {
+            matchLength,
+            examinedLength,
+            value,
+            failuresAtRightmostPosition,
+            rightmostFailureOffset,
+            tokenEndOffset,
+            // Assigned below; declared here so the record keeps its properties in-object.
+            recoveryFailureSummary: undefined,
+          }
+        : {
+            matchLength,
+            examinedLength,
+            value,
+            failuresAtRightmostPosition,
+            rightmostFailureOffset,
+            tokenEndOffset,
+          }
+    );
   }
   const succeeded = !!value;
 
