@@ -287,7 +287,7 @@ export class MatchState {
   getMemoizedTraceEntry(pos, expr) {
     const posInfo = this.memoTable[pos];
     if (posInfo && expr instanceof pexprs.Apply) {
-      const memoRec = posInfo.memo[expr.toMemoKey()];
+      const memoRec = posInfo.memo.get(expr.toMemoKey());
       if (memoRec && memoRec.traceEntry) {
         const entry = memoRec.traceEntry.cloneWithExpr(expr);
         entry.isMemoized = true;

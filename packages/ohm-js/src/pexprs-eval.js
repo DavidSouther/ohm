@@ -296,16 +296,15 @@ pexprs.Apply.prototype.eval = function (state) {
   }
 
   const memoKey = app.toMemoKey();
-  const memoRec = posInfo.memo[memoKey];
+  const memoRec = posInfo.memo.get(memoKey);
 
   if (memoRec && memoRec.isRecoveryTainted) {
-    // Tombstone the entry; enumerations of `memo` skip undefined values.
-    posInfo.memo[memoKey] = undefined;
+    posInfo.memo.delete(memoKey);
   } else if (memoRec && posInfo.shouldUseMemoizedResult(memoRec)) {
     if (state.hasNecessaryInfo(memoRec)) {
       return state.useMemoizedResult(state.inputStream.pos, memoRec);
     }
-    posInfo.memo[memoKey] = undefined;
+    posInfo.memo.delete(memoKey);
   }
   return app.reallyEval(state);
 };
@@ -315,7 +314,7 @@ pexprs.Apply.prototype.handleCycle = function (state) {
   const posInfo = state.getCurrentPosInfo();
   const {currentLeftRecursion} = posInfo;
   const memoKey = this.toMemoKey();
-  let memoRec = posInfo.memo[memoKey];
+  let memoRec = posInfo.memo.get(memoKey);
 
   if (currentLeftRecursion && currentLeftRecursion.headApplication.toMemoKey() === memoKey) {
     // We already know about this left recursion, but it's possible there are "involved
