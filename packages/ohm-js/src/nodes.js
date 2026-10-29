@@ -106,6 +106,10 @@ export class Node {
   isOptional() {
     return false;
   }
+
+  isFailure() {
+    return false;
+  }
 }
 
 // Terminals
@@ -208,5 +212,26 @@ export class IterationNode extends Node {
 
   isOptional() {
     return this.optional;
+  }
+}
+
+// Failures (a recovered `B ! C`). A `_fail` node spans a skip region and
+// carries its RecoveredFailure, plus the failures recovered inside the
+// attempt it replaced. An empty placeholder in a guarded slot spans nothing
+// and carries no failure.
+
+export class FailureNode extends Node {
+  constructor(matchLength, optRecoveredFailure, optNestedFailures) {
+    super(matchLength);
+    this.recoveredFailure = optRecoveredFailure;
+    this.nestedFailures = optNestedFailures || [];
+  }
+
+  get ctorName() {
+    return '_fail';
+  }
+
+  isFailure() {
+    return true;
   }
 }
