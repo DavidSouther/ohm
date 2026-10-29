@@ -32,7 +32,10 @@ if (process.argv[2] === '--child') {
   const cases = [
     ['prog', 'blocks', 'valid', 30, 1, 20],
     ['prog', 'blocks', 'valid', 30, 0, 40],
+    ['prog', 'blocks', 'invalid-single', 30, 1, 20],
     ['prog', 'blocks', 'invalid-dense', 100, 1, 6],
+    ['lex', 'lines', 'valid', 30, 1, 6],
+    ['lex', 'lines', 'invalid-single', 30, 1, 6],
     ['lex', 'lines', 'invalid-dense', 30, 1, 6],
   ];
   for (const c of cases) {
