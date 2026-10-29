@@ -176,6 +176,13 @@ export interface FirstPassReport {
  */
 export interface Failure {
   toString(): string;
+  /**
+   * True when this expectation failed inside a token that had already begun:
+   * a lexical rule application (or lexified expression) that started before
+   * the failure position. False for an expectation at a token boundary, where
+   * the input is missing or unexpected rather than malformed.
+   */
+  isLexical(): boolean;
 }
 
 /**

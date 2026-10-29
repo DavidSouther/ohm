@@ -34,10 +34,16 @@ export function mergeFailureSummaries(newer, older) {
     while (at >= 0 && !sameFailure(failures[at], failure)) at--;
     if (at < 0) {
       failures.push(failure);
-    } else if (!failure.isFluffy() && failures[at].isFluffy()) {
-      const copy = failures[at].clone();
-      copy.clearFluffy();
-      failures[at] = copy;
+    } else {
+      const prior = failures[at];
+      const clearFluffy = !failure.isFluffy() && prior.isFluffy();
+      const clearLexical = !failure.isLexical() && prior.isLexical();
+      if (clearFluffy || clearLexical) {
+        const copy = prior.clone();
+        if (clearFluffy) copy.clearFluffy();
+        if (clearLexical) copy.lexical = false;
+        failures[at] = copy;
+      }
     }
   }
   return {position: newer.position, failures};
@@ -53,8 +59,10 @@ function mergeLargeSummaries(newer, older) {
       const copy = failure.clone();
       byKey.set(copy.toKey(), copy);
       failures.push(copy);
-    } else if (!failure.isFluffy()) {
-      prior.clearFluffy();
+    } else {
+      if (!failure.isFluffy()) prior.clearFluffy();
+      // An expectation also met at a token boundary is not inside a token.
+      if (!failure.isLexical()) prior.lexical = false;
     }
   }
   return {position: newer.position, failures};
@@ -210,7 +218,7 @@ export class RecoveryCache {
     this.correctionReaders = new Map();
     this.expressionIds = new WeakMap();
     this.applicationIds = new Map();
-    this.failureLists = new WeakMap(); // expression -> shared one-failure list
+    this.failureLists = new WeakMap(); // expression -> shared boundary/lexical failure lists
     this.nextId = 1; // 0 means "no owner"
     this.contexts = new Map();
     this.current = null;
@@ -243,11 +251,19 @@ export class RecoveryCache {
   // The one-failure list for an expression that failed. Summaries share these lists and the
   // failures in them, so nothing mutates either in place. An expression made by parameter
   // substitution is new each time, so only expressions used as written (`cacheable`) are kept.
-  failuresOf(expr, cacheable, grammar) {
-    if (!cacheable) return [expr.toFailure(grammar)];
-    let failures = this.failureLists.get(expr);
-    if (!failures) this.failureLists.set(expr, (failures = [expr.toFailure(grammar)]));
-    return failures;
+  failuresOf(expr, cacheable, grammar, lexical = false) {
+    let lists = cacheable ? this.failureLists.get(expr) : undefined;
+    if (!lists) {
+      lists = [];
+      if (cacheable) this.failureLists.set(expr, lists);
+    }
+    const kind = lexical ? 1 : 0;
+    if (!lists[kind]) {
+      const failure = expr.toFailure(grammar);
+      failure.lexical = lexical;
+      lists[kind] = [failure];
+    }
+    return lists[kind];
   }
 
   applicationId(memoKey) {
@@ -379,7 +395,9 @@ export class RecoveryCache {
     const flags =
       (state._noRecoveryDepth > 0 ? 1 : 0) |
       (state.inSyntacticContext() ? 2 : 0) |
-      (state.inLexifiedContext() ? 4 : 0);
+      (state.inLexifiedContext() ? 4 : 0) |
+      (state._isLexicalFailureAt(pos) ? 8 : 0) |
+      (state._tokenStart === pos ? 16 : 0);
     const {_blockDepth: block, _syncContext: sync} = state;
     const hash = hashContext(eid, ownerId, start, pos, depth, flags, block, sync);
     let node = this.find(hash, eid, ownerId, start, pos, depth, flags, block, sync);

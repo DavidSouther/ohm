@@ -303,7 +303,7 @@ pexprs.Apply.prototype.eval = function (state) {
       memoTable.remove(entry);
     } else if (memoTable.shouldUseMemoizedResult(pos, entry)) {
       if (state.hasNecessaryInfo(entry)) {
-        return state.useMemoizedResult(pos, entry);
+        return state.useMemoizedResult(pos, entry, app);
       }
       memoTable.remove(entry);
     }
@@ -327,7 +327,7 @@ pexprs.Apply.prototype.handleCycle = function (state, keyId) {
     entry = memoTable.add(pos, keyId, 0, 0, false, undefined, -1, -1);
     memoTable.startLeftRecursion(pos, entry, keyId, this);
   }
-  return state.useMemoizedResult(pos, entry);
+  return state.useMemoizedResult(pos, entry, this);
 };
 
 pexprs.Apply.prototype.reallyEval = function (state, keyId) {

@@ -39,6 +39,8 @@ export class MatchState {
     this._applicationStack = [];
     this._posStack = [0];
     this.inLexifiedContextStack = [false];
+    this._tokenStart = -1;
+    this._tokenStartStack = [];
 
     this.rightmostFailurePosition = -1;
     this._rightmostFailurePositionStack = [];
@@ -108,6 +110,8 @@ export class MatchState {
     this._posStack.push(this.inputStream.pos);
     this._applicationStack.push(app);
     this.inLexifiedContextStack.push(false);
+    this._tokenStartStack.push(this._tokenStart);
+    this._tokenStart = this._tokenStartFor(app);
     this.memoTable.enter(this.inputStream.pos, memoKeyId);
     this._rightmostFailurePositionStack.push(this.rightmostFailurePosition);
     this.rightmostFailurePosition = -1;
@@ -121,6 +125,7 @@ export class MatchState {
     const origPos = this._posStack.pop();
     this._applicationStack.pop();
     this.inLexifiedContextStack.pop();
+    this._tokenStart = this._tokenStartStack.pop();
     this.memoTable.exit(origPos);
 
     this.rightmostFailurePosition = Math.max(
@@ -138,10 +143,28 @@ export class MatchState {
 
   enterLexifiedContext() {
     this.inLexifiedContextStack.push(true);
+    this._tokenStartStack.push(this._tokenStart);
+    if (this._tokenStart < 0) this._tokenStart = this.inputStream.pos;
   }
 
   exitLexifiedContext() {
     this.inLexifiedContextStack.pop();
+    this._tokenStart = this._tokenStartStack.pop();
+  }
+
+  _tokenStartFor(app) {
+    if (app.isSyntactic()) return -1;
+    return this._tokenStart < 0 ? this.inputStream.pos : this._tokenStart;
+  }
+
+  _isLexicalFailureAt(pos) {
+    return this._tokenStart >= 0 && this._tokenStart < pos;
+  }
+
+  _failureOf(expr, pos) {
+    const failure = expr.toFailure(this.grammar);
+    failure.lexical = this._isLexicalFailureAt(pos);
+    return failure;
   }
 
   currentApplication() {
@@ -211,7 +234,9 @@ export class MatchState {
     if (this.recovery && !this.trace) {
       const app = this.currentApplication();
       const resolved = app ? expr.substituteParams(app.args) : expr;
-      const failures = this.recovery.cache.failuresOf(resolved, resolved === expr, this.grammar);
+      const failures = this.recovery.cache.failuresOf(
+        resolved, resolved === expr, this.grammar, this._isLexicalFailureAt(pos)
+      );
       const summary = {position: pos, failures};
       this._recoveryFailureSummary = mergeFailureSummaries(
         summary,
@@ -232,7 +257,7 @@ export class MatchState {
         // parameters.
       }
 
-      this.recordFailure(expr.toFailure(this.grammar), false);
+      this.recordFailure(this._failureOf(expr, pos), false);
     }
   }
 
@@ -240,8 +265,10 @@ export class MatchState {
     const key = failure.toKey();
     if (!this.recordedFailures[key]) {
       this.recordedFailures[key] = shouldCloneIfNew ? failure.clone() : failure;
-    } else if (this.recordedFailures[key].isFluffy() && !failure.isFluffy()) {
-      this.recordedFailures[key].clearFluffy();
+    } else {
+      const prior = this.recordedFailures[key];
+      if (prior.isFluffy() && !failure.isFluffy()) prior.clearFluffy();
+      if (!failure.isLexical()) prior.lexical = false;
     }
   }
 
@@ -321,7 +348,18 @@ export class MatchState {
     return true;
   }
 
-  useMemoizedResult(origPos, entry) {
+  // Failures at a reused lexical application's start depend on its caller's token.
+  _reusedFailures(failures, position, origPos, app) {
+    if (position !== origPos || app.isSyntactic()) return failures;
+    const lexical = this._isLexicalFailureAt(origPos);
+    return failures.map(failure => {
+      const copy = failure.clone();
+      copy.lexical = lexical;
+      return copy;
+    });
+  }
+
+  useMemoizedResult(origPos, entry, app) {
     const {memoTable} = this;
     if (this.recovery && !this.trace) {
       const record = this.recovery.cache.memoRecords.get(entry);
@@ -329,8 +367,10 @@ export class MatchState {
       const stored = memoTable.summaries[entry];
       if (stored) {
         const position = origPos + memoTable.rightmostFailureOffset[entry];
+        const failures = stored.position === position
+          ? this._reusedFailures(stored.failures, position, origPos, app) : [];
         this._recoveryFailureSummary = mergeFailureSummaries(
-          {position, failures: stored.position === position ? stored.failures : []},
+          {position, failures},
           this._recoveryFailureSummary
         );
       }
@@ -355,7 +395,10 @@ export class MatchState {
       this.positionToRecordFailures === memoRecRightmostFailurePosition &&
       memoTable.failures[entry]
     ) {
-      this.recordFailures(memoTable.failures[entry], true);
+      const failures = this._reusedFailures(
+        Object.values(memoTable.failures[entry]), memoRecRightmostFailurePosition, origPos, app
+      );
+      this.recordFailures(failures, true);
     }
 
     this.inputStream.examinedLength = Math.max(
