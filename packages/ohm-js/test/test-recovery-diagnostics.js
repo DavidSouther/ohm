@@ -2,7 +2,7 @@ import test from 'ava';
 import * as ohm from '../index.mjs';
 import {DiagnosticSnapshot} from '../src/DiagnosticSnapshot.js';
 import {Interval} from '../src/Interval.js';
-import {RecoveredFailure} from '../src/RecoveredFailure.js';
+import {RecoveredFailure, collectRecoveredFailures} from '../src/RecoveredFailure.js';
 import {SourcePositions} from '../src/SourcePositions.js';
 import {getLineAndColumn} from '../src/util.js';
 
@@ -84,4 +84,23 @@ test('a recovered failure owns detached diagnostics for an earlier pass', t => {
   result.getRightmostFailures()[0].makeFluffy();
   t.is(recovered.getExpectedText(), '"b"');
   t.false(recovered.getRightmostFailures()[0].isFluffy());
+});
+
+test('collecting nested recovery effects preserves order without expanding their array', t => {
+  const result = ohm.grammar('G { Start = "a" "b" }').match('a!');
+  const nested = new RecoveredFailure(new Interval('a!', 0, 1), 0, result);
+  const recovered = new RecoveredFailure(new Interval('a!', 1, 2), 1, result);
+  const node = {
+    isFailure: () => true,
+    recoveredFailure: recovered,
+    _nestedFailureEffects: {
+      forEachUnique(callback) {
+        callback(nested);
+      },
+    },
+    get nestedFailures() {
+      throw new Error('collecting shared effects must not materialize their array');
+    },
+  };
+  t.deepEqual(collectRecoveredFailures(node), [nested, recovered]);
 });

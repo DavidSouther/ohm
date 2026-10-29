@@ -224,7 +224,30 @@ export class FailureNode extends Node {
   constructor(matchLength, optRecoveredFailure, optNestedFailures) {
     super(matchLength);
     this.recoveredFailure = optRecoveredFailure;
-    this.nestedFailures = optNestedFailures || [];
+    if (optNestedFailures?.forEachUnique) {
+      Object.defineProperty(this, '_nestedFailureEffects', {
+        value: optNestedFailures,
+        configurable: true,
+      });
+      const replace = failures => {
+        Object.defineProperty(this, 'nestedFailures', {
+          value: failures,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+        delete this._nestedFailureEffects;
+        return failures;
+      };
+      Object.defineProperty(this, 'nestedFailures', {
+        configurable: true,
+        enumerable: true,
+        get: () => replace(optNestedFailures.toArray()),
+        set: replace,
+      });
+    } else {
+      this.nestedFailures = optNestedFailures || [];
+    }
   }
 
   get ctorName() {
