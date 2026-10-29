@@ -2,6 +2,7 @@ import {Interval} from './Interval.js';
 import {RecoveredFailure} from './RecoveredFailure.js';
 import {FailureNode, IterationNode, ListNode} from './nodes.js';
 import * as pexprs from './pexprs-main.js';
+import {mergeFailureSummaries} from './RecoveryCache.js';
 
 // --------------------------------------------------------------------
 // Fallible: `B ! C`
@@ -111,21 +112,22 @@ pexprs.Fallible.prototype.eval = function (state) {
   const outerTokenEnd = state._tokenEnd;
   state._tokenEnd = origPos;
   const blockDepth = isBlock(this) ? 1 : 0;
-  state._syncStack.push(sync);
+  state._pushRecoverySync(sync);
   state._blockDepth += blockDepth;
 
   // Try the guarded expression and its join before considering recovery.
   const ok = state.eval(this.fallible) && state.eval(this.join);
 
   state._blockDepth -= blockDepth;
-  state._syncStack.pop();
+  state._popRecoverySync();
   const tokenEnd = state._tokenEnd;
   state._tokenEnd = Math.max(outerTokenEnd, tokenEnd);
   const attemptRightmost = state.rightmostFailurePosition;
   const attemptFailures = state.recordedFailures;
+  const attemptSummary = state._recoveryFailureSummary;
   state.popFailuresInfo();
 
-  const permit = ok ? undefined : ctx.permitted.get(key);
+  const permit = ok ? undefined : ctx.cache.readPermission(key);
   if (permit) {
     state._recoveryTaint++;
     state.truncateBindings(origNumBindings);
@@ -137,7 +139,7 @@ pexprs.Fallible.prototype.eval = function (state) {
     state.truncateBindings(origNumBindings);
     inputStream.pos = origPos;
   } else if (!ok) {
-    ctx.attempts.set(key, {
+    ctx.cache.writeAttempt(state, {
       key,
       start: origPos,
       rightmost: attemptRightmost,
@@ -149,6 +151,10 @@ pexprs.Fallible.prototype.eval = function (state) {
   // without expected text.
   state.rightmostFailurePosition = Math.max(state.rightmostFailurePosition, attemptRightmost);
   state.recordedFailures = attemptFailures;
+  state._recoveryFailureSummary = mergeFailureSummaries(
+    attemptSummary,
+    state._recoveryFailureSummary
+  );
   return ok;
 };
 
@@ -192,13 +198,13 @@ pexprs.Fallible.prototype.recover = function (
   if (keepsPrefix) {
     // Evaluate the guarded iteration again, under the same permissions and
     // stop markers, so it keeps what this pass matched.
-    state._syncStack.push(sync);
+    state._pushRecoverySync(sync);
     state._blockDepth++;
 
     const kept = state.eval(this.fallible);
 
     state._blockDepth--;
-    state._syncStack.pop();
+    state._popRecoverySync();
     if (!kept) {
       inputStream.pos = origPos;
       state.pushBinding(emptyIteration(state), origPos);
