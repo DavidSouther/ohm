@@ -560,3 +560,23 @@ test('a block marked with a stop marker escalates instead of inserting', t => {
   const r = g.match('{ a; b;', undefined, RECOVER);
   t.true(r.failed());
 });
+
+// --------------------------------------------------------------------
+// Token-wise scanning with `recoveryToken`
+// --------------------------------------------------------------------
+
+test('identical recovered failures at one position are reported once', t => {
+  const g = ohm.grammar(String.raw`
+    Blocks {
+      Block = "{" Item* ! "}"
+      Item  = Block | Stmt
+      Stmt  = Body ! ";"
+      Body  = letter+
+    }`);
+  const r = g.match('{ a; { b;', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(
+    r.getRecoveredFailures().map(f => [f.position, f.shortMessage, f.missing]),
+    [[9, 'Line 1, col 10: expected "}"', true]]
+  );
+});
