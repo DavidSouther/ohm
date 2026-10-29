@@ -41,6 +41,11 @@ pexprs.Iter.prototype.assertIteratedExprsAreNotNullable = function (grammar) {
   }
 };
 
+pexprs.Fallible.prototype.assertIteratedExprsAreNotNullable = function (grammar) {
+  this.fallible.assertIteratedExprsAreNotNullable(grammar);
+  this.join.assertIteratedExprsAreNotNullable(grammar);
+};
+
 pexprs.Opt.prototype.assertIteratedExprsAreNotNullable =
   pexprs.Not.prototype.assertIteratedExprsAreNotNullable =
   pexprs.Lookahead.prototype.assertIteratedExprsAreNotNullable =
