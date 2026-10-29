@@ -21,6 +21,7 @@ const Flags = {
   isMemoized: 1 << 3,
   isHeadOfLeftRecursion: 1 << 4,
   terminatesLR: 1 << 5,
+  isRecovered: 1 << 6,
 };
 
 function spaces(n) {
@@ -92,6 +93,7 @@ export class Trace {
     ans.isRootNode = this.isRootNode;
     ans.terminatesLR = this.terminatesLR;
     ans.terminatingLREntry = this.terminatingLREntry;
+    ans.isRecovered = this.isRecovered;
     return ans;
   }
 
@@ -170,6 +172,9 @@ export class Trace {
       sb.append((node.succeeded ? CHECK_MARK : BALLOT_X) + ' ' + node.displayString);
       if (node.isHeadOfLeftRecursion) {
         sb.append(' (LR)');
+      }
+      if (node.isRecovered) {
+        sb.append(' (recovered)');
       }
       if (node.succeeded) {
         const contents = asEscapedString(node.source.contents);

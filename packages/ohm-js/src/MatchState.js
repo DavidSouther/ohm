@@ -17,7 +17,7 @@ util.awaitBuiltInRules(builtInRules => {
 const applySpaces = new pexprs.Apply('spaces');
 
 export class MatchState {
-  constructor(matcher, startExpr, optPositionToRecordFailures) {
+  constructor(matcher, startExpr, optPositionToRecordFailures, optRecovery) {
     this.matcher = matcher;
     this.startExpr = startExpr;
 
@@ -41,10 +41,33 @@ export class MatchState {
     this._rightmostFailurePositionStack = [];
     this._recordedFailuresStack = [];
 
+    // Recovery at `B ! C`. `recovery` is the RecoveryContext shared by the
+    // passes of a recovering match, or undefined.
+    this.recovery = optRecovery;
+    // Stop markers: join expressions of the fallibles whose attempt is in
+    // progress. A scan stops where any of them matches.
+    this._syncStack = [];
+    this._recoveryLog = []; // RecoveredFailures made so far in this pass
+    this._noRecoveryDepth = 0; // > 0 inside `~`, `&` and recovery scans
+    // Changes whenever an evaluation depends on stop markers or skipped
+    // recording an attempt. A changed value prevents later reuse of the
+    // application's result; left-recursion seeds stay stored for growth and tracing.
+    this._recoveryTaint = 0;
+    // Marks the next trace entry (the Fallible that just recovered) as recovered.
+    this._traceRecovered = false;
+
     if (optPositionToRecordFailures !== undefined) {
       this.positionToRecordFailures = optPositionToRecordFailures;
       this.recordedFailures = Object.create(null);
     }
+  }
+
+  _suspendRecovery() {
+    this._noRecoveryDepth++;
+  }
+
+  _resumeRecovery() {
+    this._noRecoveryDepth--;
   }
 
   posToOffset(pos) {
@@ -315,6 +338,10 @@ export class MatchState {
       const traceEntry = this.getTraceEntry(memoPos, expr, ans, bindings);
       traceEntry.isImplicitSpaces = expr === applySpaces;
       traceEntry.isRootNode = expr === this.startExpr;
+      if (this._traceRecovered) {
+        traceEntry.isRecovered = true;
+        this._traceRecovered = false;
+      }
       origTrace.push(traceEntry);
       this.trace = origTrace;
     }

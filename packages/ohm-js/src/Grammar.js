@@ -84,16 +84,16 @@ export class Grammar {
     );
   }
 
-  match(input, optStartApplication) {
+  match(input, optStartApplication, options = {}) {
     const m = this.matcher();
     m.replaceInputRange(0, 0, input);
-    return m.match(optStartApplication);
+    return m.match(optStartApplication, options);
   }
 
-  trace(input, optStartApplication) {
+  trace(input, optStartApplication, options = {}) {
     const m = this.matcher();
     m.replaceInputRange(0, 0, input);
-    return m.trace(optStartApplication);
+    return m.trace(optStartApplication, options);
   }
 
   createSemantics() {

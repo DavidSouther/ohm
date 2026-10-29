@@ -7,6 +7,292 @@
 
 import test from 'ava';
 import * as ohm from '../index.mjs';
+import * as v18 from '../src/v18.js';
+
+const RECOVER = {recover: true};
+
+const STMTS = String.raw`
+Stmts {
+  Block = "{" Stmt* ! &"}" "}"
+  Stmt  = Body ! ";"
+  Body  = ident
+  ident = letter+
+}`;
+
+const PLAIN_STMTS = STMTS.replace('Stmt* ! &"}"', 'Stmt* &"}"').replace(
+  'Body ! ";"',
+  'Body ";"'
+);
+
+const stmtsGrammar = ohm.grammar(STMTS);
+const plainStmtsGrammar = ohm.grammar(PLAIN_STMTS);
+
+function kinds(node) {
+  return node.children.map(c => c.ctorName);
+}
+
+function messages(result) {
+  return result.getRecoveredFailures().map(f => f.shortMessage);
+}
+
+// --------------------------------------------------------------------
+// Bindings: two slots, recovered or not
+// --------------------------------------------------------------------
+
+test('a fallible always contributes two bindings', t => {
+  const g = stmtsGrammar;
+  t.is(g.rules.Stmt.body.getArity(), 2);
+  t.is(g.rules.Block.body.getArity(), 4);
+
+  const clean = g.match('{ a; b; }', undefined, RECOVER);
+  t.deepEqual(kinds(clean._cst), ['_terminal', '_iter', '_terminal', '_terminal']);
+  t.deepEqual(kinds(clean._cst.children[1].children[0]), ['Body', '_terminal']);
+
+  const recovered = g.match('{ a; b b; c }', undefined, RECOVER);
+  t.true(recovered.succeeded());
+  t.deepEqual(kinds(recovered._cst), ['_terminal', '_iter', '_fail', '_terminal']);
+  const [a, bb] = recovered._cst.children[1].children;
+  t.deepEqual(kinds(a), ['Body', '_terminal']);
+  t.deepEqual(kinds(bb), ['_fail', '_fail']);
+  t.is(bb.children[0].matchLength, 0, 'the guarded slot holds an empty placeholder');
+  t.is(bb.children[0].recoveredFailure, undefined);
+  t.truthy(bb.children[1].recoveredFailure);
+});
+
+test('a guarded `?` keeps nothing', t => {
+  const g = ohm.grammar(String.raw`
+    G {
+      Start = Item*
+      Item = Opt? ! ";"
+      Opt = "a" "b"
+    }`);
+  const r = g.match('ab; a c; ab;', undefined, RECOVER);
+  t.true(r.succeeded());
+  const items = r._cst.children[0].children;
+  t.deepEqual(kinds(items[1]), ['_fail', '_fail']);
+  t.is(items[1].children[0].matchLength, 0);
+  t.deepEqual(messages(r), ['Line 1, col 7: expected "b"']);
+});
+
+// --------------------------------------------------------------------
+// Failure scope and messages
+// --------------------------------------------------------------------
+
+test('a fallible that does not recover reports what `B C` reports', t => {
+  const g = stmtsGrammar;
+  const plain = plainStmtsGrammar;
+  for (const input of ['{ a b', '{ a; b b', '{ a; ', '{ 1', '{ a b; c d; e']) {
+    const r = g.match(input, undefined, RECOVER);
+    const p = plain.match(input);
+    t.true(r.failed(), `${input}`);
+    t.is(r.shortMessage, p.shortMessage, `${input}`);
+    t.is(r.getRightmostFailurePosition(), p.getRightmostFailurePosition(), `${input}`);
+    t.is(r.getExpectedText(), p.getExpectedText(), `${input}`);
+  }
+});
+
+test('each recovered failure carries the message of the pass that permitted it', t => {
+  const g = stmtsGrammar;
+  const plain = plainStmtsGrammar;
+  const r = g.match('{ a b; c d; e; }', undefined, RECOVER);
+  t.true(r.succeeded());
+  const failures = r.getRecoveredFailures();
+  t.is(failures.length, 2);
+
+  // The first entry equals the plain match's error.
+  const first = plain.match('{ a b; c d; e; }');
+  t.is(failures[0].shortMessage, first.shortMessage);
+  t.is(failures[0].position, first.getRightmostFailurePosition());
+  t.is(failures[0].getExpectedText(), first.getExpectedText());
+  t.deepEqual(
+    failures[0].getRightmostFailures().map(f => f.toString()),
+    first.getRightmostFailures().map(f => f.toString())
+  );
+
+  // The second equals the plain match's error once the first mistake is fixed.
+  const second = plain.match('{ a; c d; e; }');
+  t.is(failures[1].shortMessage, second.shortMessage.replace('col 8', 'col 10'));
+  t.is(failures[1].interval.contents, 'c d');
+  t.is(failures[0].interval.contents, 'a b');
+});
+
+test('a parse recovery cannot finish lists its recoveries, then the final failure', t => {
+  const g = stmtsGrammar;
+  const r = g.match('{ a b; c d; e', undefined, RECOVER);
+  t.true(r.failed());
+  const failures = r.getRecoveredFailures();
+  t.deepEqual(
+    failures.map(f => [f.interval.startIdx, f.interval.endIdx, f.position]),
+    [
+      [2, 5, 4],
+      [7, 10, 9],
+      [13, 13, 13],
+    ]
+  );
+  t.is(failures[2].shortMessage, 'Line 1, col 14: expected ";"');
+});
+
+// --------------------------------------------------------------------
+// Memoization
+// --------------------------------------------------------------------
+
+test('a fallible inside predicate matches never recovers', t => {
+  const g = ohm.grammar(String.raw`
+    G {
+      Start = &Line "x" any*
+      Line = Body ! ";"
+      Body = "a"
+    }`);
+  const r = g.match('xb;', undefined, RECOVER);
+  t.true(r.failed());
+  t.is(r.shortMessage, g.match('xb;').shortMessage);
+
+  const n = ohm.grammar(String.raw`
+    G {
+      Start = ~Line any*
+      Line = Body ! ";"
+      Body = "a"
+    }`);
+  t.true(n.match('b;', undefined, RECOVER).succeeded());
+  t.deepEqual(n.match('b;', undefined, RECOVER).getRecoveredFailures(), []);
+});
+
+test('a lookahead result is never memoized in place of a recovery', t => {
+  const g = ohm.grammar(String.raw`
+    G {
+      Start = (&Item)? Item*
+      Item = Body ! ";"
+      Body = letter
+    }`);
+  const r = g.match('1;a;', undefined, RECOVER);
+  t.true(r.succeeded());
+  const plain = ohm.grammar('G { Start = (&Item)? Item*\n Item = Body ";"\n Body = letter }');
+  t.deepEqual(messages(r), [plain.match('1;a;').shortMessage]);
+});
+
+test('recovery is deterministic across calls on fresh matchers', t => {
+  const g = stmtsGrammar;
+  const input = '{ a b; c; d d d; e }';
+  const first = g.match(input, undefined, RECOVER);
+  const second = g.match(input, undefined, RECOVER);
+  t.deepEqual(messages(first), messages(second));
+  t.is(messages(first).length, 3);
+  t.not(first, second);
+  const secondFailures = second.getRecoveredFailures();
+  t.true(
+    first.getRecoveredFailures().every(failure => !secondFailures.includes(failure)),
+    'the two matches share no recovered failure objects'
+  );
+});
+
+test('completed left recursion does not reuse a recovered result', t => {
+  const g = ohm.grammar(String.raw`
+    G {
+      Start = E
+      E = E "+" Item -- plus
+        | Item
+      Item = letter ! ";"
+    }`);
+  const matcher = g.matcher().setInput('1;');
+  const result = matcher.match(undefined, RECOVER);
+  t.true(result.succeeded());
+  t.is(result.getRecoveredFailures().length, 1);
+  t.true(matcher.match().failed());
+  t.true(g.match('1;').failed());
+  const valid = g.match('a;+b;+c;', undefined, RECOVER);
+  t.true(valid.succeeded());
+  t.deepEqual(valid.getRecoveredFailures(), []);
+});
+
+test('left recursion inside lookahead does not suppress recovery attempts', t => {
+  const g = ohm.grammar(String.raw`
+    G {
+      Start = (&E)? E
+      E = E "+" Item -- plus
+        | Item
+      Item = letter ! ";"
+    }`);
+  const result = g.match('1;', undefined, RECOVER);
+  t.true(result.succeeded());
+  t.deepEqual(messages(result), [g.match('1;').shortMessage]);
+});
+
+// --------------------------------------------------------------------
+// Pass driver: recovers every error, however many there are
+// --------------------------------------------------------------------
+
+const HDL = String.raw`
+Hdl {
+  Chip = "CHIP" name "{" Parts "}"
+  Parts = "PARTS:" Part* ! &"}"
+  Part = PartBody ! ";"
+  PartBody = name "(" ListOf<Wire, ","> ")"
+  Wire = name "=" name
+  name = letter alnum*
+}`;
+
+function chip(numParts, broken) {
+  const parts = [];
+  for (let i = 0; i < numParts; i++) {
+    parts.push(broken.has(i) ? `  Nand(a=a b=b, out=w${i});` : `  Nand(a=a, b=b, out=w${i});`);
+  }
+  return `CHIP Big {\n PARTS:\n${parts.join('\n')}\n}\n`;
+}
+
+function spread(numParts, count) {
+  const broken = new Set();
+  for (let i = 0; i < count; i++) broken.add(Math.floor((i * numParts) / count));
+  return broken;
+}
+
+for (const count of [100, 300]) {
+  test(`a 13 KB chip with ${count} broken parts reports every error`, t => {
+    const g = ohm.grammar(HDL);
+    const input = chip(480, spread(480, count));
+    t.true(input.length > 13000);
+    const r = g.match(input, undefined, RECOVER);
+    t.true(r.succeeded());
+    const failures = r.getRecoveredFailures();
+    t.is(failures.length, count);
+    t.true(failures.every(f => f.shortMessage.endsWith('expected ")" or ","')));
+    t.true(failures.every((f, i) => i === 0 || failures[i - 1].position < f.position));
+    t.is(failures[0].shortMessage, g.match(input).shortMessage);
+  });
+}
+
+// --------------------------------------------------------------------
+// Incremental matching
+// --------------------------------------------------------------------
+
+test('Matcher#match and Matcher#trace take the recover option', t => {
+  const g = stmtsGrammar;
+  const m = g.matcher();
+  m.setInput('{ a b; }');
+  const r = m.match(undefined, RECOVER);
+  t.true(r.succeeded());
+  t.is(r.getRecoveredFailures().length, 1);
+  t.true(m.trace(undefined, RECOVER).succeeded);
+});
+
+test('a matcher with a stale or plain memo table refuses to recover', t => {
+  const g = stmtsGrammar;
+
+  const stale = g.matcher();
+  stale.setInput('{ a; }');
+  stale.match(undefined, RECOVER);
+  stale.replaceInputRange(2, 3, 'b b');
+  t.throws(() => stale.match(undefined, RECOVER), {message: /recover/});
+
+  const plain = g.matcher();
+  plain.setInput('{ a b; }');
+  plain.match();
+  t.throws(() => plain.match(undefined, RECOVER), {message: /recover/});
+
+  const again = g.matcher();
+  again.setInput('{ a b; }');
+  t.is(again.match(undefined, RECOVER).getRecoveredFailures().length, 1);
+  t.is(again.match(undefined, RECOVER).getRecoveredFailures().length, 1);
+});
 
 // --------------------------------------------------------------------
 // Static checks
@@ -54,4 +340,67 @@ test('`!` is an operator token', t => {
       .filter(k => k !== 'any'),
     ['ident', 'operator', 'ident']
   );
+});
+
+test('a recipe round trips a fallible', t => {
+  const g = stmtsGrammar;
+  const g2 = ohm.makeRecipe(eval(g.toRecipe()));
+  t.is(g2.rules.Block.body.toString(), g.rules.Block.body.toString());
+  t.deepEqual(
+    messages(g2.match('{ a b; }', undefined, RECOVER)),
+    messages(g.match('{ a b; }', undefined, RECOVER))
+  );
+});
+
+// --------------------------------------------------------------------
+// Tracing
+// --------------------------------------------------------------------
+
+test('a fallible that recovered is marked in the trace', t => {
+  const g = stmtsGrammar;
+  const trace = g.trace('{ a b; }', undefined, RECOVER);
+  t.true(trace.succeeded);
+  const recovered = [];
+  trace.walk(node => {
+    if (node.isRecovered) recovered.push(node);
+  });
+  t.is(recovered.length, 1);
+  const [entry] = recovered;
+  t.is(entry.expr.constructor.name, 'Fallible');
+  t.true(entry.succeeded);
+  // Its children are the failed attempt and the successful synchronizer.
+  t.deepEqual(
+    entry.children.filter(c => !c.isImplicitSpaces).map(c => [c.displayString, c.succeeded]),
+    [
+      ['Body', true],
+      ['";"', false],
+      ['";"', true],
+    ]
+  );
+  t.regex(trace.toString(), /\(recovered\)/);
+
+  const plain = g.trace('{ a b; }');
+  t.false(plain.succeeded);
+});
+
+// --------------------------------------------------------------------
+// Row based iteration (ohm-js/v18 compatibility mode)
+// --------------------------------------------------------------------
+
+test('row based iteration: an iterated fallible gives one row per element', t => {
+  const g = v18.grammar(String.raw`
+    G {
+      Start = (Body ! ";")*
+      Body = letter
+    }`);
+  const r = g.match('a;1;b;', undefined, RECOVER);
+  t.true(r.succeeded());
+  const rows = r._cst.children[0].children;
+  t.deepEqual(
+    rows.map(row => row.ctorName),
+    ['_seq', '_seq', '_seq']
+  );
+  t.deepEqual(kinds(rows[1]), ['_fail', '_fail']);
+  const plain = ohm.grammar('G { Start = (Body ";")*\n Body = letter }');
+  t.deepEqual(messages(r), [plain.match('a;1;b;').shortMessage]);
 });
