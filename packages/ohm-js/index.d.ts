@@ -140,6 +140,30 @@ export interface MatchOptions {
    * Grammar#match, or Grammar#trace for recovery in those cases.
    */
   recover?: boolean;
+
+  /**
+   * Only meaningful with `recover`. Controls whether the first pass of a
+   * recovering match runs without recovery's reuse cache. That "probe" pass is
+   * cheaper when the input is valid, but a failed probe costs one extra pass.
+   * `true` always probes and `false` never does. `'auto'` (the default)
+   * probes when the grammar's previous recovering match succeeded on its
+   * first pass, or when there was none. The option never changes a result.
+   * Read MatchResult#getRecoveryProbe afterwards to see which way was cheaper.
+   */
+  probeFirstPass?: boolean | 'auto';
+}
+
+/**
+ * How the first pass of a recovering match ran.
+ */
+export interface RecoveryProbe {
+  /** True if the first pass ran without the reuse cache. */
+  probed: boolean;
+  /**
+   * The choice that was cheaper in hindsight: 'probe' if the first pass
+   * succeeded, 'cached' if it failed and a probe only added a pass.
+   */
+  better: 'probe' | 'cached';
 }
 
 /**
@@ -232,6 +256,12 @@ export interface MatchResult {
    * `shortMessage` is the same as for a match without `recover`.
    */
   getRecoveredFailures(): RecoveredFailure[];
+
+  /**
+   * For a match with `recover`, how its first pass ran and which choice would
+   * have been cheaper; undefined without `recover`. See MatchOptions#probeFirstPass.
+   */
+  getRecoveryProbe(): RecoveryProbe | undefined;
 }
 
 export interface SucceededMatchResult extends MatchResult {}
