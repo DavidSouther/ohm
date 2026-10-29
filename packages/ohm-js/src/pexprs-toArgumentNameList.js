@@ -136,6 +136,16 @@ pexprs.Seq.prototype.toArgumentNameList = function (firstArgIndex, noDupCheck) {
   return argumentNameList;
 };
 
+pexprs.Fallible.prototype.toArgumentNameList = function (firstArgIndex, noDupCheck) {
+  const guarded = this.fallible.toArgumentNameList(firstArgIndex, true);
+  const sync = this.join.toArgumentNameList(firstArgIndex + guarded.length, true);
+  const argumentNameList = guarded.concat(sync);
+  if (!noDupCheck) {
+    resolveDuplicatedNames(argumentNameList);
+  }
+  return argumentNameList;
+};
+
 pexprs.Iter.prototype.toArgumentNameList = function (firstArgIndex, noDupCheck) {
   const argumentNameList = this.expr
     .toArgumentNameList(firstArgIndex, noDupCheck)

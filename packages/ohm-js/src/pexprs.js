@@ -7,6 +7,7 @@ import './pexprs-assertAllApplicationsAreValid.js';
 import './pexprs-assertChoicesHaveUniformArity.js';
 import './pexprs-assertIteratedExprsAreNotNullable.js';
 import './pexprs-eval.js';
+import './pexprs-evalFallible.js';
 import './pexprs-getArity.js';
 import './pexprs-outputRecipe.js';
 import './pexprs-introduceParams.js';
