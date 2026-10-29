@@ -325,7 +325,7 @@ pexprs.Apply.prototype.handleCycle = function (state, keyId) {
   } else if (entry < 0) {
     // New left recursion detected! Memoize a failure to try to get a seed parse.
     entry = memoTable.add(pos, keyId, 0, 0, false, undefined, -1, -1);
-    memoTable.startLeftRecursion(pos, entry, keyId);
+    memoTable.startLeftRecursion(pos, entry, keyId, this);
   }
   return state.useMemoizedResult(pos, entry);
 };
