@@ -222,7 +222,8 @@ export class MatchState {
     if (this.recovery && !this.trace) {
       const app = this.currentApplication();
       const resolved = app ? expr.substituteParams(app.args) : expr;
-      const summary = {position: pos, failures: [resolved.toFailure(this.grammar)]};
+      const failures = this.recovery.cache.failuresOf(resolved, resolved === expr, this.grammar);
+      const summary = {position: pos, failures};
       this._recoveryFailureSummary = mergeFailureSummaries(
         summary,
         this._recoveryFailureSummary
@@ -465,7 +466,8 @@ export class MatchState {
         key => this.recordedFailures[key]
       );
     } else if (this.recovery && !this.trace) {
-      rightmostFailures = this._recoveryFailureSummary.failures;
+      // Summaries share their failure lists, so hand the result its own array.
+      rightmostFailures = this._recoveryFailureSummary.failures.slice();
     }
     const cst = this._bindings[0];
     if (cst) {

@@ -200,6 +200,7 @@ export class RecoveryCache {
     this.permissionUsers = new Map();
     this.expressionIds = new WeakMap();
     this.applicationIds = new Map();
+    this.failureLists = new WeakMap(); // expression -> shared one-failure list
     this.nextId = 1; // 0 means "no owner"
     this.contexts = new Map();
     this.current = null;
@@ -227,6 +228,16 @@ export class RecoveryCache {
     let id = this.contexts.get(key);
     if (id === undefined) this.contexts.set(key, (id = this.contexts.size + 1));
     return id;
+  }
+
+  // The one-failure list for an expression that failed. Summaries share these lists and the
+  // failures in them, so nothing mutates either in place. An expression made by parameter
+  // substitution is new each time, so only expressions used as written (`cacheable`) are kept.
+  failuresOf(expr, cacheable, grammar) {
+    if (!cacheable) return [expr.toFailure(grammar)];
+    let failures = this.failureLists.get(expr);
+    if (!failures) this.failureLists.set(expr, (failures = [expr.toFailure(grammar)]));
+    return failures;
   }
 
   applicationId(memoKey) {
