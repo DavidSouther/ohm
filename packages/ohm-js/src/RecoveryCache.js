@@ -49,7 +49,30 @@ function record() {
     users: new Set(),
     permissions: new Set(),
     attempts: emptyEffects,
+    // Identity of the evaluation context; set only on records kept in `RecoveryCache.records`.
+    eid: 0,
+    owner: 0,
+    start: 0,
+    pos: 0,
+    depth: 0,
+    flags: 0,
+    block: 0,
+    sync: 0,
+    next: null,
   };
+}
+
+function hashContext(eid, owner, start, pos, depth, flags, block, sync) {
+  let h = 0x811c9dc5 | 0;
+  h = Math.imul(h ^ eid, 0x9e3779b1);
+  h = Math.imul((h ^ (h >>> 15)) ^ owner, 0x9e3779b1);
+  h = Math.imul((h ^ (h >>> 15)) ^ start, 0x9e3779b1);
+  h = Math.imul((h ^ (h >>> 15)) ^ pos, 0x9e3779b1);
+  h = Math.imul((h ^ (h >>> 15)) ^ depth, 0x9e3779b1);
+  h = Math.imul((h ^ (h >>> 15)) ^ flags, 0x9e3779b1);
+  h = Math.imul((h ^ (h >>> 15)) ^ block, 0x9e3779b1);
+  h = Math.imul((h ^ (h >>> 15)) ^ sync, 0x9e3779b1);
+  return (h ^ (h >>> 15)) & 0x3fffffff; // Keep the Map key a small integer.
 }
 
 function iterationBindings(prefix, arity, rowBased, optional, stats, ownerStart) {
@@ -142,14 +165,16 @@ function iterationBindings(prefix, arity, rowBased, optional, stats, ownerStart)
 export class RecoveryCache {
   constructor(context) {
     this.context = context;
-    this.records = new Map();
+    this.records = new Map(); // context hash -> chain of records
     this.memoRecords = new Map(); // native memo record -> recovery record
     this.permissionUsers = new Map();
     this.expressionIds = new WeakMap();
-    this.nextId = 0;
+    this.applicationIds = new Map();
+    this.nextId = 1; // 0 means "no owner"
     this.contexts = new Map();
     this.current = null;
     this.lastRecord = null;
+    this.analysis = null;
     this.lrDepth = 0;
     this.disabled = false;
     this.stats = {
@@ -174,27 +199,28 @@ export class RecoveryCache {
     return id;
   }
 
-  key(state, expr) {
-    const owner = state.currentApplication();
-    const actuals = owner ? owner.args : [];
-    let expression;
-    if (expr instanceof pexprs.Apply) {
-      expression = `a:${expr.substituteParams(actuals).toMemoKey()}`;
-    } else {
-      let id = this.expressionIds.get(expr);
-      if (id === undefined) this.expressionIds.set(expr, (id = this.nextId++));
-      expression = `e:${id}:${owner ? owner.toMemoKey() : ''}:${state._posStack.at(-1)}`;
+  applicationId(memoKey) {
+    let id = this.applicationIds.get(memoKey);
+    if (id === undefined) this.applicationIds.set(memoKey, (id = this.nextId++));
+    return id;
+  }
+
+  find(hash, eid, owner, start, pos, depth, flags, block, sync) {
+    for (let node = this.records.get(hash); node; node = node.next) {
+      if (
+        node.eid === eid &&
+        node.owner === owner &&
+        node.start === start &&
+        node.pos === pos &&
+        node.depth === depth &&
+        node.flags === flags &&
+        node.block === block &&
+        node.sync === sync
+      ) {
+        return node;
+      }
     }
-    return JSON.stringify([
-      expression,
-      state.inputStream.pos,
-      state._applicationStack.length,
-      state._noRecoveryDepth > 0,
-      state.inSyntacticContext(),
-      state.inLexifiedContext(),
-      state._blockDepth,
-      state._syncContext,
-    ]);
+    return undefined;
   }
 
   depend(child) {
@@ -257,7 +283,7 @@ export class RecoveryCache {
     if (this.disabled || (!(expr instanceof pexprs.Apply) && !(expr instanceof pexprs.Iter))) {
       return this.evaluateInline(state, expr);
     }
-    const analysis = recoveryAnalysis(state.grammar);
+    const analysis = this.analysis || (this.analysis = recoveryAnalysis(state.grammar));
     if (!analysis.containsFallible(expr) && !(analysis.spaces && state.inSyntacticContext())) {
       const parent = this.current;
       this.current = null;
@@ -267,10 +293,14 @@ export class RecoveryCache {
         this.current = parent;
       }
     }
+    const owner = state.currentApplication();
+    let app = null;
+    let appKey = '';
     if (expr instanceof pexprs.Apply) {
-      const app = expr.substituteParams(state.currentApplication()?.args || []);
+      app = expr.substituteParams(owner?.args || []);
+      appKey = app.toMemoKey();
       const table = state.memoTable[state.inputStream.pos];
-      const native = table?.memo.get(app.toMemoKey());
+      const native = table?.memo.get(appKey);
       if (
         native &&
         !native.isRecoveryTainted &&
@@ -282,13 +312,45 @@ export class RecoveryCache {
       }
     }
     const parent = this.current;
-    const key = this.key(state, expr);
-    let node = this.records.get(key);
+    let eid;
+    let ownerId = 0;
+    let start = -1;
+    if (app) {
+      eid = this.applicationId(appKey);
+    } else {
+      eid = this.expressionIds.get(expr);
+      if (eid === undefined) this.expressionIds.set(expr, (eid = this.nextId++));
+      ownerId = owner ? this.applicationId(owner.toMemoKey()) : 0;
+      start = state._posStack.at(-1);
+    }
+    const {pos} = state.inputStream;
+    const depth = state._applicationStack.length;
+    const flags =
+      (state._noRecoveryDepth > 0 ? 1 : 0) |
+      (state.inSyntacticContext() ? 2 : 0) |
+      (state.inLexifiedContext() ? 4 : 0);
+    const {_blockDepth: block, _syncContext: sync} = state;
+    const hash = hashContext(eid, ownerId, start, pos, depth, flags, block, sync);
+    let node = this.find(hash, eid, ownerId, start, pos, depth, flags, block, sync);
     const allowed = !this.lrDepth;
     if (!node || node.active || !allowed) {
+      // An existing record is never replaced: it is reused, or this evaluation is volatile.
+      const isNew = !node;
       node = record();
-      if (allowed && !this.records.get(key)?.active) this.records.set(key, node);
-      else node.volatile = true;
+      if (allowed && isNew) {
+        node.eid = eid;
+        node.owner = ownerId;
+        node.start = start;
+        node.pos = pos;
+        node.depth = depth;
+        node.flags = flags;
+        node.block = block;
+        node.sync = sync;
+        node.next = this.records.get(hash) || null;
+        this.records.set(hash, node);
+      } else {
+        node.volatile = true;
+      }
     }
     this.depend(node);
     if (!node.dirty && !node.volatile) {
@@ -494,7 +556,10 @@ export class RecoveryCache {
   }
 
   release() {
-    const pending = [...this.records.values(), ...this.memoRecords.values()];
+    const pending = [...this.memoRecords.values()];
+    for (let head of this.records.values()) {
+      for (; head; head = head.next) pending.push(head);
+    }
     const visited = new Set();
     while (pending.length) {
       const node = pending.pop();
