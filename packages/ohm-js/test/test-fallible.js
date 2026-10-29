@@ -567,6 +567,44 @@ test('a block marked with a stop marker escalates instead of inserting', t => {
   t.true(r.failed());
 });
 
+const UNITS = String.raw`
+Units {
+  File = Unit* ! end
+  Unit = unit ident "{" Stmt* ! "}"
+  Stmt = Body ! ";"
+  Body = ident ident?
+  unit = "unit" ~alnum
+  ident = ~unit letter+
+  recoveryStop = unit
+}`;
+
+test('recoveryStop closes a nested block that lost its closer', t => {
+  const g = ohm.grammar(UNITS);
+  const source = 'unit a { x; y;\nunit b { zz z z; }';
+  const r = g.match(source, undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(
+    r.getRecoveredFailures().map(f => [source.slice(f.position, f.position + 6), f.missing]),
+    [
+      ['unit b', true],
+      ['z; }', false],
+    ]
+  );
+});
+
+test('recoveryStop is inert without recovery and ignored at the outermost block', t => {
+  const g = ohm.grammars(UNITS).Units;
+  const plain = ohm.grammar(UNITS.replace('recoveryStop = unit', ''));
+  const source = 'unit a { x y z; } unit b { w; }';
+  t.is(g.match(source).shortMessage, plain.match(source).shortMessage);
+  const outer = g.match('unit a { x; } x y z unit b { w; }', undefined, RECOVER);
+  t.true(outer.succeeded());
+  t.deepEqual(
+    outer.getRecoveredFailures().map(f => f.interval.contents),
+    ['x y z unit b { w; }']
+  );
+});
+
 // --------------------------------------------------------------------
 // Token-wise scanning with `recoveryToken`
 // --------------------------------------------------------------------
