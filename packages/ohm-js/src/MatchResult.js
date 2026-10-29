@@ -34,16 +34,13 @@ export class MatchResult {
     if (this.failed()) {
       common.defineLazyProperty(this, 'message', function () {
         const detail = 'Expected ' + this.getExpectedText();
-        return (
-          util.getLineAndColumnMessage(this.input, this.getRightmostFailurePosition()) + detail
-        );
+        return this._getLineAndColumn().toString() + detail;
       });
       common.defineLazyProperty(this, 'shortMessage', function () {
         const detail = 'expected ' + this.getExpectedText();
-        const errorInfo = util.getLineAndColumn(
-          this.input,
-          this.getRightmostFailurePosition()
-        );
+        const errorInfo = this._recovery?.positionIndex
+          ? this._recovery.positionIndex.getLineAndColumnNumbers(this.getRightmostFailurePosition())
+          : this._getLineAndColumn();
         return 'Line ' + errorInfo.lineNum + ', col ' + errorInfo.colNum + ': ' + detail;
       });
     }
@@ -51,6 +48,13 @@ export class MatchResult {
 
   succeeded() {
     return !!this._cst;
+  }
+
+  _getLineAndColumn() {
+    const position = this.getRightmostFailurePosition();
+    return this._recovery?.positionIndex
+      ? this._recovery.positionIndex.getLineAndColumn(position)
+      : util.getLineAndColumn(this.input, position);
   }
 
   failed() {

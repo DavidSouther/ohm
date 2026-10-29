@@ -27,7 +27,7 @@ function strcpy(dest, src, offset) {
 
 // Casts the underlying lineAndCol object to a formatted message string,
 // highlighting `ranges`.
-function lineAndColumnToMessage(...ranges) {
+export function lineAndColumnToMessage(...ranges) {
   const lineAndCol = this;
   const {offset} = lineAndCol;
   const {repeatStr} = common;
