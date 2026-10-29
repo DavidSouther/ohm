@@ -555,37 +555,10 @@ export class RecoveryCache {
     return true;
   }
 
+  // Drop the cache's own indexes. Nothing outside the cache references a record (CST
+  // iteration nodes capture detached `output` rows), so the record graph becomes garbage
+  // without being walked.
   release() {
-    const pending = [...this.memoRecords.values()];
-    for (let head of this.records.values()) {
-      for (; head; head = head.next) pending.push(head);
-    }
-    const visited = new Set();
-    while (pending.length) {
-      const node = pending.pop();
-      if (visited.has(node)) continue;
-      visited.add(node);
-      for (const child of node.children) pending.push(child);
-      if (node.iterationState) {
-        const {rows, frontier} = node.iterationState;
-        if (frontier) pending.push(frontier);
-        for (const prefix of rows) {
-          if (prefix.watcher) pending.push(prefix.watcher);
-          prefix.watcher = null;
-          prefix.summary = noFailures;
-          prefix.log = emptyEffects;
-          prefix.attempts = emptyEffects;
-        }
-      }
-      node.children.clear();
-      node.users.clear();
-      node.permissions.clear();
-      node.iterationState = null;
-      node.iteration = null;
-      node.memo = null;
-      node.attempts = emptyEffects;
-      node.log = emptyEffects;
-    }
     this.records.clear();
     this.memoRecords.clear();
     this.permissionUsers.clear();
