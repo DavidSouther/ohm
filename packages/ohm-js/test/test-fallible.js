@@ -443,6 +443,35 @@ test('a fallible that recovered is marked in the trace', t => {
 // Row based iteration (ohm-js/v18 compatibility mode)
 // --------------------------------------------------------------------
 
+test('row based iteration: the kept prefix is a list and the slots are unchanged', t => {
+  const g = v18.grammar(STMTS);
+  // `&"}"` keeps its binding as a synchronizer, so the slots match column mode.
+  t.is(g.rules.Block.body.getArity(), 4);
+
+  const clean = g.match('{ a; b; }', undefined, RECOVER);
+  t.deepEqual(kinds(clean._cst), ['_terminal', '_list', '_terminal', '_terminal']);
+
+  const r = g.match('{ a; b; c }', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(kinds(r._cst), ['_terminal', '_list', '_fail', '_terminal']);
+  t.deepEqual(kinds(r._cst.children[1]), ['Stmt', 'Stmt']);
+  t.deepEqual(messages(r), ['Line 1, col 11: expected ";"']);
+
+  const plus = v18.grammar(STMTS.replace('Stmt* !', 'Stmt+ !'));
+  const nothingKept = plus.match('{ c }', undefined, RECOVER);
+  t.deepEqual(kinds(nothingKept._cst), ['_terminal', '_list', '_fail', '_terminal']);
+  t.is(nothingKept._cst.children[1].children.length, 0);
+
+  // The v18 CST view shows the `_fail` nodes.
+  const root = r.getCstRoot();
+  t.deepEqual(
+    root.children.map(c => c.ctorName),
+    ['_terminal', '_list', '_fail', '_terminal']
+  );
+  t.is(root.children[2].sourceString, 'c');
+  t.is(root.children[2].recoveredFailure.shortMessage, 'Line 1, col 11: expected ";"');
+});
+
 test('row based iteration: an iterated fallible gives one row per element', t => {
   const g = v18.grammar(String.raw`
     G {
