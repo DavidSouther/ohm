@@ -47,6 +47,8 @@ export class MatchState {
     // Stop markers: join expressions of the fallibles whose attempt is in
     // progress. A scan stops where any of them matches.
     this._syncStack = [];
+    // Number of blocks whose guarded attempt is active.
+    this._blockDepth = 0;
     this._recoveryLog = []; // RecoveredFailures made so far in this pass
     this._noRecoveryDepth = 0; // > 0 inside `~`, `&` and recovery scans
     // Changes whenever an evaluation depends on stop markers or skipped
