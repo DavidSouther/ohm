@@ -609,6 +609,101 @@ test('recoveryStop is inert without recovery and ignored at the outermost block'
 // Token-wise scanning with `recoveryToken`
 // --------------------------------------------------------------------
 
+const TOKENS = String.raw`
+Tokens {
+  Body    = "{" Stmt* ! "}"
+  Stmt    = Call ! ";"
+  Call    = ident "(" ListOf<Arg, ","> ")"
+  Arg     = string | ident
+  string  = "\"" (~"\"" ~"\n" any)* "\""
+  ident   = letter+
+  space  += comment
+  comment = "//" (~"\n" any)*
+  recoveryToken = string | ident
+}`;
+
+const CHARS = TOKENS.replace('recoveryToken = string | ident', '');
+
+function scanBoth(source) {
+  const tokens = ohm.grammar(TOKENS);
+  const chars = ohm.grammar(CHARS);
+  return {
+    tokens: tokens.match(source, undefined, RECOVER),
+    chars: chars.match(source, undefined, RECOVER),
+  };
+}
+
+test('recoveryToken: a synchronizer inside a string after the failure is skipped whole', t => {
+  const {tokens, chars} = scanBoth('{\nf(x y, "a;b");\ng(y);\nh(;\n}');
+  t.deepEqual(skipped(tokens), ['f(x y, "a;b")', 'h(']);
+  t.deepEqual(skipped(chars), ['f(x y, "a', 'b")', 'h(']);
+});
+
+test('recoveryToken: an enclosing closer inside a string after the failure is skipped whole', t => {
+  const {tokens, chars} = scanBoth('{\nf(x y, "a}b");\ng(y);\n}');
+  t.true(tokens.succeeded());
+  t.deepEqual(skipped(tokens), ['f(x y, "a}b")']);
+  t.notDeepEqual(skipped(chars), skipped(tokens));
+});
+
+test('recoveryToken: a recoveryStop inside a string after the failure is skipped whole', t => {
+  const grammar = String.raw`
+    Units {
+      File = Unit* ! end
+      Unit = unit ident "{" Stmt* ! "}"
+      Stmt = Body ! ";"
+      Body = ident (ident | string)?
+      unit = "unit" ~alnum
+      ident = ~unit letter+
+      string = "\"" (~"\"" ~"\n" any)* "\""
+      recoveryStop = unit
+      recoveryToken = string | letter+
+    }`;
+  const source = 'unit a { x y "unit b"; z; }\nunit c { w; }';
+  const tokens = ohm.grammar(grammar).match(source, undefined, RECOVER);
+  const chars = ohm
+    .grammar(grammar.replace('recoveryToken = string | letter+', ''))
+    .match(source, undefined, RECOVER);
+  t.deepEqual(
+    tokens.getRecoveredFailures().map(f => [f.interval.contents, f.missing]),
+    [['x y "unit b"', false]]
+  );
+  t.true(chars.getRecoveredFailures().some(f => f.missing));
+});
+
+test('recoveryToken: an unterminated string falls back to stepping one character', t => {
+  const {tokens, chars} = scanBoth('{\nf("abc);\ng(y);\nh(;\n}');
+  t.deepEqual(skipped(tokens), ['f("abc)', 'h(']);
+  t.deepEqual(skipped(chars), skipped(tokens));
+});
+
+test('recoveryToken: comments are skipped whole and `//` inside a string is no comment', t => {
+  const comment = scanBoth('{\nf(x y // a;b\n);\ng(y);\n}');
+  t.deepEqual(skipped(comment.tokens), ['f(x y // a;b\n)']);
+  t.deepEqual(skipped(comment.chars), skipped(comment.tokens));
+  const inString = scanBoth('{\nf(x y, "a//b");\ng(y);\n}');
+  t.deepEqual(skipped(inString.tokens), ['f(x y, "a//b")']);
+  t.deepEqual(skipped(inString.chars), ['f(x y, "a//b");\ng(y)']);
+});
+
+test('recoveryToken: first errors are unchanged, with and without recovery', t => {
+  const tokens = ohm.grammar(TOKENS);
+  const chars = ohm.grammar(CHARS);
+  for (const source of [
+    '{\nf(x y, "a;b");\ng(y);\n}',
+    '{\nf(x y, "a}b");\ng(y);\n}',
+    '{\nf("abc);\ng(y);\n}',
+    '{\nf(x y // a;b\n);\n}',
+    '{\nf(x);\ng(y);',
+    '{ f(x); } g',
+  ]) {
+    t.is(tokens.match(source).shortMessage, chars.match(source).shortMessage);
+    t.deepEqual(messages(tokens.match(source, undefined, RECOVER)).slice(0, 1), [
+      chars.match(source).shortMessage,
+    ]);
+  }
+});
+
 test('identical recovered failures at one position are reported once', t => {
   const g = ohm.grammar(String.raw`
     Blocks {
