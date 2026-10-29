@@ -24,7 +24,7 @@ export class RecoveryContext {
     this.attempts = new RecoveryAttempts();
     this.positionIndex = new SourcePositions(input);
     this.cache = new RecoveryCache(this);
-    // How the first pass ran; see `matchRecovering` and MatchResult#getRecoveryProbe.
+    // How the first pass ran; see `matchRecovering` and MatchResult#getFirstPass.
     this.firstPass = undefined;
   }
 
@@ -67,13 +67,13 @@ export function matchRecovering(matcher, startExpr, opts) {
 
   // Nothing is reused within a single pass, and valid input needs only one. A "probe" is a first
   // pass without the reuse cache; if it fails, the match restarts with the cache enabled, which
-  // costs an extra pass. `probeFirstPass` is true or false to force that choice. With 'auto'
+  // costs an extra pass. `firstPass` is 'probe' or 'cached' to force that choice. With 'auto'
   // the probe runs when the grammar's previous recovering match was valid, or there was none.
   let ctx = new RecoveryContext(matcher.getInput());
-  const {probeFirstPass} = opts;
+  const {firstPass} = opts;
   let probing =
-    probeFirstPass === 'auto' ? firstPassSucceeded.get(matcher.grammar) ?? true : probeFirstPass;
-  const report = {probed: probing, better: undefined};
+    firstPass === 'auto' ? firstPassSucceeded.get(matcher.grammar) ?? true : firstPass === 'probe';
+  const report = {mode: probing ? 'probe' : 'cached', better: undefined};
   ctx.firstPass = report;
   ctx.cache.disabled = probing;
   let first;

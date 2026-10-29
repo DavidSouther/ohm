@@ -255,9 +255,9 @@ export function missingFailAction(name, type, failure) {
   );
 }
 
-export function invalidProbeFirstPass(value) {
+export function invalidFirstPass(value) {
   return createError(
-    `Invalid probeFirstPass option: ${String(value)}. Use true, false or 'auto'.`
+    `Invalid firstPass option: ${String(value)}. Use 'auto', 'probe' or 'cached'.`
   );
 }
 
