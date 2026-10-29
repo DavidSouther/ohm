@@ -3,6 +3,7 @@ import {MatchState} from './MatchState.js';
 import {RecoveredFailure, distinctByPosition} from './RecoveredFailure.js';
 import {DiagnosticSnapshot} from './DiagnosticSnapshot.js';
 import {SourcePositions} from './SourcePositions.js';
+import {RecoveryAttempts} from './RecoveryAttempts.js';
 
 // --------------------------------------------------------------------
 // Recovery at `B ! C` recovery points
@@ -19,32 +20,17 @@ import {SourcePositions} from './SourcePositions.js';
 export class RecoveryContext {
   constructor(input = '') {
     this.permitted = new Map();
-    this.attempts = new Map();
+    this.attempts = new RecoveryAttempts();
     this.positionIndex = new SourcePositions(input);
   }
 
   chooseAttempt(position) {
-    let chosen;
-    for (const attempt of this.attempts.values()) {
-      if (attempt.rightmost !== position || this.permitted.has(attempt.key)) continue;
-      if (
-        !chosen ||
-        attempt.start > chosen.start ||
-        (attempt.start === chosen.start && attempt.depth > chosen.depth)
-      ) {
-        chosen = attempt;
-      }
-    }
-    return chosen;
+    return this.attempts.choose(position, this.permitted);
   }
 
   permit(attempt, result) {
     this.permitted.set(attempt.key, {position: attempt.rightmost, result});
-    for (const [key, recorded] of this.attempts) {
-      if (recorded.start <= attempt.start && recorded.rightmost >= attempt.start) {
-        this.attempts.delete(key);
-      }
-    }
+    this.attempts.invalidateAt(attempt.start);
   }
 }
 
