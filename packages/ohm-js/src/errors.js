@@ -245,6 +245,16 @@ export function fallibleGuardIsPredicate(ruleName, expr) {
   );
 }
 
+export function missingFailAction(name, type, failure) {
+  const what = failure
+    ? `a recovered failure (${failure.shortMessage})`
+    : 'an empty placeholder for a recovered failure';
+  return createError(
+    `Missing semantic action for _fail in ${type} '${name}': the CST holds ${what}. ` +
+      'Add a _fail action to handle recovered input.'
+  );
+}
+
 export function matcherCannotRecover(reason) {
   return createError(
     `This matcher cannot recover: ${reason}. ` +

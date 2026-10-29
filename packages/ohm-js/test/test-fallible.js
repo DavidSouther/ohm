@@ -359,6 +359,56 @@ test('a recipe round trips a fallible', t => {
 });
 
 // --------------------------------------------------------------------
+// The `_fail` action
+// --------------------------------------------------------------------
+
+test('`_fail` has arity 0 and reads its failure from the node', t => {
+  const g = ohm.grammar(STMTS);
+  t.throws(() => g.createSemantics().addOperation('x', {_fail(f) {}}), {
+    message: /_fail.*arity/,
+  });
+
+  const s = g.createSemantics().addOperation('errs', {
+    _nonterminal(...children) {
+      return children.flatMap(c => c.errs());
+    },
+    _iter(...children) {
+      return children.flatMap(c => c.errs());
+    },
+    _terminal() {
+      return [];
+    },
+    _fail() {
+      return this.recoveredFailure ? [this.recoveredFailure.shortMessage] : ['placeholder'];
+    },
+  });
+  t.deepEqual(s(g.match('{ a b; c }', undefined, RECOVER)).errs(), [
+    'placeholder',
+    'Line 1, col 5: expected ";"',
+    'Line 1, col 10: expected ";"',
+  ]);
+});
+
+test('`_nonterminal` and `_default` never receive a `_fail` node', t => {
+  const g = ohm.grammar(STMTS);
+  const s = g.createSemantics().addOperation('count', {
+    _nonterminal(...children) {
+      return children.reduce((n, c) => n + c.count(), 1);
+    },
+    _iter(...children) {
+      return children.reduce((n, c) => n + c.count(), 0);
+    },
+    _terminal() {
+      return 0;
+    },
+  });
+  t.is(s(g.match('{ a; }', undefined, RECOVER)).count(), 6);
+  t.throws(() => s(g.match('{ a b; }', undefined, RECOVER)).count(), {
+    message: /Missing semantic action for _fail/,
+  });
+});
+
+// --------------------------------------------------------------------
 // Tracing
 // --------------------------------------------------------------------
 
