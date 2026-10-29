@@ -53,7 +53,12 @@ export function collectRecoveredFailures(cst) {
   const walk = node => {
     if (node.isFailure()) {
       if (node.recoveredFailure) {
-        found.push(node.recoveredFailure, ...node.nestedFailures);
+        found.push(node.recoveredFailure);
+        if (node._nestedFailureEffects) {
+          node._nestedFailureEffects.forEachUnique(failure => found.push(failure));
+        } else {
+          found.push(...node.nestedFailures);
+        }
       }
       return;
     }

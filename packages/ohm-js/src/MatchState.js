@@ -2,6 +2,7 @@ import {InputStream} from './InputStream.js';
 import {MatchResult} from './MatchResult.js';
 import {PosInfo} from './PosInfo.js';
 import {Trace} from './Trace.js';
+import {emptyEffects} from './RecoveryEffects.js';
 import * as pexprs from './pexprs.js';
 import * as util from './util.js';
 
@@ -49,7 +50,7 @@ export class MatchState {
     this._syncStack = [];
     // Number of blocks whose guarded attempt is active.
     this._blockDepth = 0;
-    this._recoveryLog = []; // RecoveredFailures made so far in this pass
+    this._recoveryLog = emptyEffects;
     this._noRecoveryDepth = 0; // > 0 inside `~`, `&` and recovery scans
     // Changes whenever an evaluation depends on stop markers or skipped
     // recording an attempt. A changed value prevents later reuse of the

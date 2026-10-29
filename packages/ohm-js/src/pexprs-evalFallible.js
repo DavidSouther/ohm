@@ -100,7 +100,7 @@ pexprs.Fallible.prototype.eval = function (state) {
 
   const key = recoveryKey(this, state, origPos);
   const origNumBindings = state._bindings.length;
-  const logMark = state._recoveryLog.length;
+  const logMark = state._recoveryLog;
   const sync = activeJoin(this, state);
 
   // Isolate the attempt's failures so its own farthest failure can be recorded
@@ -176,7 +176,8 @@ pexprs.Fallible.prototype.recover = function (
   tokenEnd
 ) {
   const {inputStream} = state;
-  const attemptLog = state._recoveryLog.splice(logMark);
+  const attemptLog = state._recoveryLog.since(logMark);
+  state._recoveryLog = logMark;
   // Scan steps are not traced; only the matching join expression's entry joins the
   // Fallible's children.
   const outerTrace = state.trace;
@@ -222,8 +223,7 @@ pexprs.Fallible.prototype.recover = function (
     state.trace = outerTrace;
   }
   if (!found) {
-    state._recoveryLog.length = logMark;
-    state._recoveryLog.push(...attemptLog);
+    state._recoveryLog = logMark.concat(attemptLog);
     return false;
   }
 
@@ -243,7 +243,7 @@ pexprs.Fallible.prototype.recover = function (
   }
   state.pushBinding(new FailureNode(found.skipEnd - scanStart, recovered, nested), scanStart);
   inputStream.pos = found.afterSync;
-  state._recoveryLog.push(recovered, ...nested);
+  state._recoveryLog = state._recoveryLog.append(recovered).concat(nested);
   if (outerTrace) {
     if (syncTrace) outerTrace.push(syncTrace);
     state._traceRecovered = true;
