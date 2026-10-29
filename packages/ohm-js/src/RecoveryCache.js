@@ -241,8 +241,8 @@ export class RecoveryCache {
       if (node.iteration) {
         node.iteration.dirtyFrom = Math.min(node.iteration.dirtyFrom, node.index);
       }
-      if (node.memo && node.memo.table.memo[node.memo.key] === node.memo.value) {
-        node.memo.table.memo[node.memo.key] = undefined;
+      if (node.memo && node.memo.table.memo.get(node.memo.key) === node.memo.value) {
+        node.memo.table.memo.delete(node.memo.key);
       }
       for (const user of node.users) pending.push(user);
     }
@@ -269,7 +269,7 @@ export class RecoveryCache {
     if (expr instanceof pexprs.Apply) {
       const app = expr.substituteParams(state.currentApplication()?.args || []);
       const table = state.memoTable[state.inputStream.pos];
-      const native = table?.memo[app.toMemoKey()];
+      const native = table?.memo.get(app.toMemoKey());
       if (
         native &&
         !native.isRecoveryTainted &&
@@ -496,8 +496,7 @@ export class RecoveryCache {
     const pending = [...this.records.values()];
     for (const table of matcher._memoTable) {
       if (!table) continue;
-      for (const memo of Object.values(table.memo)) {
-        if (!memo) continue;
+      for (const memo of table.memo.values()) {
         if (memo.recoveryRecord) pending.push(memo.recoveryRecord);
         delete memo.recoveryRecord;
       }

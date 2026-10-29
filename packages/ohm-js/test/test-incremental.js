@@ -17,10 +17,9 @@ function pluckMemoProp(result, propName) {
     } else if (propName === 'rightmostFailureOffset') {
       result.maxRightmostFailureOffset = info.maxRightmostFailureOffset;
     }
-    Object.keys(info.memo).forEach(ruleName => {
-      const memoRec = info.memo[ruleName];
+    for (const [ruleName, memoRec] of info.memo) {
       result[ruleName] = memoRec[propName];
-    });
+    }
     return result;
   });
 }

@@ -1,8 +1,7 @@
 export class PosInfo {
   constructor() {
     this.applicationMemoKeyStack = []; // active applications at this position
-    // Used as a map from memo keys to records, not an object with fixed fields.
-    this.memo = {};
+    this.memo = new Map(); // memo key -> memo record
     this.maxExaminedLength = 0;
     this.maxRightmostFailureOffset = -1;
     this.currentLeftRecursion = undefined;
@@ -68,7 +67,7 @@ export class PosInfo {
   }
 
   memoize(memoKey, memoRec) {
-    this.memo[memoKey] = memoRec;
+    this.memo.set(memoKey, memoRec);
     this.maxExaminedLength = Math.max(this.maxExaminedLength, memoRec.examinedLength);
     this.maxRightmostFailureOffset = Math.max(
       this.maxRightmostFailureOffset,
@@ -86,11 +85,9 @@ export class PosInfo {
     const {memo} = this;
     this.maxExaminedLength = 0;
     this.maxRightmostFailureOffset = -1;
-    Object.keys(memo).forEach(k => {
-      const memoRec = memo[k];
-      if (!memoRec) return;
+    for (const [k, memoRec] of memo) {
       if (pos + memoRec.examinedLength > invalidatedIdx) {
-        memo[k] = undefined;
+        memo.delete(k);
       } else {
         this.maxExaminedLength = Math.max(this.maxExaminedLength, memoRec.examinedLength);
         this.maxRightmostFailureOffset = Math.max(
@@ -98,6 +95,6 @@ export class PosInfo {
           memoRec.rightmostFailureOffset
         );
       }
-    });
+    }
   }
 }
