@@ -373,6 +373,13 @@ export interface Node {
   recoveredFailure?: RecoveredFailure;
 
   /**
+    * The recovered failures at or under this node, in source order; empty
+    * without recovery. Read at the root, the elements are the objects that
+    * MatchResult.getRecoveredFailures() lists.
+    */
+  readonly recoveredFailures: readonly RecoveredFailure[];
+
+  /**
     * Returns the child at index idx.
     */
   child(idx: number): Node;
