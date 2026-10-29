@@ -79,6 +79,7 @@ function record() {
     users: new Set(),
     permissions: new Set(),
     attempts: emptyEffects,
+    memoEntry: -1, // the native memo entry made while this record was current
     // Identity of the evaluation context; set only on records kept in `RecoveryCache.records`.
     eid: 0,
     owner: 0,
@@ -196,7 +197,8 @@ export class RecoveryCache {
   constructor(context) {
     this.context = context;
     this.records = new Map(); // context hash -> chain of records
-    this.memoRecords = new Map(); // native memo record -> recovery record
+    this.memoTable = null; // the matcher's memo table, set by each pass
+    this.memoRecords = new Map(); // native memo entry -> recovery record
     this.permissionUsers = new Map();
     this.expressionIds = new WeakMap();
     this.applicationIds = new Map();
@@ -309,9 +311,7 @@ export class RecoveryCache {
       if (node.iteration) {
         node.iteration.dirtyFrom = Math.min(node.iteration.dirtyFrom, node.index);
       }
-      if (node.memo && node.memo.table.memo.get(node.memo.key) === node.memo.value) {
-        node.memo.table.memo.delete(node.memo.key);
-      }
+      if (node.memoEntry >= 0) this.memoTable.remove(node.memoEntry);
       for (const user of node.users) pending.push(user);
     }
   }
@@ -340,13 +340,15 @@ export class RecoveryCache {
     if (expr instanceof pexprs.Apply) {
       app = expr.substituteParams(owner?.args || []);
       appKey = app.toMemoKey();
-      const table = state.memoTable[state.inputStream.pos];
-      const native = table?.memo.get(appKey);
+      const {memoTable} = state;
+      const {pos} = state.inputStream;
+      const keyId = memoTable.keyIdOf(app);
+      const native = memoTable.find(pos, keyId);
       if (
-        native &&
-        !native.isRecoveryTainted &&
-        !table.isActive(app) &&
-        table.shouldUseMemoizedResult(native) &&
+        native >= 0 &&
+        !memoTable.isTainted(native) &&
+        !memoTable.isActive(pos, keyId) &&
+        memoTable.shouldUseMemoizedResult(pos, native) &&
         state.hasNecessaryInfo(native)
       ) {
         return this.evaluateInline(state, expr);
@@ -602,6 +604,7 @@ export class RecoveryCache {
   release() {
     this.records.clear();
     this.memoRecords.clear();
+    this.memoTable = null;
     this.permissionUsers.clear();
     this.contexts.clear();
     this.attemptReplay.release();

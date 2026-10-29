@@ -9,19 +9,24 @@ import * as ohm from '../index.mjs';
 // --------------------------------------------------------------------
 
 function pluckMemoProp(result, propName) {
-  return result.matcher._memoTable.map(info => {
-    const result = {};
-    if (info == null) return {};
-    if (propName === 'examinedLength') {
-      result.maxExaminedLength = info.maxExaminedLength;
-    } else if (propName === 'rightmostFailureOffset') {
-      result.maxRightmostFailureOffset = info.maxRightmostFailureOffset;
+  const table = result.matcher._memoTable;
+  const rows = [];
+  for (let pos = 0; pos < table.length; pos++) {
+    const row = {};
+    const info = table.positionInfo(pos);
+    if (info) {
+      if (propName === 'examinedLength') {
+        row.maxExaminedLength = info.maxExaminedLength;
+      } else if (propName === 'rightmostFailureOffset') {
+        row.maxRightmostFailureOffset = info.maxRightmostFailureOffset;
+      }
+      for (const [ruleName, memoRec] of info.memo) {
+        row[ruleName] = memoRec[propName];
+      }
     }
-    for (const [ruleName, memoRec] of info.memo) {
-      result[ruleName] = memoRec[propName];
-    }
-    return result;
-  });
+    rows.push(row);
+  }
+  return rows;
 }
 
 const checkOffsetActions = {

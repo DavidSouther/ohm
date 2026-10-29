@@ -289,59 +289,55 @@ pexprs.Apply.prototype.eval = function (state) {
   const actuals = caller ? caller.args : [];
   const app = this.substituteParams(actuals);
 
-  const posInfo = state.getCurrentPosInfo();
-  if (posInfo.isActive(app)) {
+  const {memoTable} = state;
+  const {pos} = state.inputStream;
+  const keyId = memoTable.keyIdOf(app);
+  if (memoTable.isActive(pos, keyId)) {
     // This rule is already active at this position, i.e., it is left-recursive.
-    return app.handleCycle(state);
+    return app.handleCycle(state, keyId);
   }
 
-  const memoKey = app.toMemoKey();
-  const memoRec = posInfo.memo.get(memoKey);
-
-  if (memoRec && memoRec.isRecoveryTainted) {
-    posInfo.memo.delete(memoKey);
-  } else if (memoRec && posInfo.shouldUseMemoizedResult(memoRec)) {
-    if (state.hasNecessaryInfo(memoRec)) {
-      return state.useMemoizedResult(state.inputStream.pos, memoRec);
+  const entry = memoTable.find(pos, keyId);
+  if (entry >= 0) {
+    if (memoTable.isTainted(entry)) {
+      memoTable.remove(entry);
+    } else if (memoTable.shouldUseMemoizedResult(pos, entry)) {
+      if (state.hasNecessaryInfo(entry)) {
+        return state.useMemoizedResult(pos, entry);
+      }
+      memoTable.remove(entry);
     }
-    posInfo.memo.delete(memoKey);
   }
-  return app.reallyEval(state);
+  return app.reallyEval(state, keyId);
 };
 
-pexprs.Apply.prototype.handleCycle = function (state) {
+pexprs.Apply.prototype.handleCycle = function (state, keyId) {
   if (state.recovery && !state.trace) state.recovery.cache.leftRecursion();
-  const posInfo = state.getCurrentPosInfo();
-  const {currentLeftRecursion} = posInfo;
-  const memoKey = this.toMemoKey();
-  let memoRec = posInfo.memo.get(memoKey);
+  const {memoTable} = state;
+  const {pos} = state.inputStream;
+  const currentLeftRecursion = memoTable.currentLeftRecursion(pos);
+  let entry = memoTable.find(pos, keyId);
 
-  if (currentLeftRecursion && currentLeftRecursion.headApplication.toMemoKey() === memoKey) {
+  if (currentLeftRecursion >= 0 && memoTable.headKey(currentLeftRecursion) === keyId) {
     // We already know about this left recursion, but it's possible there are "involved
     // applications" that we don't already know about, so...
-    memoRec.updateInvolvedApplicationMemoKeys();
-  } else if (!memoRec) {
+    memoTable.updateInvolvedKeys(pos, entry);
+  } else if (entry < 0) {
     // New left recursion detected! Memoize a failure to try to get a seed parse.
-    memoRec = posInfo.memoize(memoKey, {
-      matchLength: 0,
-      examinedLength: 0,
-      value: false,
-      rightmostFailureOffset: -1,
-    });
-    posInfo.startLeftRecursion(this, memoRec);
+    entry = memoTable.add(pos, keyId, 0, 0, false, undefined, -1, -1);
+    memoTable.startLeftRecursion(pos, entry, keyId);
   }
-  return state.useMemoizedResult(state.inputStream.pos, memoRec);
+  return state.useMemoizedResult(pos, entry);
 };
 
-pexprs.Apply.prototype.reallyEval = function (state) {
-  const {inputStream} = state;
+pexprs.Apply.prototype.reallyEval = function (state, keyId) {
+  const {inputStream, memoTable} = state;
   const origPos = inputStream.pos;
-  const origPosInfo = state.getCurrentPosInfo();
   const ruleInfo = state.grammar.rules[this.ruleName];
   const {body} = ruleInfo;
   const {description} = ruleInfo;
 
-  state.enterApplication(origPosInfo, this);
+  state.enterApplication(this, keyId);
 
   if (description) {
     state.pushFailuresInfo();
@@ -357,55 +353,36 @@ pexprs.Apply.prototype.reallyEval = function (state) {
   const origRecoveryTaint = state._recoveryTaint;
 
   let value = this.evalOnce(body, state);
-  const currentLR = origPosInfo.currentLeftRecursion;
-  const memoKey = this.toMemoKey();
-  const isHeadOfLeftRecursion = currentLR && currentLR.headApplication.toMemoKey() === memoKey;
-  let memoRec;
+  const currentLR = memoTable.currentLeftRecursion(origPos);
+  const isHeadOfLeftRecursion = currentLR >= 0 && memoTable.headKey(currentLR) === keyId;
+  let memoEntry = -1;
 
   if (state.doNotMemoize) {
     state.doNotMemoize = false;
     if (state.recovery) state.recovery.cache.disabled = true;
   } else if (isHeadOfLeftRecursion) {
     value = this.growSeedResult(body, state, origPos, currentLR, value);
-    origPosInfo.endLeftRecursion();
-    memoRec = currentLR;
-    memoRec.examinedLength = inputStream.examinedLength - origPos;
-    memoRec.rightmostFailureOffset = state._getRightmostFailureOffset();
+    memoTable.endLeftRecursion(origPos);
+    memoEntry = currentLR;
+    memoTable.examinedLength[memoEntry] = inputStream.examinedLength - origPos;
+    memoTable.rightmostFailureOffset[memoEntry] = state._getRightmostFailureOffset();
     // The seed must remain available during growth, and its trace entry is
     // needed until the enclosing evaluation finishes. Prevent later reuse if
     // this completed result depends on the recovery context.
-    memoRec.isRecoveryTainted = state._recoveryTaint !== origRecoveryTaint;
-    origPosInfo.memoize(memoKey, memoRec);
+    memoTable.setTainted(memoEntry, state._recoveryTaint !== origRecoveryTaint);
   } else if (
-    (!currentLR || !currentLR.isInvolved(memoKey)) &&
+    (currentLR < 0 || !memoTable.isInvolved(currentLR, keyId)) &&
     state._recoveryTaint === origRecoveryTaint
   ) {
-    const matchLength = inputStream.pos - origPos;
-    const examinedLength = inputStream.examinedLength - origPos;
-    const failuresAtRightmostPosition = state.cloneRecordedFailures();
-    const rightmostFailureOffset = state._getRightmostFailureOffset();
-    const tokenEndOffset = state._tokenEnd < 0 ? -1 : state._tokenEnd - origPos;
-    memoRec = origPosInfo.memoize(
-      memoKey,
-      state.recovery
-        ? {
-            matchLength,
-            examinedLength,
-            value,
-            failuresAtRightmostPosition,
-            rightmostFailureOffset,
-            tokenEndOffset,
-            // Assigned below; declared here so the record keeps its properties in-object.
-            recoveryFailureSummary: undefined,
-          }
-        : {
-            matchLength,
-            examinedLength,
-            value,
-            failuresAtRightmostPosition,
-            rightmostFailureOffset,
-            tokenEndOffset,
-          }
+    memoEntry = memoTable.add(
+      origPos,
+      keyId,
+      inputStream.pos - origPos,
+      inputStream.examinedLength - origPos,
+      value,
+      state.cloneRecordedFailures(),
+      state._getRightmostFailureOffset(),
+      state._tokenEnd < 0 ? -1 : state._tokenEnd - origPos
     );
   }
   const succeeded = !!value;
@@ -415,38 +392,38 @@ pexprs.Apply.prototype.reallyEval = function (state) {
     if (!succeeded) {
       state.processFailure(origPos, this);
     }
-    if (memoRec) {
-      memoRec.failuresAtRightmostPosition = state.cloneRecordedFailures();
-      memoRec.rightmostFailureOffset = state._getRightmostFailureOffset();
+    if (memoEntry >= 0) {
+      memoTable.failures[memoEntry] = state.cloneRecordedFailures();
+      memoTable.rightmostFailureOffset[memoEntry] = state._getRightmostFailureOffset();
     }
   }
-  if (memoRec && state.recovery && !state.trace) {
+  if (memoEntry >= 0 && state.recovery && !state.trace) {
     if (isHeadOfLeftRecursion && !description) {
-      const seedSummary = memoRec.recoveryFailureSummary;
-      memoRec.recoveryFailureSummary = {
+      const seedSummary = memoTable.summaries[memoEntry];
+      memoTable.summaries[memoEntry] = {
         position: state.rightmostFailurePosition,
         failures:
           seedSummary?.position === state.rightmostFailurePosition ? seedSummary.failures : [],
       };
     } else {
-      memoRec.recoveryFailureSummary = state._recoveryFailureSummary;
+      memoTable.summaries[memoEntry] = state._recoveryFailureSummary;
     }
     const record = state.recovery.cache.current;
     if (record) {
-      state.recovery.cache.memoRecords.set(memoRec, record);
-      record.memo = {table: origPosInfo, key: memoKey, value: memoRec};
+      state.recovery.cache.memoRecords.set(memoEntry, record);
+      record.memoEntry = memoEntry;
     }
   }
 
   // Record trace information in the memo table, so that it is available if the memoized result
   // is used later.
-  if (state.isTracing() && memoRec) {
+  if (state.isTracing() && memoEntry >= 0) {
     const entry = state.getTraceEntry(origPos, this, succeeded, succeeded ? [value] : []);
     if (isHeadOfLeftRecursion) {
       common.assert(entry.terminatingLREntry != null || !succeeded);
       entry.isHeadOfLeftRecursion = true;
     }
-    memoRec.traceEntry = entry;
+    memoTable.traces[memoEntry] = entry;
   }
 
   // Fix the input stream's examinedLength -- it should be the maximum examined length
@@ -456,7 +433,7 @@ pexprs.Apply.prototype.reallyEval = function (state) {
     origInputStreamExaminedLength
   );
 
-  state.exitApplication(origPosInfo, value);
+  state.exitApplication(value);
 
   return succeeded;
 };
@@ -482,21 +459,21 @@ pexprs.Apply.prototype.evalOnce = function (expr, state) {
   }
 };
 
-pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrMemoRec, newValue) {
+pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrEntry, newValue) {
   if (!newValue) {
     return false;
   }
 
-  const {inputStream} = state;
+  const {inputStream, memoTable} = state;
 
   if (state.recovery && !state.trace) state.recovery.cache.lrDepth++;
   try {
     while (true) {
-      lrMemoRec.matchLength = inputStream.pos - origPos;
-      lrMemoRec.value = newValue;
-      lrMemoRec.failuresAtRightmostPosition = state.cloneRecordedFailures();
+      memoTable.matchLength[lrEntry] = inputStream.pos - origPos;
+      memoTable.values[lrEntry] = newValue;
+      memoTable.failures[lrEntry] = state.cloneRecordedFailures();
       if (state.recovery && !state.trace) {
-        lrMemoRec.recoveryFailureSummary = state._recoveryFailureSummary;
+        memoTable.summaries[lrEntry] = state._recoveryFailureSummary;
       }
 
       if (state.isTracing()) {
@@ -504,7 +481,7 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrMemoRe
         // Its only child is a copy of the trace node from `newValue`, which will always be the last
         // element in `state.trace`.
         const seedTrace = state.trace[state.trace.length - 1];
-        lrMemoRec.traceEntry = new Trace(
+        memoTable.traces[lrEntry] = new Trace(
           state.input,
           origPos,
           inputStream.pos,
@@ -516,7 +493,7 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrMemoRe
       }
       inputStream.pos = origPos;
       newValue = this.evalOnce(body, state);
-      if (inputStream.pos - origPos <= lrMemoRec.matchLength) {
+      if (inputStream.pos - origPos <= memoTable.matchLength[lrEntry]) {
         break;
       }
       if (state.isTracing()) {
@@ -528,10 +505,10 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrMemoRe
   }
   if (state.isTracing()) {
     // The last entry is for an unused result -- pop it and save it in the "real" entry.
-    lrMemoRec.traceEntry.recordLRTermination(state.trace.pop(), newValue);
+    memoTable.traces[lrEntry].recordLRTermination(state.trace.pop(), newValue);
   }
-  inputStream.pos = origPos + lrMemoRec.matchLength;
-  return lrMemoRec.value;
+  inputStream.pos = origPos + memoTable.matchLength[lrEntry];
+  return memoTable.values[lrEntry];
 };
 
 pexprs.UnicodeChar.prototype.eval = function (state) {
