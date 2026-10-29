@@ -37,7 +37,7 @@ pexprs.Seq.prototype.introduceParams = function (formals) {
 };
 
 pexprs.Fallible.prototype.introduceParams = function (formals) {
-  this.fallible = this.fallible.introduceParams(formals);
+  this.guarded = this.guarded.introduceParams(formals);
   this.join = this.join.introduceParams(formals);
   return this;
 };

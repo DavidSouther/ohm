@@ -24,9 +24,9 @@ pexprs.Alt.prototype.getArity = function () {
   return this.terms.length === 0 ? 0 : this.terms[0].getArity();
 };
 
-// The guarded slot and the join slot; always 2 in a valid grammar.
+// The guarded, correction, and join slots; always 3 in a valid grammar.
 pexprs.Fallible.prototype.getArity = function () {
-  return this.fallible.getArity() + this.join.getArity();
+  return this.guarded.getArity() + 1 + this.join.getArity();
 };
 
 pexprs.Seq.prototype.getArity = function () {

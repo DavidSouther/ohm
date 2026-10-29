@@ -133,7 +133,7 @@ export class CaseInsensitiveTerminal extends PExpr {}
 export interface MatchOptions {
   /**
    * When true, a match that fails is retried with recovery at `B ! C`
-   * recovery points, and recovered input appears as `_fail` nodes. Default
+   * recovery points, and recovered input appears as `_correction` nodes. Default
    * false. Without it, `B ! C` matches exactly as the sequence `B C`.
    * A Matcher throws if recovery is requested after a match without recovery,
    * or after its input changes following an earlier match. Use a fresh Matcher,
@@ -335,14 +335,14 @@ export interface BaseActionDict<T> {
   _nonterminal?: (this: NonterminalNode, ...children: Node[]) => T;
   _terminal?: (this: TerminalNode) => T;
   /**
-   * Called for `_fail` nodes, which have no children. `B ! C` always gives
-   * its rule two children. After a clean match, they are B and C. After
-   * recovery, the first is the kept iteration (for a guarded `*` or `+`) or
-   * an empty `_fail` node, and the second is a `_fail` node whose
-   * `sourceString` is the skipped input and whose `recoveredFailure`
-   * describes the error.
+   * Called for a diagnostic-bearing correction node, which has no children.
+   * `B ! C` contributes three children: the matched B (or ordinary optional
+   * absence), a correction slot, and the actual matched C. On a clean match
+   * the correction slot is ordinary optional absence; after recovery it is
+   * a `_correction` node whose sourceString is the skipped input and whose
+   * recoveredFailure describes the error. Recovery requires C to match.
    */
-  _fail?: (this: Node) => T;
+  _correction?: (this: Node) => T;
 
   // Built-in rules
 
@@ -388,8 +388,15 @@ export type Action<T> = (this: Node, ...args: Node[]) => T;
  * A node in the parse tree, passed to Action functions.
  */
 export interface Node {
-  /** The error that a `_fail` node recovered from; absent on the empty `_fail` node in a guarded slot. */
+  /** The diagnostic carried by a `_correction` node; absent on other nodes. */
   recoveredFailure?: RecoveredFailure;
+
+  /**
+   * The recovered failures at or under this node, in source order; empty
+   * without recovery. Read at the root, the elements are the objects that
+   * MatchResult.getRecoveredFailures() lists.
+   */
+  readonly recoveredFailures: readonly RecoveredFailure[];
 
   /**
    * Returns the child at index idx.

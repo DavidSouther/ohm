@@ -67,6 +67,6 @@ pexprs.Iter.prototype.toFailure = function (grammar) {
 
 pexprs.Fallible.prototype.toFailure = function (grammar) {
   const description =
-    '(' + this.fallible.toFailure(grammar) + '!' + this.join.toFailure(grammar) + ')';
+    '(' + this.guarded.toFailure(grammar) + '!' + this.join.toFailure(grammar) + ')';
   return new Failure(this, description, 'description');
 };

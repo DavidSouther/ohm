@@ -150,11 +150,11 @@ class TerminalAdapter extends V18Node {
   }
 }
 
-// A `_fail` node of a recovered `B ! C`: the skip region, or an empty placeholder.
-class FailureAdapter extends V18Node {
+// The correction slot of a recovered `B ! C`, spanning the skipped input.
+class CorrectionAdapter extends V18Node {
   constructor(absStart, absEnd, input, recoveredFailure) {
     super();
-    this.ctorName = '_fail';
+    this.ctorName = '_correction';
     this.source = {startIdx: absStart, endIdx: absEnd};
     this.sourceString = input.slice(absStart, absEnd);
     this.matchLength = absEnd - absStart;
@@ -212,8 +212,8 @@ function adaptNode(node, absStart, baseStart, input) {
     return new TerminalAdapter(absStart, absEnd, input);
   }
 
-  if (node.isFailure()) {
-    return new FailureAdapter(absStart, absEnd, input, node.recoveredFailure);
+  if (node.isCorrection()) {
+    return new CorrectionAdapter(absStart, absEnd, input, node.recoveredFailure);
   }
 
   // v17 ListNode (row-based iteration) → v18 ListNode or OptNode

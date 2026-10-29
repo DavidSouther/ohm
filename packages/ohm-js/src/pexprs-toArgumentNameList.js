@@ -137,9 +137,9 @@ pexprs.Seq.prototype.toArgumentNameList = function (firstArgIndex, noDupCheck) {
 };
 
 pexprs.Fallible.prototype.toArgumentNameList = function (firstArgIndex, noDupCheck) {
-  const guarded = this.fallible.toArgumentNameList(firstArgIndex, true);
-  const sync = this.join.toArgumentNameList(firstArgIndex + guarded.length, true);
-  const argumentNameList = guarded.concat(sync);
+  const guarded = this.guarded.toArgumentNameList(firstArgIndex, true);
+  const sync = this.join.toArgumentNameList(firstArgIndex + guarded.length + 1, true);
+  const argumentNameList = guarded.concat(['correction'], sync);
   if (!noDupCheck) {
     resolveDuplicatedNames(argumentNameList);
   }

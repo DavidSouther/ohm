@@ -36,25 +36,31 @@ function messages(result) {
 }
 
 // --------------------------------------------------------------------
-// Bindings: two slots, recovered or not
+// Bindings: three slots, recovered or not
 // --------------------------------------------------------------------
 
-test('a fallible always contributes two bindings', t => {
+test('a fallible always contributes three bindings', t => {
   const g = stmtsGrammar;
-  t.is(g.rules.Stmt.body.getArity(), 2);
-  t.is(g.rules.Block.body.getArity(), 4);
+  t.is(g.rules.Stmt.body.getArity(), 3);
+  t.is(g.rules.Block.body.getArity(), 5);
 
   const clean = g.match('{ a; b; }', undefined, RECOVER);
-  t.deepEqual(kinds(clean._cst), ['_terminal', '_iter', '_terminal', '_terminal']);
-  t.deepEqual(kinds(clean._cst.children[1].children[0]), ['Body', '_terminal']);
+  t.deepEqual(kinds(clean._cst), ['_terminal', '_iter', '_iter', '_terminal', '_terminal']);
+  t.deepEqual(kinds(clean._cst.children[1].children[0]), ['Body', '_iter', '_terminal']);
 
   const recovered = g.match('{ a; b b; c }', undefined, RECOVER);
   t.true(recovered.succeeded());
-  t.deepEqual(kinds(recovered._cst), ['_terminal', '_iter', '_fail', '_terminal']);
+  t.deepEqual(kinds(recovered._cst), [
+    '_terminal',
+    '_iter',
+    '_correction',
+    '_terminal',
+    '_terminal',
+  ]);
   const [a, bb] = recovered._cst.children[1].children;
-  t.deepEqual(kinds(a), ['Body', '_terminal']);
-  t.deepEqual(kinds(bb), ['_fail', '_fail']);
-  t.is(bb.children[0].matchLength, 0, 'the guarded slot holds an empty placeholder');
+  t.deepEqual(kinds(a), ['Body', '_iter', '_terminal']);
+  t.deepEqual(kinds(bb), ['Body', '_correction', '_terminal']);
+  t.is(bb.children[0].matchLength, 1, 'the guarded slot retains matched B');
   t.is(bb.children[0].recoveredFailure, undefined);
   t.truthy(bb.children[1].recoveredFailure);
 });
@@ -69,7 +75,7 @@ test('a guarded `?` keeps nothing', t => {
   const r = g.match('ab; a c; ab;', undefined, RECOVER);
   t.true(r.succeeded());
   const items = r._cst.children[0].children;
-  t.deepEqual(kinds(items[1]), ['_fail', '_fail']);
+  t.deepEqual(kinds(items[1]), ['_iter', '_correction', '_terminal']);
   t.is(items[1].children[0].matchLength, 0);
   t.deepEqual(messages(r), ['Line 1, col 7: expected "b"']);
 });
@@ -91,7 +97,7 @@ test('a fallible that does not recover reports what `B C` reports', t => {
   }
 });
 
-test('each recovered failure carries the message of the pass that permitted it', t => {
+test('each recovered failure carries the message of the pass that selected it', t => {
   const g = stmtsGrammar;
   const plain = plainStmtsGrammar;
   const r = g.match('{ a b; c d; e; }', undefined, RECOVER);
@@ -112,8 +118,8 @@ test('each recovered failure carries the message of the pass that permitted it',
   // The second equals the plain match's error once the first mistake is fixed.
   const second = plain.match('{ a; c d; e; }');
   t.is(failures[1].shortMessage, second.shortMessage.replace('col 8', 'col 10'));
-  t.is(failures[1].interval.contents, 'c d');
-  t.is(failures[0].interval.contents, 'a b');
+  t.is(failures[1].interval.contents, 'd');
+  t.is(failures[0].interval.contents, 'b');
 });
 
 test('a parse recovery cannot finish lists its recoveries, then the final failure', t => {
@@ -124,8 +130,8 @@ test('a parse recovery cannot finish lists its recoveries, then the final failur
   t.deepEqual(
     failures.map(f => [f.interval.startIdx, f.interval.endIdx, f.position]),
     [
-      [2, 5, 4],
-      [7, 10, 9],
+      [4, 5, 4],
+      [9, 10, 9],
       [13, 13, 13],
     ]
   );
@@ -353,13 +359,13 @@ test('a recipe round trips a fallible', t => {
 });
 
 // --------------------------------------------------------------------
-// The `_fail` action
+// The `_correction` action
 // --------------------------------------------------------------------
 
-test('`_fail` has arity 0 and reads its failure from the node', t => {
+test('`_correction` has arity 0 and reads its failure from the node', t => {
   const g = stmtsGrammar;
-  t.throws(() => g.createSemantics().addOperation('x', {_fail(f) {}}), {
-    message: /_fail.*arity/,
+  t.throws(() => g.createSemantics().addOperation('x', {_correction(f) {}}), {
+    message: /_correction.*arity/,
   });
 
   const s = g.createSemantics().addOperation('errs', {
@@ -372,18 +378,17 @@ test('`_fail` has arity 0 and reads its failure from the node', t => {
     _terminal() {
       return [];
     },
-    _fail() {
+    _correction() {
       return this.recoveredFailure ? [this.recoveredFailure.shortMessage] : ['placeholder'];
     },
   });
   t.deepEqual(s(g.match('{ a b; c }', undefined, RECOVER)).errs(), [
-    'placeholder',
     'Line 1, col 5: expected ";"',
     'Line 1, col 10: expected ";"',
   ]);
 });
 
-test('`_nonterminal` and `_default` never receive a `_fail` node', t => {
+test('`_nonterminal` and `_default` never receive a `_correction` node', t => {
   const g = stmtsGrammar;
   const s = g.createSemantics().addOperation('count', {
     _nonterminal(...children) {
@@ -398,7 +403,109 @@ test('`_nonterminal` and `_default` never receive a `_fail` node', t => {
   });
   t.is(s(g.match('{ a; }', undefined, RECOVER)).count(), 6);
   t.throws(() => s(g.match('{ a b; }', undefined, RECOVER)).count(), {
-    message: /Missing semantic action for _fail/,
+    message: /Missing semantic action for _correction/,
+  });
+});
+
+// --------------------------------------------------------------------
+// Node.recoveredFailures
+// --------------------------------------------------------------------
+
+const NESTED_BLOCKS = String.raw`
+  Blocks {
+    Block = "{" Item* ! "}"
+    Item  = Block | Stmt
+    Stmt  = Body ! ";"
+    Body  = letter+
+  }`;
+
+function recoveredFailuresSemantics(g) {
+  return g.createSemantics().addOperation('lists', {
+    _nonterminal(...children) {
+      return [[this.ctorName, this.recoveredFailures], ...children.flatMap(c => c.lists())];
+    },
+    _iter(...children) {
+      return [['_iter', this.recoveredFailures], ...children.flatMap(c => c.lists())];
+    },
+    _terminal() {
+      return [['_terminal', this.recoveredFailures]];
+    },
+    _correction() {
+      return [['_correction', this.recoveredFailures]];
+    },
+  });
+}
+
+test('recoveredFailures is empty on every node of a match without recovery', t => {
+  const g = stmtsGrammar;
+  const s = recoveredFailuresSemantics(g);
+  for (const r of [g.match('{ a; b; }'), g.match('{ a; b; }', undefined, RECOVER)]) {
+    const lists = s(r).lists();
+    t.true(lists.length > 1);
+    for (const [, list] of lists) t.deepEqual(list, []);
+  }
+});
+
+test('recoveredFailures at the root is getRecoveredFailures, object for object', t => {
+  const g = stmtsGrammar;
+  const r = g.match('{ a b; c d; e }', undefined, RECOVER);
+  const expected = r.getRecoveredFailures();
+  t.is(expected.length, 3);
+  const root = g.createSemantics()(r).recoveredFailures;
+  t.is(root.length, expected.length);
+  root.forEach((f, i) => t.is(f, expected[i]));
+});
+
+test('recoveredFailures lists only the failures under a node, in source order', t => {
+  const g = stmtsGrammar;
+  const r = g.match('{ a; b c; d; e f; }', undefined, RECOVER);
+  const all = r.getRecoveredFailures();
+  t.is(all.length, 2);
+  const stmts = g.createSemantics()(r).child(1).children;
+  t.deepEqual(
+    stmts.map(stmt => stmt.recoveredFailures.length),
+    [0, 1, 0, 1]
+  );
+  t.is(stmts[1].recoveredFailures[0], all[0]);
+  t.is(stmts[3].recoveredFailures[0], all[1]);
+
+  // The `_correction` node holds its own failure; the empty placeholder holds none.
+  const [placeholder, fail] = stmts[1].children;
+  t.is(placeholder.ctorName, 'Body');
+  t.deepEqual(placeholder.recoveredFailures, []);
+  t.deepEqual(fail.recoveredFailures, [all[0]]);
+});
+
+test('recoveredFailures at the root of nested blocks lists every failure, object for object', t => {
+  const g = ohm.grammar(NESTED_BLOCKS);
+  const r = g.match('{ a; { 1; 2; } }', undefined, RECOVER);
+  t.true(r.succeeded());
+  const expected = r.getRecoveredFailures();
+  t.is(expected.length, 2);
+  const root = g.createSemantics()(r).recoveredFailures;
+  t.is(root.length, expected.length);
+  root.forEach((f, i) => t.is(f, expected[i]));
+});
+
+test('a missing nested join fails without a semantic tree', t => {
+  const result = ohm.grammar(NESTED_BLOCKS).match('{ a; { b;', undefined, RECOVER);
+  t.true(result.failed());
+  t.throws(() => ohm.grammar(NESTED_BLOCKS).createSemantics()(result));
+});
+
+test('recoveredFailures returns a fresh array', t => {
+  const g = stmtsGrammar;
+  const r = g.match('{ a b; }', undefined, RECOVER);
+  const node = g.createSemantics()(r);
+  const list = node.recoveredFailures;
+  list.length = 0;
+  t.is(node.recoveredFailures.length, 1);
+});
+
+test('recoveredFailures is a reserved name', t => {
+  const g = stmtsGrammar;
+  t.throws(() => g.createSemantics().addAttribute('recoveredFailures', {}), {
+    message: /reserved name/,
   });
 });
 
@@ -440,27 +547,33 @@ test('a fallible that recovered is marked in the trace', t => {
 test('row based iteration: the kept prefix is a list and the slots are unchanged', t => {
   const g = v18.grammar(STMTS);
   // `&"}"` keeps its binding as a synchronizer, so the slots match column mode.
-  t.is(g.rules.Block.body.getArity(), 4);
+  t.is(g.rules.Block.body.getArity(), 5);
 
   const clean = g.match('{ a; b; }', undefined, RECOVER);
-  t.deepEqual(kinds(clean._cst), ['_terminal', '_list', '_terminal', '_terminal']);
+  t.deepEqual(kinds(clean._cst), ['_terminal', '_list', '_list', '_terminal', '_terminal']);
 
   const r = g.match('{ a; b; c }', undefined, RECOVER);
   t.true(r.succeeded());
-  t.deepEqual(kinds(r._cst), ['_terminal', '_list', '_fail', '_terminal']);
+  t.deepEqual(kinds(r._cst), ['_terminal', '_list', '_correction', '_terminal', '_terminal']);
   t.deepEqual(kinds(r._cst.children[1]), ['Stmt', 'Stmt']);
   t.deepEqual(messages(r), ['Line 1, col 11: expected ";"']);
 
   const plus = v18.grammar(STMTS.replace('Stmt* !', 'Stmt+ !'));
   const nothingKept = plus.match('{ c }', undefined, RECOVER);
-  t.deepEqual(kinds(nothingKept._cst), ['_terminal', '_list', '_fail', '_terminal']);
+  t.deepEqual(kinds(nothingKept._cst), [
+    '_terminal',
+    '_list',
+    '_correction',
+    '_terminal',
+    '_terminal',
+  ]);
   t.is(nothingKept._cst.children[1].children.length, 0);
 
-  // The v18 CST view shows the `_fail` nodes.
+  // The v18 CST view shows the `_correction` nodes.
   const root = r.getCstRoot();
   t.deepEqual(
     root.children.map(c => c.ctorName),
-    ['_terminal', '_list', '_fail', '_terminal']
+    ['_terminal', '_list', '_correction', '_terminal', '_terminal']
   );
   t.is(root.children[2].sourceString, 'c');
   t.is(root.children[2].recoveredFailure.shortMessage, 'Line 1, col 11: expected ";"');
@@ -479,7 +592,7 @@ test('row based iteration: an iterated fallible gives one row per element', t =>
     rows.map(row => row.ctorName),
     ['_seq', '_seq', '_seq']
   );
-  t.deepEqual(kinds(rows[1]), ['_fail', '_fail']);
+  t.deepEqual(kinds(rows[1]), ['_list', '_correction', '_terminal']);
   const plain = ohm.grammar('G { Start = (Body ";")*\n Body = letter }');
   t.deepEqual(messages(r), [plain.match('a;1;b;').shortMessage]);
 });
@@ -525,34 +638,31 @@ Nested {
   Body  = letter+
 }`;
 
-test('a block missing its closer at the end of the input recovers by inserting it', t => {
+test('a block missing its closer at the end of the input fails', t => {
   const g = ohm.grammar(CALLS);
   const source = '{\nf(x);\ng(y);';
   const plain = g.match(source);
   const r = g.match(source, undefined, RECOVER);
-  t.true(r.succeeded());
-  const [missing] = r.getRecoveredFailures();
-  t.is(r.getRecoveredFailures().length, 1);
-  t.is(missing.shortMessage, plain.shortMessage);
-  t.true(missing.missing);
-  t.is(missing.interval.contents, '');
+  t.true(r.failed());
+  t.is(r.shortMessage, plain.shortMessage);
+  t.true(r.getRecoveredFailures().every(f => !f.missing));
 });
 
-test('a nested block missing its closer is closed at an enclosing synchronizer', t => {
+test('a failed nested block is discarded when the outer join matches', t => {
   const g = ohm.grammar(NESTED);
   const r = g.match('{ a; ( b; c; } ', undefined, RECOVER);
   t.true(r.succeeded());
   t.deepEqual(
     r.getRecoveredFailures().map(f => [f.position, f.missing]),
-    [[13, true]]
+    [[13, false]]
   );
 });
 
-test('two blocks missing their closers report one entry each', t => {
+test('two blocks missing their closers fail as a whole', t => {
   const g = ohm.grammar(NESTED);
   const r = g.match('{ a; ( b;', undefined, RECOVER);
-  t.true(r.succeeded());
-  t.is(r.getRecoveredFailures().length, 2);
+  t.true(r.failed());
+  t.true(r.getRecoveredFailures().every(f => !f.missing));
 });
 
 test('a block marked with a stop marker escalates instead of inserting', t => {
@@ -572,17 +682,14 @@ Units {
   recoveryStop = unit
 }`;
 
-test('recoveryStop closes a nested block that lost its closer', t => {
+test('recoveryStop prevents a nested scan from consuming the next unit', t => {
   const g = ohm.grammar(UNITS);
   const source = 'unit a { x; y;\nunit b { zz z z; }';
   const r = g.match(source, undefined, RECOVER);
   t.true(r.succeeded());
   t.deepEqual(
     r.getRecoveredFailures().map(f => [source.slice(f.position, f.position + 6), f.missing]),
-    [
-      ['unit b', true],
-      ['z; }', false],
-    ]
+    [['unit b', false]]
   );
 });
 
@@ -660,9 +767,9 @@ test('recoveryToken: a recoveryStop inside a string after the failure is skipped
     .match(source, undefined, RECOVER);
   t.deepEqual(
     tokens.getRecoveredFailures().map(f => [f.interval.contents, f.missing]),
-    [['x y "unit b"', false]]
+    [['"unit b"', false]]
   );
-  t.true(chars.getRecoveredFailures().some(f => f.missing));
+  t.notDeepEqual(skipped(chars), skipped(tokens));
 });
 
 test('recoveryToken: an unterminated string falls back to stepping one character', t => {
@@ -698,7 +805,7 @@ test('recoveryToken: first errors are unchanged, with and without recovery', t =
   }
 });
 
-test('identical recovered failures at one position are reported once', t => {
+test('a terminal failure at one position is reported once', t => {
   const g = ohm.grammar(String.raw`
     Blocks {
       Block = "{" Item* ! "}"
@@ -707,9 +814,9 @@ test('identical recovered failures at one position are reported once', t => {
       Body  = letter+
     }`);
   const r = g.match('{ a; { b;', undefined, RECOVER);
-  t.true(r.succeeded());
+  t.true(r.failed());
   t.deepEqual(
     r.getRecoveredFailures().map(f => [f.position, f.shortMessage, f.missing]),
-    [[9, 'Line 1, col 10: expected "}"', true]]
+    [[9, 'Line 1, col 10: expected "}"', false]]
   );
 });
