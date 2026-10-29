@@ -3,6 +3,7 @@ import {MatchState} from './MatchState.js';
 import {RecoveredFailure, distinctByPosition} from './RecoveredFailure.js';
 import {DiagnosticSnapshot} from './DiagnosticSnapshot.js';
 import {SourcePositions} from './SourcePositions.js';
+import {RecoveryCache} from './RecoveryCache.js';
 import {RecoveryAttempts} from './RecoveryAttempts.js';
 
 // --------------------------------------------------------------------
@@ -22,6 +23,7 @@ export class RecoveryContext {
     this.permitted = new Map();
     this.attempts = new RecoveryAttempts();
     this.positionIndex = new SourcePositions(input);
+    this.cache = new RecoveryCache(this);
   }
 
   chooseAttempt(position) {
@@ -30,7 +32,11 @@ export class RecoveryContext {
 
   permit(attempt, result) {
     this.permitted.set(attempt.key, {position: attempt.rightmost, result});
-    this.attempts.invalidateAt(attempt.start);
+    for (const retired of this.attempts.invalidateAt(attempt.start)) {
+      this.cache.attemptReplay.changed(retired.start);
+      this.cache.invalidate(retired.key);
+    }
+    this.cache.invalidate(attempt.key);
   }
 }
 
@@ -58,8 +64,12 @@ export function matchRecovering(matcher, startExpr, opts) {
   for (;;) {
     const {state, result} = runPass(matcher, startExpr, ctx, false);
     if (result.succeeded()) {
-      return opts.tracing ? runPass(matcher, startExpr, ctx, true).trace : result;
+      const answer = opts.tracing ? runPass(matcher, startExpr, ctx, true).trace : result;
+      ctx.cache.release(matcher);
+      ctx.attempts.clear();
+      return answer;
     }
+    ctx.cache.flushAttempts(state._attemptEffects);
 
     // Compute the message now, while this pass's permissions are in force.
     result.getRightmostFailures();
@@ -86,12 +96,16 @@ export function matchRecovering(matcher, startExpr, opts) {
       if (opts.tracing) {
         const {trace} = runPass(matcher, startExpr, ctx, true);
         trace.result = first;
+        ctx.cache.release(matcher);
+        ctx.attempts.clear();
         return trace;
       }
+      ctx.cache.release(matcher);
+      ctx.attempts.clear();
       return first;
     }
 
     ctx.permit(chosen, diagnostic);
-    matcher._invalidateMemoEntries(chosen.start, chosen.start + 1);
+    if (ctx.cache.disabled) matcher._invalidateMemoEntries(chosen.start, chosen.start + 1);
   }
 }
