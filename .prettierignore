@@ -9,3 +9,4 @@ testdata
 third_party
 visualizer
 packages/wasm/runtime/**
+benchmarks/fallible/fixtures/**

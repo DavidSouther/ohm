@@ -1,0 +1,6 @@
+.cache/
+output/
+out-*/
+*.cpuprofile
+# The frozen fixture's prebuilt dist files are source, not build output.
+!fixtures/fallible-before-reuse/packages/ohm-js/dist/

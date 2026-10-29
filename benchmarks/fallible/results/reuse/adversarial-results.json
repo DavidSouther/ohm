@@ -1,0 +1,77 @@
+{
+  "node": "v26.12.1",
+  "roots": [
+    "/private/tmp/ohm-fallible-before-20261027",
+    "/Users/david.souther/devel/nand2tetris/ohm"
+  ],
+  "rows": [
+    {
+      "root": "/private/tmp/ohm-fallible-before-20261027",
+      "name": "one-error-backtracking",
+      "depth": 10,
+      "evaluations": 41473,
+      "passes": 2,
+      "diagnostics": [
+        [
+          10,
+          "Line 1, col 11: expected \"x\" or \"(\""
+        ]
+      ]
+    },
+    {
+      "root": "/private/tmp/ohm-fallible-before-20261027",
+      "name": "valid-predicate",
+      "depth": 10,
+      "evaluations": 61518,
+      "passes": 1,
+      "diagnostics": []
+    },
+    {
+      "root": "/private/tmp/ohm-fallible-before-20261027",
+      "name": "nested-missing-closers",
+      "depth": 10,
+      "evaluations": 121011,
+      "passes": 11,
+      "diagnostics": [
+        [
+          12,
+          "Line 1, col 13: expected \"}\""
+        ]
+      ]
+    },
+    {
+      "root": "/Users/david.souther/devel/nand2tetris/ohm",
+      "name": "one-error-backtracking",
+      "depth": 10,
+      "evaluations": 569,
+      "passes": 2,
+      "diagnostics": [
+        [
+          10,
+          "Line 1, col 11: expected \"x\" or \"(\""
+        ]
+      ]
+    },
+    {
+      "root": "/Users/david.souther/devel/nand2tetris/ohm",
+      "name": "valid-predicate",
+      "depth": 10,
+      "evaluations": 454,
+      "passes": 1,
+      "diagnostics": []
+    },
+    {
+      "root": "/Users/david.souther/devel/nand2tetris/ohm",
+      "name": "nested-missing-closers",
+      "depth": 10,
+      "evaluations": 1213,
+      "passes": 11,
+      "diagnostics": [
+        [
+          12,
+          "Line 1, col 13: expected \"}\""
+        ]
+      ]
+    }
+  ]
+}

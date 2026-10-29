@@ -1,0 +1,200 @@
+{
+  "beforeRoot": "/private/tmp/ohm-fallible-before-20261027",
+  "afterRoot": "/Users/david.souther/devel/nand2tetris/ohm",
+  "counts": [
+    {
+      "version": "v17",
+      "name": "lexical-items",
+      "matches": 255,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "irrelevant-attempt-prefix",
+      "matches": 255,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "predicate",
+      "matches": 341,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "described-block",
+      "matches": 242,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "parameter-iteration",
+      "matches": 781,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "parameter-join",
+      "matches": 781,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "enclosing-joins",
+      "matches": 400,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "left-recursion",
+      "matches": 121,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "backtracking",
+      "matches": 11,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "valid-predicate",
+      "matches": 11,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "missing-closers",
+      "matches": 8,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "line-coordinates",
+      "matches": 4,
+      "traces": 3
+    },
+    {
+      "version": "v17",
+      "name": "prog/bang",
+      "matches": 18,
+      "traces": 0
+    },
+    {
+      "version": "v17",
+      "name": "prog/bangTok",
+      "matches": 18,
+      "traces": 0
+    },
+    {
+      "version": "v17",
+      "name": "lex/bang",
+      "matches": 9,
+      "traces": 0
+    },
+    {
+      "version": "v17",
+      "name": "stateful-indentation",
+      "matches": 21,
+      "traces": 21
+    },
+    {
+      "version": "v18",
+      "name": "lexical-items",
+      "matches": 255,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "irrelevant-attempt-prefix",
+      "matches": 255,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "predicate",
+      "matches": 341,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "described-block",
+      "matches": 242,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "parameter-iteration",
+      "matches": 781,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "parameter-join",
+      "matches": 781,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "enclosing-joins",
+      "matches": 400,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "left-recursion",
+      "matches": 121,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "backtracking",
+      "matches": 11,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "valid-predicate",
+      "matches": 11,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "missing-closers",
+      "matches": 8,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "line-coordinates",
+      "matches": 4,
+      "traces": 3
+    },
+    {
+      "version": "v18",
+      "name": "prog/bang",
+      "matches": 18,
+      "traces": 0
+    },
+    {
+      "version": "v18",
+      "name": "prog/bangTok",
+      "matches": 18,
+      "traces": 0
+    },
+    {
+      "version": "v18",
+      "name": "lex/bang",
+      "matches": 9,
+      "traces": 0
+    },
+    {
+      "version": "v18",
+      "name": "stateful-indentation",
+      "matches": 21,
+      "traces": 21
+    }
+  ],
+  "matches": 6552,
+  "traces": 114
+}

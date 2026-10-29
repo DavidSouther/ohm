@@ -166,7 +166,23 @@ export default defineConfig([
     'packages/cli/src/helpers/generateTypes.test.js',
     'packages/wasm/build/**/*',
     'packages/wasm/runtime/**/*',
+    'benchmarks/fallible/fixtures/**/*',
   ]),
+  {
+    files: ['benchmarks/fallible/**/*.mjs', 'doc/research/fallible-overhead/scripts/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      globals: {
+        process: true,
+        Buffer: true,
+        setTimeout: true,
+        clearTimeout: true,
+      },
+    },
+    rules: {
+      'no-console': 'off',
+    },
+  },
   {
     files: ['examples/nl-datalog-syntax/**'],
     rules: {
