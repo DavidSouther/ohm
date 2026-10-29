@@ -1,5 +1,6 @@
-import {grammarDoesNotSupportIncrementalParsing} from './errors.js';
+import {grammarDoesNotSupportIncrementalParsing, matcherCannotRecover} from './errors.js';
 import {MatchState} from './MatchState.js';
+import {matchRecovering} from './Recovery.js';
 import * as pexprs from './pexprs.js';
 
 export class Matcher {
@@ -8,11 +9,26 @@ export class Matcher {
     this._memoTable = [];
     this._input = '';
     this._isMemoTableStale = false;
+    // 'plain' or 'recover'. Plain matches memoize without recording recovery
+    // attempts, so their entries are unusable for recovery.
+    this._memoMode = undefined;
   }
 
   _resetMemoTable() {
     this._memoTable = [];
     this._isMemoTableStale = false;
+  }
+
+  _prepareForRecovery() {
+    if (this._isMemoTableStale) {
+      throw matcherCannotRecover('its input changed after an earlier match');
+    }
+    if (this._memoMode === 'plain') {
+      throw matcherCannotRecover('its memo table comes from a match without recovery');
+    }
+    // A fresh RecoveryContext has no attempts for previously memoized entries.
+    this._resetMemoTable();
+    this._memoMode = 'recover';
   }
 
   _invalidateMemoEntries(invalidatedIdx, endPos) {
@@ -69,16 +85,18 @@ export class Matcher {
     return this;
   }
 
-  match(optStartApplicationStr, options = {incremental: true}) {
+  match(optStartApplicationStr, options = {}) {
     return this._match(this._getStartExpr(optStartApplicationStr), {
-      incremental: options.incremental,
+      incremental: options.incremental ?? true,
+      recover: !!options.recover,
       tracing: false,
     });
   }
 
-  trace(optStartApplicationStr, options = {incremental: true}) {
+  trace(optStartApplicationStr, options = {}) {
     return this._match(this._getStartExpr(optStartApplicationStr), {
-      incremental: options.incremental,
+      incremental: options.incremental ?? true,
+      recover: !!options.recover,
       tracing: true,
     });
   }
@@ -88,15 +106,28 @@ export class Matcher {
       tracing: false,
       incremental: true,
       positionToRecordFailures: undefined,
+      recover: false, // run the recovery pass driver
+      recovery: undefined, // one pass of a recovering match (a RecoveryContext)
       ...options,
     };
+    if (opts.recover) {
+      return matchRecovering(this, startExpr, opts);
+    }
     if (!opts.incremental) {
       this._resetMemoTable();
     } else if (this._isMemoTableStale && !this.grammar.supportsIncrementalParsing) {
       throw grammarDoesNotSupportIncrementalParsing(this.grammar);
     }
 
-    const state = new MatchState(this, startExpr, opts.positionToRecordFailures);
+    if (!opts.recovery) {
+      this._memoMode = 'plain';
+    }
+    const state = new MatchState(
+      this,
+      startExpr,
+      opts.positionToRecordFailures,
+      opts.recovery
+    );
     return opts.tracing ? state.getTrace() : state.getMatchResult();
   }
 
