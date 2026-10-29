@@ -5,7 +5,7 @@
  * for recovery, the grammar matches exactly as if `!` were a plain sequence.
  * Asking for recovery, one match reports every broken part, including a part
  * broken at its first character, with the message a plain match gives for
- * that mistake alone, and the CST holds a `_fail` node for each broken part.
+ * that mistake alone, and the CST holds a `_correction` node for each broken part.
  * Recovery never changes a valid parse, never preempts an alternative that
  * matches, never runs past an enclosing stop marker, and always consumes
  * input.
@@ -54,7 +54,8 @@ const BLOCKS_PLAIN = BLOCKS.replace('Stmt* ! &"}"', 'Stmt* &"}"').replace(
 const CHOICE = String.raw`
 Choice {
   Prog = Stmt*
-  Stmt = (Let ! ";") | (Do ";")
+  Stmt = (Let ! ";") -- guarded
+       | (Do ";") -- plain
   Let = "let" letter
   Do = "do" letter
 }`;
@@ -86,7 +87,7 @@ function run(source, input, options) {
   return outcome(ohm.grammar(source).match(input, undefined, options));
 }
 
-// CST shape through a semantics operation, so `_fail` dispatch and arity are exercised.
+// CST shape through a semantics operation, so `_correction` dispatch and arity are exercised.
 function cstShape(source, input, options) {
   const g = ohm.grammar(source);
   const r = g.match(input, undefined, options);
@@ -101,8 +102,8 @@ function cstShape(source, input, options) {
     _iter(...children) {
       return children.map(c => c.shape());
     },
-    _fail() {
-      return {ctorName: '_fail', skipped: this.sourceString};
+    _correction() {
+      return {ctorName: '_correction', skipped: this.sourceString};
     },
   });
   return s(r).shape();
@@ -141,7 +142,7 @@ test('syntax: `!` is looser than `*`, `&` and `~`, and tighter than sequence', t
   t.is(bodyShape('A B ! C'), bodyShape('A (B ! C)'));
   t.is(bodyShape('Stmt* ! &Close Other'), bodyShape('(Stmt* ! &Close) Other'));
   t.is(bodyShape('A ! C+'), bodyShape('A ! (C+)'));
-  t.is(bodyShape('A A A | B ! C C'), bodyShape('A A A | (B ! C) C'));
+  t.is(bodyShape('A A A A | B ! C C'), bodyShape('A A A A | (B ! C) C'));
 
   // Errors: no chains, no trailing `!`, and a left side that cannot recover.
   t.throws(() => bodyShape('A ! B ! C'));
@@ -162,16 +163,30 @@ test('syntax: `!` is looser than `*`, `&` and `~`, and tighter than sequence', t
   }
 });
 
+function withoutAbsence(tree) {
+  if (Array.isArray(tree))
+    { return tree.filter(x => !Array.isArray(x) || x.length).map(withoutAbsence); }
+  if (tree && tree.children) return {...tree, children: withoutAbsence(tree.children)};
+  return tree;
+}
+
 test('without recover, `!` matches as a plain sequence', t => {
   for (const input of INPUTS) {
     t.deepEqual(run(FALLIBLE, input), run(PLAIN, input), input);
-    t.deepEqual(cstShape(FALLIBLE, input), cstShape(PLAIN, input), input);
+    t.deepEqual(
+      withoutAbsence(cstShape(FALLIBLE, input)),
+      withoutAbsence(cstShape(PLAIN, input)),
+      input
+    );
   }
 });
 
 test('with recover, one match reports every broken part', t => {
   t.deepEqual(run(FALLIBLE, VALID, RECOVER), {succeeded: true, recovered: []});
-  t.deepEqual(cstShape(FALLIBLE, VALID, RECOVER), cstShape(PLAIN, VALID));
+  t.deepEqual(
+    withoutAbsence(cstShape(FALLIBLE, VALID, RECOVER)),
+    withoutAbsence(cstShape(PLAIN, VALID))
+  );
 
   t.deepEqual(run(FALLIBLE, BROKEN, RECOVER), {
     succeeded: true,
@@ -180,8 +195,8 @@ test('with recover, one match reports every broken part', t => {
 
   const chip = cstShape(FALLIBLE, BROKEN, RECOVER);
   const parts = chip.children[3];
-  // Each Part has two slots: the guarded PartBody (or an empty placeholder)
-  // and the synchronizer `;` (or the skip region).
+  // Each Part has three slots: the guarded PartBody (or an empty placeholder)
+  // the correction region, and the actual synchronizer `;`.
   t.deepEqual(
     parts.map(p =>
       p.children.map(c =>
@@ -191,9 +206,9 @@ test('with recover, one match reports every broken part', t => {
       )
     ),
     [
-      ['_fail<>', '_fail<N(a b)>'],
-      ['PartBody', ';'],
-      ['_fail<>', '_fail<X(>'],
+      ['undefined', '_correction<N(a b)>', ';'],
+      ['PartBody', 'undefined', ';'],
+      ['undefined', '_correction<X(>', ';'],
     ]
   );
 
@@ -216,7 +231,10 @@ test('with recover, a part broken at its first character recovers', t => {
 test('recovery stops at an enclosing stop marker', t => {
   const valid = 'sub { let x; } sub { do y; }';
   t.deepEqual(run(BLOCKS, valid, RECOVER), {succeeded: true, recovered: []});
-  t.deepEqual(cstShape(BLOCKS, valid, RECOVER), cstShape(BLOCKS_PLAIN, valid));
+  t.deepEqual(
+    withoutAbsence(cstShape(BLOCKS, valid, RECOVER)),
+    withoutAbsence(cstShape(BLOCKS_PLAIN, valid))
+  );
 
   // A first-token typo before a `;` recovers just that statement.
   t.deepEqual(run(BLOCKS, 'sub { lt y; do x; } sub { do z; }', RECOVER).recovered, [
@@ -247,8 +265,11 @@ test('recovery stops at an enclosing stop marker', t => {
     subs[0].children[2].map(s => s.ctorName),
     ['Stmt']
   );
-  t.deepEqual(subs[0].children[3], {ctorName: '_fail', skipped: 'lt y'});
-  t.deepEqual(subs[1], cstShape(BLOCKS_PLAIN, 'sub { do z; }').children[0][0]);
+  t.deepEqual(subs[0].children[3], {ctorName: '_correction', skipped: 'lt y'});
+  t.deepEqual(
+    withoutAbsence(subs[1]),
+    withoutAbsence(cstShape(BLOCKS_PLAIN, 'sub { do z; }').children[0][0])
+  );
 
   // A recovery inside the kept statements stays in its own node, and the list
   // is in failure position order, so the first entry equals the plain match's error.
@@ -288,20 +309,23 @@ const PLUS = EXACT.replace('Stmt* !', 'Stmt+ !');
 function blockView(source, input) {
   const g = ohm.grammar(source);
   const r = g.match(input, undefined, RECOVER);
-  const statement = (body, semi) => {
-    const tail = semi.ctorName === '_fail' ? ' ' + semi.show() : '';
+  const statement = (body, correction, _semi) => {
+    const tail = correction.ctorName === '_correction' ? ' ' + correction.show() : '';
     return `Stmt(${body.show()}${tail})`;
   };
   const actions = {
-    Block(_open, stmts, stop, _close) {
+    Block(_open, stmts, correction, _stop, _close) {
       const kept = stmts.children.map(c => c.show()).join(' ');
-      const slot = stop.ctorName === '_fail' ? ' | ' + stop.show() : '';
+      const slot = correction.ctorName === '_correction' ? ' | ' + correction.show() : '';
       return `Block[${kept}${slot}]`;
     },
     Body(id) {
       return id.sourceString;
     },
-    _fail() {
+    _iter(...children) {
+      return children.length ? children.map(c => c.show()).join(' ') : 'EMPTY';
+    },
+    _correction() {
       return this.sourceString === ''
         ? 'EMPTY'
         : `FAIL<${this.sourceString.replace(/\s+/g, ' ')}>`;
@@ -341,7 +365,7 @@ test('recovery keeps valid prior work', t => {
     [
       EXACT,
       '{\naaa;\nb b;\nccc;\n}',
-      'Block[Stmt(aaa) Stmt(EMPTY FAIL<b b>) Stmt(ccc)]',
+      'Block[Stmt(aaa) Stmt(b FAIL<b>) Stmt(ccc)]',
       ['Line 3, col 3: expected ";"'],
     ],
     // An empty block is valid.
@@ -350,7 +374,7 @@ test('recovery keeps valid prior work', t => {
     [
       EXACT,
       '{\naaa;\nb b;\nc c;\nddd;\nxxx\n}',
-      'Block[Stmt(aaa) Stmt(EMPTY FAIL<b b>) Stmt(EMPTY FAIL<c c>) Stmt(ddd) | FAIL<xxx>]',
+      'Block[Stmt(aaa) Stmt(b FAIL<b>) Stmt(c FAIL<c>) Stmt(ddd) | FAIL<xxx>]',
       [
         'Line 3, col 3: expected ";"',
         'Line 4, col 3: expected ";"',
@@ -406,15 +430,19 @@ test('a guarded rule application or sequence keeps nothing', t => {
   // of PartBody is the skip region, in the `;` slot.
   const chip = cstShape(FALLIBLE, BROKEN, RECOVER);
   t.deepEqual(chip.children[3][0].children, [
-    {ctorName: '_fail', skipped: ''},
-    {ctorName: '_fail', skipped: 'N(a b)'},
+    [],
+    {ctorName: '_correction', skipped: 'N(a b)'},
+    ';',
   ]);
 });
 
 test('recovery never preempts an alternative that matches', t => {
   const valid = 'do x; let y;';
   t.deepEqual(run(CHOICE, valid, RECOVER), {succeeded: true, recovered: []});
-  t.deepEqual(cstShape(CHOICE, valid, RECOVER), cstShape(CHOICE_PLAIN, valid));
+  t.deepEqual(
+    withoutAbsence(cstShape(CHOICE, valid, RECOVER)),
+    withoutAbsence(cstShape(CHOICE_PLAIN, valid))
+  );
 
   const broken = 'do x; dx y; let z;';
   t.deepEqual(run(CHOICE, broken, RECOVER).recovered, [
@@ -427,8 +455,8 @@ test('recovery never preempts an alternative that matches', t => {
   ]);
   const stmts = cstShape(CHOICE, broken, RECOVER).children[0];
   t.deepEqual(
-    stmts.map(s => s.children[0].ctorName),
-    ['Do', '_fail', 'Let']
+    stmts.map(s => s.children[0].children[0].ctorName || '_iter'),
+    ['Do', '_iter', 'Let']
   );
 });
 
@@ -451,19 +479,19 @@ test('`B ! &C` stops before the synchronizer and recovers the same mistakes', t 
   t.deepEqual(run(LOOKAHEAD, BROKEN, RECOVER).recovered, EXPECTED_RECOVERIES);
 });
 
-test('an operation without a `_fail` action throws on a recovered node', t => {
+test('an operation without a `_correction` action throws on a recovered node', t => {
   const g = ohm.grammar(FALLIBLE);
   const s = g.createSemantics().addOperation('count', {
     Chip(_c, _n, _o, parts, _cl) {
       return parts.children.reduce((sum, p) => sum + p.count(), 0);
     },
-    Part(body, _semi) {
-      return body.count();
+    Part(body, correction, _semi) {
+      return correction.ctorName === '_correction' ? correction.count() : body.count();
     },
     PartBody(_name, _open, _arg, _close) {
       return 1;
     },
   });
   t.is(s(g.match(VALID, undefined, RECOVER)).count(), 2);
-  t.throws(() => s(g.match(BROKEN, undefined, RECOVER)).count(), {message: /_fail/});
+  t.throws(() => s(g.match(BROKEN, undefined, RECOVER)).count(), {message: /_correction/});
 });

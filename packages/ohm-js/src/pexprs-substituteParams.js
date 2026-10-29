@@ -37,7 +37,7 @@ pexprs.Seq.prototype.substituteParams = function (actuals) {
 
 pexprs.Fallible.prototype.substituteParams = function (actuals) {
   return new pexprs.Fallible(
-    this.fallible.substituteParams(actuals),
+    this.guarded.substituteParams(actuals),
     this.join.substituteParams(actuals)
   );
 };

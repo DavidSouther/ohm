@@ -245,13 +245,11 @@ export function fallibleGuardIsPredicate(ruleName, expr) {
   );
 }
 
-export function missingFailAction(name, type, failure) {
-  const what = failure
-    ? `a recovered failure (${failure.shortMessage})`
-    : 'an empty placeholder for a recovered failure';
+export function missingCorrectionAction(name, type, failure) {
+  const what = `a correction (${failure.shortMessage})`;
   return createError(
-    `Missing semantic action for _fail in ${type} '${name}': the CST holds ${what}. ` +
-      'Add a _fail action to handle recovered input.'
+    `Missing semantic action for _correction in ${type} '${name}': the CST holds ${what}. ` +
+      'Add a _correction action to handle recovered input.'
   );
 }
 

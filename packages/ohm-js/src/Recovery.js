@@ -8,22 +8,22 @@ import {RecoveredFailure, distinctByPosition} from './RecoveredFailure.js';
 
 /*
   State shared by every pass of one recovering match.
-  - `permitted` maps a recovery key (a Fallible at a start position) to the
-    farthest failure position and result of the pass that permitted it.
-  - `attempts` maps a recovery key to the last failed, unpermitted attempt
+  - `corrections` maps a recovery key (a Fallible at a start position) to the
+    farthest failure position and result of the pass that selected it.
+  - `attempts` maps a recovery key to the last failed attempt not yet selected
     seen there. Attempts are kept across passes, because applications that
     were memoized in an earlier pass do not run, or record attempts, again.
 */
 export class RecoveryContext {
   constructor() {
-    this.permitted = new Map();
+    this.corrections = new Map();
     this.attempts = new Map();
   }
 
   chooseAttempt(position) {
     let chosen;
     for (const attempt of this.attempts.values()) {
-      if (attempt.rightmost !== position || this.permitted.has(attempt.key)) continue;
+      if (attempt.rightmost !== position || this.corrections.has(attempt.key)) continue;
       if (
         !chosen ||
         attempt.start > chosen.start ||
@@ -35,8 +35,8 @@ export class RecoveryContext {
     return chosen;
   }
 
-  permit(attempt, result) {
-    this.permitted.set(attempt.key, {position: attempt.rightmost, result});
+  selectForRecovery(attempt, result) {
+    this.corrections.set(attempt.key, {position: attempt.rightmost, result});
     for (const [key, recorded] of this.attempts) {
       if (recorded.start <= attempt.start && recorded.rightmost >= attempt.start) {
         this.attempts.delete(key);
@@ -99,7 +99,7 @@ export function matchRecovering(matcher, startExpr, opts) {
       return first;
     }
 
-    ctx.permit(chosen, result);
+    ctx.selectForRecovery(chosen, result);
     matcher._invalidateMemoEntries(chosen.start, chosen.start + 1);
   }
 }

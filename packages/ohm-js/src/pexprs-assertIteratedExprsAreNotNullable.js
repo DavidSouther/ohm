@@ -42,7 +42,7 @@ pexprs.Iter.prototype.assertIteratedExprsAreNotNullable = function (grammar) {
 };
 
 pexprs.Fallible.prototype.assertIteratedExprsAreNotNullable = function (grammar) {
-  this.fallible.assertIteratedExprsAreNotNullable(grammar);
+  this.guarded.assertIteratedExprsAreNotNullable(grammar);
   this.join.assertIteratedExprsAreNotNullable(grammar);
 };
 

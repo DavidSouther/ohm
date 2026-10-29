@@ -53,7 +53,7 @@ pexprs.Seq.prototype._assertAllApplicationsAreValid = function (ruleName, gramma
 };
 
 pexprs.Fallible.prototype._assertAllApplicationsAreValid = function (ruleName, grammar) {
-  this.fallible._assertAllApplicationsAreValid(ruleName, grammar);
+  this.guarded._assertAllApplicationsAreValid(ruleName, grammar);
   this.join._assertAllApplicationsAreValid(ruleName, grammar);
 };
 

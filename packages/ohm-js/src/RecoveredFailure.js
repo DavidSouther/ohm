@@ -2,8 +2,8 @@
   A failure that a recovery point skipped over. `interval` is the skip region
   (empty for the final failure of a parse that recovery cannot finish), and
   `position`, `shortMessage` and the expected failures are those of the pass
-  that permitted the recovery: that pass's farthest failure. `missing` is true
-  when a block recovered by inserting its missing join expression.
+  that selected the recovery: that pass's farthest failure. `missing` is false:
+  recovery requires a matching join expression.
 */
 export class RecoveredFailure {
   constructor(interval, position, passResult, missing = false) {
@@ -41,12 +41,12 @@ export function distinctByPosition(failures) {
   return found.sort(byPosition);
 }
 
-// A `_fail` node also carries the recoveries made inside the attempt it replaced,
+// A `_correction` node also carries the recoveries made inside the attempt it replaced,
 // whose nodes were discarded.
 export function collectRecoveredFailures(cst) {
   const found = [];
   const walk = node => {
-    if (node.isFailure()) {
+    if (node.isCorrection()) {
       if (node.recoveredFailure) {
         found.push(node.recoveredFailure, ...node.nestedFailures);
       }

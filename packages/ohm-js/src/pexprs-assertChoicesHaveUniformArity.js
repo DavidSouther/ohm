@@ -54,14 +54,14 @@ pexprs.Seq.prototype.assertChoicesHaveUniformArity = function (ruleName) {
 
 // Also validate fallible operands here.
 pexprs.Fallible.prototype.assertChoicesHaveUniformArity = function (ruleName) {
-  this.fallible.assertChoicesHaveUniformArity(ruleName);
+  this.guarded.assertChoicesHaveUniformArity(ruleName);
   this.join.assertChoicesHaveUniformArity(ruleName);
-  if (this.fallible instanceof pexprs.Not || this.fallible instanceof pexprs.Lookahead) {
-    throw errors.fallibleGuardIsPredicate(ruleName, this.fallible);
+  if (this.guarded instanceof pexprs.Not || this.guarded instanceof pexprs.Lookahead) {
+    throw errors.fallibleGuardIsPredicate(ruleName, this.guarded);
   }
-  const guardedArity = this.fallible.getArity();
+  const guardedArity = this.guarded.getArity();
   if (guardedArity !== 1) {
-    throw errors.invalidFallibleOperand(ruleName, 'guarded', guardedArity, this.fallible);
+    throw errors.invalidFallibleOperand(ruleName, 'guarded', guardedArity, this.guarded);
   }
   const syncArity = this.join.getArity();
   if (syncArity !== 1) {

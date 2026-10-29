@@ -1,7 +1,8 @@
 import {Interval} from './Interval.js';
 import {RecoveredFailure} from './RecoveredFailure.js';
-import {FailureNode, IterationNode, ListNode} from './nodes.js';
+import {CorrectionNode, IterationNode, ListNode} from './nodes.js';
 import * as pexprs from './pexprs-main.js';
+import {partitionRecoveries} from './RecoveryOwnership.js';
 
 // --------------------------------------------------------------------
 // Fallible: `B ! C`
@@ -10,7 +11,7 @@ import * as pexprs from './pexprs-main.js';
 /*
   Without recovery, a fallible is the sequence `B C`. During a recovering
   match (`state.recovery` is set), it records each failed attempt for the pass
-  driver, and recovers only at a point a failed pass permitted.
+  driver, and recovers only at a point selected after a failed pass.
 */
 
 const fallibleIds = new WeakMap();
@@ -45,16 +46,11 @@ function matchesAt(state, expr, pos) {
   return ans;
 }
 
-/*
-  A block has a guarded `*` or `+` and a join expression that is not a direct
-  lookahead, such as `Stmt* ! "}"`. Only this structural form can recover by
-  inserting its missing join expression; `Stmt* ! &"}" "}"` cannot, because its
-  closer lies outside the fallible.
-*/
+// Repetition blocks make nested stop markers active while scanning.
 function isBlock(fallible) {
   return (
-    fallible.fallible instanceof pexprs.Iter &&
-    !(fallible.fallible instanceof pexprs.Opt) &&
+    fallible.guarded instanceof pexprs.Iter &&
+    !(fallible.guarded instanceof pexprs.Opt) &&
     !(fallible.join instanceof pexprs.Lookahead)
   );
 }
@@ -77,16 +73,22 @@ function nextCandidate(state, tokenStart, stepsByToken) {
   return tokenStart + 1;
 }
 
-function emptyIteration(state) {
+function emptyOptional(state) {
   return state._rowBasedIteration
-    ? new ListNode([], [], 0, false)
-    : new IterationNode([], [], 0, false);
+    ? new ListNode([], [], 0, true)
+    : new IterationNode([], [], 0, true);
+}
+
+function matchPlain(fallible, state) {
+  if (!state.eval(fallible.guarded)) return false;
+  state.pushBinding(emptyOptional(state), state.inputStream.pos);
+  return state.eval(fallible.join);
 }
 
 pexprs.Fallible.prototype.eval = function (state) {
   const ctx = state.recovery;
   if (!ctx) {
-    return state.eval(this.fallible) && state.eval(this.join);
+    return matchPlain(this, state);
   }
   const {inputStream} = state;
   const origPos = inputStream.pos;
@@ -95,7 +97,7 @@ pexprs.Fallible.prototype.eval = function (state) {
     // attempt. Prevent later reuse of this result, which has no attempts
     // for the pass driver.
     state._recoveryTaint++;
-    return state.eval(this.fallible) && state.eval(this.join);
+    return matchPlain(this, state);
   }
 
   const key = recoveryKey(this, state, origPos);
@@ -115,7 +117,10 @@ pexprs.Fallible.prototype.eval = function (state) {
   state._blockDepth += blockDepth;
 
   // Try the guarded expression and its join before considering recovery.
-  const ok = state.eval(this.fallible) && state.eval(this.join);
+  const guardedMatched = state.eval(this.guarded);
+  const guardedEnd = inputStream.pos;
+  if (guardedMatched) state.pushBinding(emptyOptional(state), guardedEnd);
+  const ok = guardedMatched && state.eval(this.join);
 
   state._blockDepth -= blockDepth;
   state._syncStack.pop();
@@ -125,13 +130,15 @@ pexprs.Fallible.prototype.eval = function (state) {
   const attemptFailures = state.recordedFailures;
   state.popFailuresInfo();
 
-  const permit = ok ? undefined : ctx.permitted.get(key);
-  if (permit) {
+  const correction = ok ? undefined : ctx.corrections.get(key);
+  if (correction) {
     state._recoveryTaint++;
-    state.truncateBindings(origNumBindings);
+    state.truncateBindings(origNumBindings + (guardedMatched ? 1 : 0));
     // A recovery discards the attempt's failures; the enclosing record is
     // already restored.
-    if (this.recover(state, origPos, sync, permit, logMark, tokenEnd)) {
+    if (
+      this.recover(state, origPos, correction, logMark, tokenEnd, guardedMatched, guardedEnd)
+    ) {
       return true;
     }
     state.truncateBindings(origNumBindings);
@@ -153,27 +160,17 @@ pexprs.Fallible.prototype.eval = function (state) {
 };
 
 /*
-  Recover a permitted fallible whose attempt failed. A guarded `*` or `+`
-  keeps the elements it matched; any other guarded expression keeps nothing
-  and its slot holds an empty placeholder. The skip region starts at the next
-  token and ends where the join expression matches; its `_fail` node takes the
-  join expression's slot. The join is only looked for after `tokenEnd`,
-  the end of the last complete token the failed attempt matched, so text
-  already matched as a token, such as a string literal, never ends the region.
-
-  When the scan reaches the end of the input or a stop marker, a block
-  recovers by inserting its missing join expression: the skip region ends there,
-  nothing more is consumed, and the recovered failure is marked `missing`. It
-  requires input consumed within this fallible or earlier in its rule
-  application. On false, the recovery log is restored.
+  Keep matched guarded material, put the skipped region in the correction slot,
+  and retain the actual join binding. Without a matching join recovery fails.
 */
 pexprs.Fallible.prototype.recover = function (
   state,
   origPos,
-  sync,
-  permit,
+  correction,
   logMark,
-  tokenEnd
+  tokenEnd,
+  guardedMatched,
+  guardedEnd
 ) {
   const {inputStream} = state;
   const attemptLog = state._recoveryLog.splice(logMark);
@@ -185,39 +182,13 @@ pexprs.Fallible.prototype.recover = function (
   }
   state.pushFailuresInfo();
 
-  inputStream.pos = origPos;
-  const keepsPrefix =
-    this.fallible instanceof pexprs.Iter && !(this.fallible instanceof pexprs.Opt);
-  if (keepsPrefix) {
-    // Evaluate the guarded iteration again, under the same permissions and
-    // stop markers, so it keeps what this pass matched.
-    state._syncStack.push(sync);
-    state._blockDepth++;
-
-    const kept = state.eval(this.fallible);
-
-    state._blockDepth--;
-    state._syncStack.pop();
-    if (!kept) {
-      inputStream.pos = origPos;
-      state.pushBinding(emptyIteration(state), origPos);
-    }
-  }
+  inputStream.pos = guardedMatched ? guardedEnd : origPos;
+  if (!guardedMatched) state.pushBinding(emptyOptional(state), origPos);
   const scanStart = state.skipSpacesIfInSyntacticContext();
-  let found = this.scan(state, scanStart, Math.max(scanStart, tokenEnd));
+  const found = this.scan(state, scanStart, Math.max(scanStart, tokenEnd));
   state.popFailuresInfo();
 
-  let syncTrace;
-  if (found && found.stoppedAt !== undefined) {
-    const appStart = state._posStack[state._posStack.length - 1];
-    const consumed = found.stoppedAt > origPos || origPos > appStart;
-    found =
-      isBlock(this) && consumed
-        ? {skipEnd: found.stoppedAt, afterSync: found.stoppedAt, missing: true}
-        : null;
-  } else if (outerTrace && found) {
-    syncTrace = state.trace[state.trace.length - 1];
-  }
+  const syncTrace = outerTrace && found ? state.trace[state.trace.length - 1] : undefined;
   if (outerTrace) {
     state.trace = outerTrace;
   }
@@ -229,19 +200,22 @@ pexprs.Fallible.prototype.recover = function (
 
   const recovered = new RecoveredFailure(
     new Interval(inputStream.source, scanStart, found.skipEnd),
-    permit.position,
-    permit.result,
-    !!found.missing
+    correction.position,
+    correction.result
   );
-  // Recoveries inside kept elements stay in their own nodes. A zero-width one
-  // at `scanStart` closed the last kept element.
-  const nested = keepsPrefix
-    ? attemptLog.filter(f => f.interval.endIdx > scanStart || f.interval.startIdx > scanStart)
-    : attemptLog;
-  if (!keepsPrefix) {
-    state.pushBinding(new FailureNode(0), scanStart);
-  }
-  state.pushBinding(new FailureNode(found.skipEnd - scanStart, recovered, nested), scanStart);
+  // Retain only diagnostics actually owned by B in its slot. A successful B
+  // may also have logged recoveries in failed alternatives or a failed last row.
+  const {owned, discarded: nested} = partitionRecoveries(
+    attemptLog,
+    guardedMatched ? state._bindings.at(-1) : undefined
+  );
+  state._recoveryLog.push(...owned);
+  state.pushBinding(
+    new CorrectionNode(found.skipEnd - scanStart, recovered, nested),
+    scanStart
+  );
+  state._bindings.push(found.joinNode);
+  state._bindingOffsets.push(found.joinOffset);
   inputStream.pos = found.afterSync;
   state._recoveryLog.push(recovered, ...nested);
   if (outerTrace) {
@@ -268,15 +242,11 @@ pexprs.Fallible.prototype.recover = function (
   steps one code unit. Without it, every code unit is a candidate. Ordinary
   matching never evaluates it.
 
-  A grammar may define a rule named `recoveryStop`, such as the keywords that
-  begin a top-level item. A scan inside a block nested in another block also
-  stops where it matches, so a block that lost its closer ends at the next
-  item. Scans at the outermost block ignore it, because that is where those
-  items begin. Ordinary matching never evaluates it.
+  A grammar may define `recoveryStop` to stop a scan inside a nested block
+  before the next top-level item. The outermost block ignores it.
 
-  Returns `{skipEnd, afterSync}` when the join expression matched, `{stoppedAt}`
-  when a stop marker or the end of the input ended the scan, and null when
-  the join expression matched without progress.
+  Return the matched join and its offset, or null if no join matches with
+  progress before a stop marker or the end of input.
 */
 pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
   const {inputStream} = state;
@@ -287,7 +257,7 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
       ? [...state._syncStack, recoveryStop]
       : state._syncStack;
   const stepsByToken = !!state.grammar.rules.recoveryToken;
-  let found = {stoppedAt: end};
+  let found = null;
   const origTokenEnd = state._suspendRecovery();
   for (let p = scanStart; p <= end; ) {
     inputStream.pos = p;
@@ -300,12 +270,14 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
     const numBindings = state._bindings.length;
     if (state.eval(this.join)) {
       const afterSync = inputStream.pos;
+      const joinNode = state._bindings[numBindings];
+      const joinOffset = state._bindingOffsets[numBindings];
       state.truncateBindings(numBindings);
-      found = afterSync > scanStart ? {skipEnd: p, afterSync} : null;
+      found = afterSync > scanStart ? {skipEnd: p, afterSync, joinNode, joinOffset} : null;
       break;
     }
     if (enclosing.some(stop => matchesAt(state, stop, p))) {
-      found = {stoppedAt: p};
+      found = null;
       break;
     }
     p = nextCandidate(state, next, stepsByToken);

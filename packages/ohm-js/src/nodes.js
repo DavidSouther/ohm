@@ -1,4 +1,5 @@
 import * as common from './common.js';
+import {inheritRecoveries, correctionOwns} from './RecoveryOwnership.js';
 
 // --------------------------------------------------------------------
 // Private stuff
@@ -107,7 +108,7 @@ export class Node {
     return false;
   }
 
-  isFailure() {
+  isCorrection() {
     return false;
   }
 }
@@ -136,6 +137,7 @@ export class NonterminalNode extends Node {
     this.ruleName = ruleName;
     this.children = children;
     this.childOffsets = childOffsets;
+    inheritRecoveries(this, children);
   }
 
   get ctorName() {
@@ -165,6 +167,7 @@ export class ListNode extends Node {
     super(matchLength);
     this.children = children;
     this.childOffsets = childOffsets;
+    inheritRecoveries(this, children);
     this.optional = isOptional;
   }
 
@@ -185,6 +188,7 @@ export class SeqNode extends Node {
     super(matchLength);
     this.children = children;
     this.childOffsets = childOffsets;
+    inheritRecoveries(this, children);
   }
 
   get ctorName() {
@@ -199,6 +203,7 @@ export class IterationNode extends Node {
     super(matchLength);
     this.children = children;
     this.childOffsets = childOffsets;
+    inheritRecoveries(this, children);
     this.optional = isOptional;
   }
 
@@ -215,23 +220,22 @@ export class IterationNode extends Node {
   }
 }
 
-// Failures (a recovered `B ! C`). A `_fail` node spans a skip region and
-// carries its RecoveredFailure, plus the failures recovered inside the
-// attempt it replaced. An empty placeholder in a guarded slot spans nothing
-// and carries no failure.
+// A correction spans skipped input and carries its diagnostic, plus diagnostics
+// from any failed guarded subtree discarded by the recovery.
 
-export class FailureNode extends Node {
-  constructor(matchLength, optRecoveredFailure, optNestedFailures) {
+export class CorrectionNode extends Node {
+  constructor(matchLength, recoveredFailure, optNestedFailures) {
     super(matchLength);
-    this.recoveredFailure = optRecoveredFailure;
+    this.recoveredFailure = recoveredFailure;
     this.nestedFailures = optNestedFailures || [];
+    correctionOwns(this, recoveredFailure, this.nestedFailures);
   }
 
   get ctorName() {
-    return '_fail';
+    return '_correction';
   }
 
-  isFailure() {
+  isCorrection() {
     return true;
   }
 }
