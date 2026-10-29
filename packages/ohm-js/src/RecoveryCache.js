@@ -143,6 +143,7 @@ export class RecoveryCache {
   constructor(context) {
     this.context = context;
     this.records = new Map();
+    this.memoRecords = new Map(); // native memo record -> recovery record
     this.permissionUsers = new Map();
     this.expressionIds = new WeakMap();
     this.nextId = 0;
@@ -492,21 +493,13 @@ export class RecoveryCache {
     return true;
   }
 
-  release(matcher) {
-    const pending = [...this.records.values()];
-    for (const table of matcher._memoTable) {
-      if (!table) continue;
-      for (const memo of table.memo.values()) {
-        if (memo.recoveryRecord) pending.push(memo.recoveryRecord);
-        delete memo.recoveryRecord;
-      }
-    }
+  release() {
+    const pending = [...this.records.values(), ...this.memoRecords.values()];
     const visited = new Set();
     while (pending.length) {
       const node = pending.pop();
       if (visited.has(node)) continue;
       visited.add(node);
-      if (node.memo?.value.recoveryRecord === node) delete node.memo.value.recoveryRecord;
       for (const child of node.children) pending.push(child);
       if (node.iterationState) {
         const {rows, frontier} = node.iterationState;
@@ -529,6 +522,7 @@ export class RecoveryCache {
       node.log = emptyEffects;
     }
     this.records.clear();
+    this.memoRecords.clear();
     this.permissionUsers.clear();
     this.contexts.clear();
     this.attemptReplay.release();

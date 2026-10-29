@@ -331,7 +331,8 @@ export class MatchState {
 
   useMemoizedResult(origPos, memoRec) {
     if (this.recovery && !this.trace) {
-      if (memoRec.recoveryRecord) this.recovery.cache.depend(memoRec.recoveryRecord);
+      const record = this.recovery.cache.memoRecords.get(memoRec);
+      if (record) this.recovery.cache.depend(record);
       if (memoRec.recoveryFailureSummary) {
         const position = origPos + memoRec.rightmostFailureOffset;
         const stored = memoRec.recoveryFailureSummary;

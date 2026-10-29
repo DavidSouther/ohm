@@ -65,7 +65,7 @@ export function matchRecovering(matcher, startExpr, opts) {
     const {state, result} = runPass(matcher, startExpr, ctx, false);
     if (result.succeeded()) {
       const answer = opts.tracing ? runPass(matcher, startExpr, ctx, true).trace : result;
-      ctx.cache.release(matcher);
+      ctx.cache.release();
       ctx.attempts.clear();
       return answer;
     }
@@ -96,11 +96,11 @@ export function matchRecovering(matcher, startExpr, opts) {
       if (opts.tracing) {
         const {trace} = runPass(matcher, startExpr, ctx, true);
         trace.result = first;
-        ctx.cache.release(matcher);
+        ctx.cache.release();
         ctx.attempts.clear();
         return trace;
       }
-      ctx.cache.release(matcher);
+      ctx.cache.release();
       ctx.attempts.clear();
       return first;
     }

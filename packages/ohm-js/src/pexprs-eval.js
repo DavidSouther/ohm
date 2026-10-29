@@ -414,7 +414,7 @@ pexprs.Apply.prototype.reallyEval = function (state) {
     }
     const record = state.recovery.cache.current;
     if (record) {
-      memoRec.recoveryRecord = record;
+      state.recovery.cache.memoRecords.set(memoRec, record);
       record.memo = {table: origPosInfo, key: memoKey, value: memoRec};
     }
   }
