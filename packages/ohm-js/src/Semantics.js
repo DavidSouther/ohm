@@ -356,7 +356,7 @@ export class Semantics {
       const thisThing = this._semantics[typePlural][name];
 
       // Check that the caller passed the correct number of arguments.
-      if (arguments.length !== thisThing.formals.length) {
+      if (args.length !== thisThing.formals.length) {
         throw new Error(
           'Invalid number of arguments passed to ' +
             name +
@@ -373,9 +373,9 @@ export class Semantics {
       // Create an "arguments object" from the arguments that were passed to this
       // operation / attribute.
       const argsObj = Object.create(null);
-      for (const [idx, val] of Object.entries(args)) {
+      for (let idx = 0; idx < args.length; idx += 1) {
         const formal = thisThing.formals[idx];
-        argsObj[formal] = val;
+        argsObj[formal] = args[idx];
       }
 
       const oldArgs = this.args;
