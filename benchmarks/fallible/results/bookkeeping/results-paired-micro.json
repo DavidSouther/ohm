@@ -1,0 +1,226 @@
+{
+ "profile": "full",
+ "node": "v26.12.1",
+ "rows": [
+  {
+   "kind": "match",
+   "family": "micro",
+   "shape": "lexical: any-loop",
+   "scale": 1,
+   "inputChars": 20000,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 197,
+   "ratioMedian": 0.9966513940961904,
+   "ratioP25": 0.8939532517253853,
+   "ratioP75": 1.2359935324340736,
+   "procRatioMedians": [
+    0.9581262939958648,
+    1.000260132548147,
+    0.9843106430943487,
+    1.0463869100567094
+   ],
+   "procSpread": 0.08894680617502351,
+   "referenceMedianMs": 7.681375000000003,
+   "configMedianMs": 7.72884375000001
+  },
+  {
+   "kind": "match",
+   "family": "micro",
+   "shape": "lexical: not-per-char",
+   "scale": 1,
+   "inputChars": 20000,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 155,
+   "ratioMedian": 0.9713266363168676,
+   "ratioP25": 0.8350065461254843,
+   "ratioP75": 1.1911761002546197,
+   "procRatioMedians": [
+    0.9708638669052955,
+    0.9837315180654858,
+    0.925876238818798,
+    0.9967077412159993
+   ],
+   "procSpread": 0.07247689515880044,
+   "referenceMedianMs": 10.085250000000087,
+   "configMedianMs": 9.904551749999996
+  },
+  {
+   "kind": "match",
+   "family": "micro",
+   "shape": "lexical: lookahead-per-char",
+   "scale": 1,
+   "inputChars": 20000,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 144,
+   "ratioMedian": 1.0126975280039918,
+   "ratioP25": 0.8578358874671851,
+   "ratioP75": 1.1840299147579358,
+   "procRatioMedians": [
+    0.9811750269228162,
+    1.0430112285327326,
+    1.0566938782587527,
+    0.982122522846832
+   ],
+   "procSpread": 0.07458159371892492,
+   "referenceMedianMs": 10.768229249999877,
+   "configMedianMs": 11.120062500000131
+  },
+  {
+   "kind": "match",
+   "family": "micro",
+   "shape": "lexical: apply-per-char",
+   "scale": 1,
+   "inputChars": 20000,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 130,
+   "ratioMedian": 0.9892144818744188,
+   "ratioP25": 0.904289365362697,
+   "ratioP75": 1.1170095681418641,
+   "procRatioMedians": [
+    0.9780491030700089,
+    0.9760509425224747,
+    1.0009134872729732,
+    1.0006309668126447
+   ],
+   "procSpread": 0.025130434302067864,
+   "referenceMedianMs": 12.314010499999995,
+   "configMedianMs": 12.30578125000011
+  },
+  {
+   "kind": "match",
+   "family": "micro",
+   "shape": "lexical: apply+not-per-char",
+   "scale": 1,
+   "inputChars": 20000,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 109,
+   "ratioMedian": 1.015657289539268,
+   "ratioP25": 0.9265420473039465,
+   "ratioP75": 1.0767203145295101,
+   "procRatioMedians": [
+    1.002689531794942,
+    0.9928215113074347,
+    1.02529462343974,
+    1.019972108148115
+   ],
+   "procSpread": 0.03210928757537469,
+   "referenceMedianMs": 14.850448250000227,
+   "configMedianMs": 14.956468500000028
+  },
+  {
+   "kind": "match",
+   "family": "micro",
+   "shape": "syntactic: any-loop",
+   "scale": 1,
+   "inputChars": 20000,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 91,
+   "ratioMedian": 1.0151457920209095,
+   "ratioP25": 0.8858733656801632,
+   "ratioP75": 1.1454746819951014,
+   "procRatioMedians": [
+    0.9583591317050466,
+    1.039855307239196,
+    1.1288436261264643,
+    0.934529656403584
+   ],
+   "procSpread": 0.19448760446906405,
+   "referenceMedianMs": 18.330582750000076,
+   "configMedianMs": 17.758562500000153
+  },
+  {
+   "kind": "match",
+   "family": "micro",
+   "shape": "syntactic: not-per-char",
+   "scale": 1,
+   "inputChars": 20000,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 80,
+   "ratioMedian": 1.0548446968836127,
+   "ratioP25": 0.9288357230788091,
+   "ratioP75": 1.2087856443895442,
+   "procRatioMedians": [
+    0.9738361060906691,
+    1.1528954146114476,
+    1.0548446968836127,
+    0.9699671949360239
+   ],
+   "procSpread": 0.18034204238264562,
+   "referenceMedianMs": 20.082374750000326,
+   "configMedianMs": 21.033208500000228
+  },
+  {
+   "kind": "match",
+   "family": "micro",
+   "shape": "syntactic: lookahead-per-char",
+   "scale": 1,
+   "inputChars": 20000,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 79,
+   "ratioMedian": 1.0498577583624475,
+   "ratioP25": 0.921525482035433,
+   "ratioP75": 1.1696377613949984,
+   "procRatioMedians": [
+    1.0942320997047033,
+    1.0558717507589774,
+    1.01949150111381,
+    1.0284445039556083
+   ],
+   "procSpread": 0.07171713833909324,
+   "referenceMedianMs": 19.132020750000265,
+   "configMedianMs": 20.85135450000007
+  },
+  {
+   "kind": "match",
+   "family": "micro",
+   "shape": "syntactic: apply-per-char",
+   "scale": 1,
+   "inputChars": 20000,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 74,
+   "ratioMedian": 1.0457699222134806,
+   "ratioP25": 0.9559265680343834,
+   "ratioP75": 1.1371782044462118,
+   "procRatioMedians": [
+    1.0537680011504567,
+    1.10178088095983,
+    1.0280920160641946,
+    1.019450788910122
+   ],
+   "procSpread": 0.07909282215800313,
+   "referenceMedianMs": 20.723500000000513,
+   "configMedianMs": 21.575750250000056
+  },
+  {
+   "kind": "match",
+   "family": "micro",
+   "shape": "syntactic: apply+not-per-char",
+   "scale": 1,
+   "inputChars": 20000,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 63,
+   "ratioMedian": 1.0486285821961567,
+   "ratioP25": 0.9827131679532068,
+   "ratioP75": 1.134014437124756,
+   "procRatioMedians": [
+    1.041629294360481,
+    1.0594214466226657,
+    1.0010612258685563,
+    1.06329670894005
+   ],
+   "procSpread": 0.05924224661263709,
+   "referenceMedianMs": 24.07956275000015,
+   "configMedianMs": 25.244822999999997
+  }
+ ]
+}
