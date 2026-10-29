@@ -98,6 +98,41 @@ Note that the rule for the lower precedence operators (`+` and `-`) invokes the 
 
 Notice that in the arithmetic grammar above, `mulExp` appears on the right hand side of all of `addExp`'s cases. Be careful that you don't write rules that are "ambiguously recursive", e.g. `addExp = addExp "+" addExp`. If you write your grammar like this, a reader can't tell whether `+` is left-associative or right-associative. (In Ohm, you will actually get a right-associative parse — see [#56](https://github.com/ohmjs/ohm/issues/56) for details.)
 
+### Recovery points and prediction
+
+Place recovery points around complete items with stable synchronization boundaries,
+for example `Statement = Expr ! ";"`. The expression grammar inside `Expr` may use
+ordinary left recursion; keeping it recovery-free allows it to retain ordinary
+memoization. Recovery inside an active left-recursive cycle needs separate performance
+analysis.
+
+Keep prediction and synchronization helpers transitively recovery-free. Inside `&`
+or `~`, a fallible `B ! C` acts as `B C` and cannot commit recovery. A rule that reaches
+such a marker through other rule calls still has this restriction. Recursive
+lookahead over a recovery-bearing rule can reevaluate suffixes at different call
+depths even on valid input. Prefer a recovery-free prediction helper when a rule is
+shared between prediction and consuming parsing. Join expressions and
+`recoveryToken`/`recoveryStop` helpers also run with recovery suspended.
+
+A pure lookahead **join** is a different case: `Stmt* ! &"}"` places the marker outside
+the predicate and is an ordinary synchronization pattern. It is the fallible reached
+*inside* a predicate that warrants attention.
+
+A future grammar advisory should follow calls and parameters to warn about these
+prediction/helper paths, especially recursive ones. That advisory is proposed; no
+such lint is currently provided. Its absence would not certify a grammar's cost.
+For stable independent items, matching work can be linear while indexing adds
+logarithmic per-error work. See the [practical recovery analysis](research/fallible-overhead/paper.md#75-a-practical-local-recovery-contract)
+for the conditions and measurements of the earlier runtime. A join must actually match;
+`!` does not insert a missing closer. A grammar that accepts an absent closer must
+express that acceptance itself.
+
+`B ! C` contributes three semantic arguments: B, a correction slot, and C.
+B retains its matched result, including a repetition prefix; a failed B contributes
+an empty optional-like node. The middle slot is empty on a clean match and contains
+a `CorrectionNode` after recovery. Define `_correction` to handle that node. C contains
+the actual join result, including a lookahead result when the join is a predicate.
+
 ## Semantics
 
 ### Iteration nodes
