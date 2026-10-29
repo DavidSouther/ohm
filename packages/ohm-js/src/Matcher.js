@@ -1,17 +1,17 @@
 import {
   grammarDoesNotSupportIncrementalParsing,
-  invalidProbeFirstPass,
+  invalidFirstPass,
   matcherCannotRecover,
 } from './errors.js';
 import {MatchState} from './MatchState.js';
 import {matchRecovering} from './Recovery.js';
 import * as pexprs from './pexprs.js';
 
-function probeFirstPassOption({probeFirstPass = 'auto'}) {
-  if (probeFirstPass !== true && probeFirstPass !== false && probeFirstPass !== 'auto') {
-    throw invalidProbeFirstPass(probeFirstPass);
+function firstPassOption({firstPass = 'auto'}) {
+  if (firstPass !== 'auto' && firstPass !== 'probe' && firstPass !== 'cached') {
+    throw invalidFirstPass(firstPass);
   }
-  return probeFirstPass;
+  return firstPass;
 }
 
 export class Matcher {
@@ -127,7 +127,7 @@ export class Matcher {
     return this._match(this._getStartExpr(optStartApplicationStr), {
       incremental: options.incremental ?? true,
       recover: !!options.recover,
-      probeFirstPass: probeFirstPassOption(options),
+      firstPass: firstPassOption(options),
       tracing: false,
     });
   }
@@ -136,7 +136,7 @@ export class Matcher {
     return this._match(this._getStartExpr(optStartApplicationStr), {
       incremental: options.incremental ?? true,
       recover: !!options.recover,
-      probeFirstPass: probeFirstPassOption(options),
+      firstPass: firstPassOption(options),
       tracing: true,
     });
   }
@@ -147,7 +147,7 @@ export class Matcher {
       incremental: true,
       positionToRecordFailures: undefined,
       recover: false, // run the recovery pass driver
-      probeFirstPass: 'auto', // see matchRecovering
+      firstPass: 'auto', // see matchRecovering
       recovery: undefined, // one pass of a recovering match (a RecoveryContext)
       ...options,
     };
