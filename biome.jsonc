@@ -26,7 +26,8 @@
       "!**/testdata",
       "!**/third_party",
       "!**/visualizer",
-      "!packages/wasm/runtime/**"
+      "!packages/wasm/runtime/**",
+      "!benchmarks/fallible/fixtures/**"
     ]
   },
   "linter": { "enabled": false },
