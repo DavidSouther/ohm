@@ -1,0 +1,630 @@
+{
+ "profile": "full",
+ "node": "v26.12.1",
+ "rows": [
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "blocks",
+   "scale": 1,
+   "inputChars": 248,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 1600,
+   "ratioMedian": 1.0582131797059486,
+   "ratioP25": 0.9839597868955423,
+   "ratioP75": 1.1425839807556297,
+   "procRatioMedians": [
+    1.0551514964273148,
+    1.0674723967454607,
+    1.0580967551351739,
+    1.058750353926962
+   ],
+   "procSpread": 0.011640803216633503,
+   "referenceMedianMs": 0.3899582499999923,
+   "configMedianMs": 0.4149584999999547
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "blocks",
+   "scale": 3,
+   "inputChars": 778,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 1443,
+   "ratioMedian": 1.0580843110054863,
+   "ratioP25": 1.0272376386278708,
+   "ratioP75": 1.092052901245133,
+   "procRatioMedians": [
+    1.0538019286546394,
+    1.0630322177194105,
+    1.0579783018988083,
+    1.0546645232529874
+   ],
+   "procSpread": 0.008738144427331555,
+   "referenceMedianMs": 1.0450832500000615,
+   "configMedianMs": 1.1085940000000392
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "blocks",
+   "scale": 10,
+   "inputChars": 2633,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 419,
+   "ratioMedian": 1.0591387751207253,
+   "ratioP25": 0.9949644432330097,
+   "ratioP75": 1.1151409857057946,
+   "procRatioMedians": [
+    1.057396060511695,
+    1.0576323004738484,
+    1.0742335766421862,
+    1.0436159126353002
+   ],
+   "procSpread": 0.028952485528486314,
+   "referenceMedianMs": 3.567833500000006,
+   "configMedianMs": 3.776625000000081
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "blocks",
+   "scale": 30,
+   "inputChars": 8293,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 117,
+   "ratioMedian": 1.045084474885815,
+   "ratioP25": 1.0184293418268255,
+   "ratioP75": 1.0746748688854322,
+   "procRatioMedians": [
+    1.0187838849625885,
+    1.052188102399155,
+    1.0471262100104617,
+    1.0451300460954989
+   ],
+   "procSpread": 0.03193128694353852,
+   "referenceMedianMs": 13.109791500000028,
+   "configMedianMs": 13.673833999999943
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "blocks",
+   "scale": 100,
+   "inputChars": 28103,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 60,
+   "ratioMedian": 1.0387815832069194,
+   "ratioP25": 0.9646252951643846,
+   "ratioP75": 1.0867693594530756,
+   "procRatioMedians": [
+    1.0107102680245987,
+    1.038455478814756,
+    1.0299081435796504,
+    1.079835678871573
+   ],
+   "procSpread": 0.06684067549684755,
+   "referenceMedianMs": 49.69068799999968,
+   "configMedianMs": 50.77756249999993
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "blocks",
+   "scale": 300,
+   "inputChars": 88303,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 60,
+   "ratioMedian": 1.0516132705430605,
+   "ratioP25": 0.9813159903813934,
+   "ratioP75": 1.141337164720808,
+   "procRatioMedians": [
+    1.0291087599782092,
+    1.035734416299704,
+    1.065812433538352,
+    1.0857332255220946
+   ],
+   "procSpread": 0.053888368511269595,
+   "referenceMedianMs": 151.56214599999976,
+   "configMedianMs": 166.92889550000018
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "flat",
+   "scale": 1,
+   "inputChars": 250,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 1600,
+   "ratioMedian": 1.0616028417093335,
+   "ratioP25": 1.000831455868369,
+   "ratioP75": 1.122210448749467,
+   "procRatioMedians": [
+    1.065369997296323,
+    1.0750908952346638,
+    1.0449920980397898,
+    1.0696219634641615
+   ],
+   "procSpread": 0.02819570073149397,
+   "referenceMedianMs": 0.3643019999999524,
+   "configMedianMs": 0.3960207499999342
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "flat",
+   "scale": 3,
+   "inputChars": 748,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 1491,
+   "ratioMedian": 1.056669888834876,
+   "ratioP25": 1.0323288461789315,
+   "ratioP75": 1.0871728738000486,
+   "procRatioMedians": [
+    1.0532308413120774,
+    1.0657899151358663,
+    1.0478030473651805,
+    1.0640587202729834
+   ],
+   "procSpread": 0.01699046563779434,
+   "referenceMedianMs": 1.002521250000882,
+   "configMedianMs": 1.0650832500000433
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "flat",
+   "scale": 10,
+   "inputChars": 2491,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 429,
+   "ratioMedian": 1.043311390211596,
+   "ratioP25": 0.9821352252097785,
+   "ratioP75": 1.096727885610843,
+   "procRatioMedians": [
+    1.0191579960322301,
+    1.0383582912643474,
+    1.0161524857322801,
+    1.1136492605451627
+   ],
+   "procSpread": 0.0947713273667311,
+   "referenceMedianMs": 3.5857499999997344,
+   "configMedianMs": 3.6955940000002556
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "flat",
+   "scale": 30,
+   "inputChars": 7811,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 130,
+   "ratioMedian": 1.0513282257961056,
+   "ratioP25": 1.0309465363985626,
+   "ratioP75": 1.078188417379506,
+   "procRatioMedians": [
+    1.0341332743080933,
+    1.0637437132802035,
+    1.049649146585511,
+    1.0578178197042183
+   ],
+   "procSpread": 0.02810050116632705,
+   "referenceMedianMs": 11.842239749999408,
+   "configMedianMs": 12.541916249999758
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "flat",
+   "scale": 100,
+   "inputChars": 26431,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 60,
+   "ratioMedian": 1.0807272036184052,
+   "ratioP25": 1.006846849550224,
+   "ratioP75": 1.134211191887934,
+   "procRatioMedians": [
+    1.084574493008087,
+    1.1106787402905327,
+    1.0834566269457486,
+    1.0496375508973939
+   ],
+   "procSpread": 0.05631025203590124,
+   "referenceMedianMs": 45.24597900000026,
+   "configMedianMs": 49.16802100000132
+  },
+  {
+   "kind": "match",
+   "family": "prog",
+   "shape": "flat",
+   "scale": 300,
+   "inputChars": 83031,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 60,
+   "ratioMedian": 1.0433069634732717,
+   "ratioP25": 0.9732628505582088,
+   "ratioP75": 1.1269879468669792,
+   "procRatioMedians": [
+    1.0175472623588662,
+    1.0423617268541274,
+    1.069921697419404,
+    1.0516048767932993
+   ],
+   "procSpread": 0.05002413598125973,
+   "referenceMedianMs": 151.0456460000005,
+   "configMedianMs": 155.3028125000019
+  },
+  {
+   "kind": "match",
+   "family": "lex",
+   "shape": "lines",
+   "scale": 1,
+   "inputChars": 1580,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 1199,
+   "ratioMedian": 1.0096328393937124,
+   "ratioP25": 0.9597879236166675,
+   "ratioP75": 1.061051602476423,
+   "procRatioMedians": [
+    1.003809034222863,
+    1.0169940181131463,
+    1.0062493971205337,
+    1.0096008382188992
+   ],
+   "procSpread": 0.013081312945912589,
+   "referenceMedianMs": 1.2309794999982842,
+   "configMedianMs": 1.2409789999983332
+  },
+  {
+   "kind": "match",
+   "family": "lex",
+   "shape": "lines",
+   "scale": 3,
+   "inputChars": 5180,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 356,
+   "ratioMedian": 1.006379213058596,
+   "ratioP25": 0.9019129579322771,
+   "ratioP75": 1.1309667657720828,
+   "procRatioMedians": [
+    1.0366418614619095,
+    0.9843103353689913,
+    0.9771404408308971,
+    1.0708780847746195
+   ],
+   "procSpread": 0.09276582008294354,
+   "referenceMedianMs": 4.145687750000434,
+   "configMedianMs": 4.1954167500007316
+  },
+  {
+   "kind": "match",
+   "family": "lex",
+   "shape": "lines",
+   "scale": 10,
+   "inputChars": 17780,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 84,
+   "ratioMedian": 1.0006356859160646,
+   "ratioP25": 0.9300762154421464,
+   "ratioP75": 1.0828021196351836,
+   "procRatioMedians": [
+    1.0190630567263503,
+    0.9927853755652863,
+    1.0096935604774777,
+    0.9891097698516148
+   ],
+   "procSpread": 0.02991620669321823,
+   "referenceMedianMs": 18.830427249999957,
+   "configMedianMs": 19.134124999999585
+  },
+  {
+   "kind": "match",
+   "family": "lex",
+   "shape": "lines",
+   "scale": 30,
+   "inputChars": 57780,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 60,
+   "ratioMedian": 0.9764698955885758,
+   "ratioP25": 0.9206985524544712,
+   "ratioP75": 1.0799087703362458,
+   "procRatioMedians": [
+    0.9367542685666078,
+    0.989040627274914,
+    0.9576871008125165,
+    0.9873115835580998
+   ],
+   "procSpread": 0.053764929640788536,
+   "referenceMedianMs": 64.24420799999825,
+   "configMedianMs": 61.67139599999791
+  },
+  {
+   "kind": "match",
+   "family": "lex",
+   "shape": "lines",
+   "scale": 100,
+   "inputChars": 197780,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 60,
+   "ratioMedian": 0.9989255463398514,
+   "ratioP25": 0.9174000049191382,
+   "ratioP75": 1.0763612313313327,
+   "procRatioMedians": [
+    1.0509506293465702,
+    0.9623844073240164,
+    1.0291932816438825,
+    0.9836233632716717
+   ],
+   "procSpread": 0.08800227506690708,
+   "referenceMedianMs": 213.90952099999777,
+   "configMedianMs": 220.3239999999987
+  },
+  {
+   "kind": "match",
+   "family": "lex",
+   "shape": "lines",
+   "scale": 300,
+   "inputChars": 637780,
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 36,
+   "ratioMedian": 1.0153686500174062,
+   "ratioP25": 0.9072790571659483,
+   "ratioP75": 1.0678649504229902,
+   "procRatioMedians": [
+    1.0105768423184183,
+    1.0221532214279234,
+    1.0182154380160002,
+    0.998461501344794
+   ],
+   "procSpread": 0.02335549115873432,
+   "referenceMedianMs": 716.6630205000038,
+   "configMedianMs": 709.7341039999992
+  },
+  {
+   "kind": "construct",
+   "name": "prog-plain (ohm.grammar)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 823,
+   "ratioMedian": 1.122408735935956,
+   "ratioP25": 1.0466586389448251,
+   "ratioP75": 1.2062814785124247,
+   "procRatioMedians": [
+    1.1159827496094388,
+    1.1137482303096782,
+    1.1157977311085647,
+    1.1362286225874314
+   ],
+   "procSpread": 0.020145702027576547,
+   "referenceMedianMs": 2.1003954999978305,
+   "configMedianMs": 2.34229200000118
+  },
+  {
+   "kind": "construct",
+   "name": "prog-plain (metagrammar parse)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 1036,
+   "ratioMedian": 1.1364431636070649,
+   "ratioP25": 1.0356931866461179,
+   "ratioP75": 1.2252651354590682,
+   "procRatioMedians": [
+    1.1122628905415435,
+    1.13018056475725,
+    1.1292509544804887,
+    1.1665634477223457
+   ],
+   "procSpread": 0.04806568087456041,
+   "referenceMedianMs": 1.6408955000006245,
+   "configMedianMs": 1.8426459999973304
+  },
+  {
+   "kind": "construct",
+   "name": "ohm-grammar.ohm (ohm.grammar)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 305,
+   "ratioMedian": 1.12410403090576,
+   "ratioP25": 0.9275426146763036,
+   "ratioP75": 1.299183735554506,
+   "procRatioMedians": [
+    1.108428590803464,
+    1.1619434246944138,
+    1.1213619268443176,
+    1.145166681973707
+   ],
+   "procSpread": 0.04722184726259197,
+   "referenceMedianMs": 5.957937499999389,
+   "configMedianMs": 6.341000000003987
+  },
+  {
+   "kind": "construct",
+   "name": "ohm-grammar.ohm (metagrammar parse)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 409,
+   "ratioMedian": 1.1327590887317893,
+   "ratioP25": 0.9438595531730853,
+   "ratioP75": 1.3266036209795349,
+   "procRatioMedians": [
+    1.1116488666548887,
+    1.1301939752395054,
+    1.1322942337601787,
+    1.159661979573789
+   ],
+   "procSpread": 0.04244275194709492,
+   "referenceMedianMs": 4.23131199999807,
+   "configMedianMs": 4.94129200000134
+  },
+  {
+   "kind": "construct",
+   "name": "lex-plain (ohm.grammar)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 1600,
+   "ratioMedian": 1.110673965116932,
+   "ratioP25": 1.060153143425289,
+   "ratioP75": 1.1796859014461563,
+   "procRatioMedians": [
+    1.099304887948493,
+    1.1164887490949806,
+    1.1046464548074781,
+    1.1535669900940562
+   ],
+   "procSpread": 0.04885979210110802,
+   "referenceMedianMs": 0.3935937500009459,
+   "configMedianMs": 0.4446249999982683
+  },
+  {
+   "kind": "construct",
+   "name": "lex-plain (metagrammar parse)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 1600,
+   "ratioMedian": 1.139895800435898,
+   "ratioP25": 1.0829018477998718,
+   "ratioP75": 1.2020731552942316,
+   "procRatioMedians": [
+    1.1251005499798197,
+    1.1198441752935124,
+    1.1317409078415333,
+    1.1867398768345203
+   ],
+   "procSpread": 0.0592825883352797,
+   "referenceMedianMs": 0.267437250000512,
+   "configMedianMs": 0.3013122500015015
+  },
+  {
+   "kind": "construct",
+   "name": "syn10-plain (ohm.grammar)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 1384,
+   "ratioMedian": 1.1240143034242729,
+   "ratioP25": 1.0701873906658932,
+   "ratioP75": 1.2038273128365944,
+   "procRatioMedians": [
+    1.110840031352704,
+    1.1122477776179482,
+    1.1223316405460848,
+    1.1694915254185287
+   ],
+   "procSpread": 0.05249443684039096,
+   "referenceMedianMs": 1.217302250001012,
+   "configMedianMs": 1.3954692500010424
+  },
+  {
+   "kind": "construct",
+   "name": "syn10-plain (metagrammar parse)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 1600,
+   "ratioMedian": 1.1483546399868798,
+   "ratioP25": 1.107492168641205,
+   "ratioP75": 1.202450343570971,
+   "procRatioMedians": [
+    1.1257701283195298,
+    1.1498917059260505,
+    1.1442137590062456,
+    1.1885484417430736
+   ],
+   "procSpread": 0.054730102328051866,
+   "referenceMedianMs": 0.868989499997042,
+   "configMedianMs": 0.9965412500005186
+  },
+  {
+   "kind": "construct",
+   "name": "syn100-plain (ohm.grammar)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 145,
+   "ratioMedian": 1.117492193522732,
+   "ratioP25": 1.0761122153336438,
+   "ratioP75": 1.1693814532828468,
+   "procRatioMedians": [
+    1.0783882037485202,
+    1.098459761204193,
+    1.1498372589802033,
+    1.1525775306500405
+   ],
+   "procSpread": 0.06599601941867596,
+   "referenceMedianMs": 12.951583249998293,
+   "configMedianMs": 14.583552250000139
+  },
+  {
+   "kind": "construct",
+   "name": "syn100-plain (metagrammar parse)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 201,
+   "ratioMedian": 1.146937294272798,
+   "ratioP25": 1.042094646294295,
+   "ratioP75": 1.2995415836897843,
+   "procRatioMedians": [
+    1.1247847021627515,
+    1.055830372590001,
+    1.1641050822790258,
+    1.191665488255164
+   ],
+   "procSpread": 0.11869083132658666,
+   "referenceMedianMs": 9.527271000002656,
+   "configMedianMs": 10.703437500000291
+  },
+  {
+   "kind": "construct",
+   "name": "syn1000-plain (ohm.grammar)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 60,
+   "ratioMedian": 1.1127391966287525,
+   "ratioP25": 1.047561840366211,
+   "ratioP75": 1.2038741327597364,
+   "procRatioMedians": [
+    1.0983151545982197,
+    1.100728007745276,
+    1.0791770736802342,
+    1.2125225076547228
+   ],
+   "procSpread": 0.1212758678482544,
+   "referenceMedianMs": 143.8740629999993,
+   "configMedianMs": 168.10766650000005
+  },
+  {
+   "kind": "construct",
+   "name": "syn1000-plain (metagrammar parse)",
+   "reference": "baseline",
+   "config": "fallible",
+   "n": 60,
+   "ratioMedian": 1.1132770126600713,
+   "ratioP25": 1.070524549792295,
+   "ratioP75": 1.1842345748206062,
+   "procRatioMedians": [
+    1.100131765178635,
+    1.1134656958372773,
+    1.105290260766307,
+    1.1521815103382589
+   ],
+   "procSpread": 0.04691795418483088,
+   "referenceMedianMs": 105.00316650000605,
+   "configMedianMs": 117.25958299999911
+  }
+ ]
+}
