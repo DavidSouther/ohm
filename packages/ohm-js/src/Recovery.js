@@ -1,6 +1,7 @@
 import {Interval} from './Interval.js';
 import {MatchState} from './MatchState.js';
 import {RecoveredFailure, distinctByPosition} from './RecoveredFailure.js';
+import {DiagnosticSnapshot} from './DiagnosticSnapshot.js';
 import {SourcePositions} from './SourcePositions.js';
 
 // --------------------------------------------------------------------
@@ -77,6 +78,7 @@ export function matchRecovering(matcher, startExpr, opts) {
     // Compute the message now, while this pass's permissions are in force.
     result.getRightmostFailures();
     void result.shortMessage;
+    const diagnostic = DiagnosticSnapshot.fromResult(result, ctx.positionIndex);
     first = first || result;
 
     const position = result.getRightmostFailurePosition();
@@ -88,7 +90,7 @@ export function matchRecovering(matcher, startExpr, opts) {
       const finalFailure = new RecoveredFailure(
         new Interval(result.input, position, position),
         position,
-        result
+        diagnostic
       );
       // An application that is not memoized can run more than once in a
       // pass, logging its recoveries each time.
@@ -101,7 +103,7 @@ export function matchRecovering(matcher, startExpr, opts) {
       return first;
     }
 
-    ctx.permit(chosen, result);
+    ctx.permit(chosen, diagnostic);
     matcher._invalidateMemoEntries(chosen.start, chosen.start + 1);
   }
 }

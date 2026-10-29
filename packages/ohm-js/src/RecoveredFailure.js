@@ -1,3 +1,5 @@
+import {DiagnosticSnapshot} from './DiagnosticSnapshot.js';
+
 /*
   A failure that a recovery point skipped over. `interval` is the skip region
   (empty for the final failure of a parse that recovery cannot finish), and
@@ -10,16 +12,19 @@ export class RecoveredFailure {
     this.interval = interval;
     this.position = position;
     this.missing = missing;
-    this._passResult = passResult;
-    this.shortMessage = passResult.shortMessage;
+    this._diagnostic = DiagnosticSnapshot.fromResult(
+      passResult,
+      passResult._recovery?.positionIndex
+    );
+    this.shortMessage = this._diagnostic.shortMessage;
   }
 
   getExpectedText() {
-    return this._passResult.getExpectedText();
+    return this._diagnostic.getExpectedText();
   }
 
   getRightmostFailures() {
-    return this._passResult.getRightmostFailures();
+    return this._diagnostic.getRightmostFailures();
   }
 }
 
