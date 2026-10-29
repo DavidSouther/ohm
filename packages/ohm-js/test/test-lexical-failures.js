@@ -6,6 +6,7 @@
 
 import test from 'ava';
 import * as ohm from '../index.mjs';
+import {RecoveryCache} from '../src/RecoveryCache.js';
 
 const RECOVER = {recover: true};
 
@@ -81,7 +82,7 @@ Stmts {
   name  = letter+
 }`;
 
-test('a recovered failure classifies the pass that permitted its recovery', t => {
+test('a recovered failure classifies the pass that selected its recovery', t => {
   const g = ohm.grammar(STMTS);
 
   const result = g.match('0xZ; ab cd;', undefined, RECOVER);
@@ -132,4 +133,55 @@ test('a recovered failure merges a token continuation with a boundary expectatio
   const result = g.match('a?;', undefined, RECOVER);
 
   t.deepEqual(result.getRecoveredFailures().map(expected), [[['"b"', false]]]);
+});
+
+test.serial('cached recovery retains lexical classification across token contexts', t => {
+  const sources = [
+    STMTS,
+    String.raw`G {
+    Start = Stmt* end
+    Stmt = (Two | wrap) ! ";"
+    wrap = "a" inner
+    Two = "a" inner
+    inner = "b"
+  }`,
+  ];
+  const inputs = [
+    ['0xZ; ab cd;', 'ab; 0xZ', 'ab; cd'],
+    ['a?;a?;', 'a?;a?'],
+  ];
+  const summarize = result => ({
+    success: result.succeeded(),
+    diagnostics: result.getRecoveredFailures().map(expected),
+    final: result.failed() ? expected(result) : [],
+  });
+  for (let i = 0; i < sources.length; i++) {
+    const g = ohm.grammar(sources[i]);
+    for (const input of inputs[i]) {
+      const cached = g.match(input, undefined, {recover: true, firstPass: 'cached'});
+      const original = RecoveryCache.prototype.evaluate;
+      let uncached;
+      try {
+        RecoveryCache.prototype.evaluate = function (...args) {
+          this.disabled = true;
+          return original.apply(this, args);
+        };
+        uncached = g.match(input, undefined, {recover: true, firstPass: 'cached'});
+      } finally {
+        RecoveryCache.prototype.evaluate = original;
+      }
+      t.deepEqual(summarize(cached), summarize(uncached), `${input}`);
+    }
+  }
+});
+
+test('memo replay preserves a nested syntactic token boundary', t => {
+  const g = ohm.grammar(String.raw`G {
+    Start = ~Two wrap
+    wrap = "a" inner
+    Two = "a" inner
+    inner = applySyntactic<Next>
+    Next = "b"
+  }`);
+  t.deepEqual(expected(g.match('a?')), [['"b"', false]]);
 });

@@ -44,6 +44,7 @@ export class MemoTable {
     this.values = []; // CST node, or false for a failure
     this.failures = []; // failures recorded at the rightmost position, if any
     this.summaries = []; // recovery failure summary
+    this.tokenContexts = []; // whether the lexical application began inside a token
     this.traces = []; // trace entry, only when tracing
 
     // `rows[key][pos]` is the entry for `key` at `pos`, or NONE.
@@ -228,6 +229,7 @@ export class MemoTable {
     if (this.failures.length > entry) this.failures[entry] = undefined;
     if (this.summaries.length > entry) this.summaries[entry] = undefined;
     if (this.traces.length > entry) this.traces[entry] = undefined;
+    if (this.tokenContexts.length > entry) this.tokenContexts[entry] = undefined;
     if (this.recursions.size > 0) this.recursions.delete(entry);
     this.live--;
   }
@@ -383,6 +385,7 @@ export class MemoTable {
         this.rightmostFailureOffset[j] = this.rightmostFailureOffset[e];
         this.tokenEndOffset[j] = this.tokenEndOffset[e];
         this.values[j] = this.values[e];
+        this.tokenContexts[j] = this.tokenContexts[e];
         if (this.failures.length > e) this.failures[j] = this.failures[e];
         if (this.summaries.length > e) this.summaries[j] = this.summaries[e];
         if (this.traces.length > e) this.traces[j] = this.traces[e];
@@ -391,7 +394,7 @@ export class MemoTable {
       j++;
     }
     this.values.length = j;
-    for (const column of [this.failures, this.summaries, this.traces]) {
+    for (const column of [this.failures, this.summaries, this.traces, this.tokenContexts]) {
       if (column.length > j) column.length = j;
     }
     this.count = j;

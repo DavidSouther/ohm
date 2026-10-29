@@ -105,13 +105,13 @@ function record() {
 function hashContext(eid, owner, start, pos, depth, flags, block, sync) {
   let h = 0x811c9dc5 | 0;
   h = Math.imul(h ^ eid, 0x9e3779b1);
-  h = Math.imul((h ^ (h >>> 15)) ^ owner, 0x9e3779b1);
-  h = Math.imul((h ^ (h >>> 15)) ^ start, 0x9e3779b1);
-  h = Math.imul((h ^ (h >>> 15)) ^ pos, 0x9e3779b1);
-  h = Math.imul((h ^ (h >>> 15)) ^ depth, 0x9e3779b1);
-  h = Math.imul((h ^ (h >>> 15)) ^ flags, 0x9e3779b1);
-  h = Math.imul((h ^ (h >>> 15)) ^ block, 0x9e3779b1);
-  h = Math.imul((h ^ (h >>> 15)) ^ sync, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15) ^ owner, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15) ^ start, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15) ^ pos, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15) ^ depth, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15) ^ flags, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15) ^ block, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15) ^ sync, 0x9e3779b1);
   return (h ^ (h >>> 15)) & 0x3fffffff; // Keep the Map key a small integer.
 }
 
@@ -373,7 +373,7 @@ export class RecoveryCache {
         !memoTable.isTainted(native) &&
         !memoTable.isActive(pos, keyId) &&
         memoTable.shouldUseMemoizedResult(pos, native) &&
-        state.hasNecessaryInfo(native)
+        state.hasNecessaryInfo(native, app)
       ) {
         return this.evaluateInline(state, expr);
       }

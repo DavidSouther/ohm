@@ -302,8 +302,8 @@ pexprs.Apply.prototype.eval = function (state) {
     if (memoTable.isTainted(entry)) {
       memoTable.remove(entry);
     } else if (memoTable.shouldUseMemoizedResult(pos, entry)) {
-      if (state.hasNecessaryInfo(entry)) {
-        return state.useMemoizedResult(pos, entry, app);
+      if (state.hasNecessaryInfo(entry, app)) {
+        return state.useMemoizedResult(pos, entry);
       }
       memoTable.remove(entry);
     }
@@ -327,7 +327,7 @@ pexprs.Apply.prototype.handleCycle = function (state, keyId) {
     entry = memoTable.add(pos, keyId, 0, 0, false, undefined, -1, -1);
     memoTable.startLeftRecursion(pos, entry, keyId, this);
   }
-  return state.useMemoizedResult(pos, entry, this);
+  return state.useMemoizedResult(pos, entry);
 };
 
 pexprs.Apply.prototype.reallyEval = function (state, keyId) {
@@ -337,6 +337,7 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
   const {body} = ruleInfo;
   const {description} = ruleInfo;
 
+  const tokenContext = state._isLexicalFailureAt(origPos);
   state.enterApplication(this, keyId);
 
   if (description) {
@@ -433,6 +434,7 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
     origInputStreamExaminedLength
   );
 
+  if (memoEntry >= 0) memoTable.tokenContexts[memoEntry] = tokenContext;
   state.exitApplication(value);
 
   return succeeded;

@@ -177,6 +177,11 @@ export interface FirstPassReport {
 export interface Failure {
   toString(): string;
   /**
+   * True when this expectation was met by an expression that succeeded at
+   * the failure position. Messages omit such failures.
+   */
+  isFluffy(): boolean;
+  /**
    * True when this expectation failed inside a token that had already begun:
    * a lexical rule application (or lexified expression) that started before
    * the failure position. False for an expectation at a token boundary, where
@@ -304,6 +309,12 @@ export interface FailedMatchResult extends MatchResult {
    * and `shortMessage`.
    */
   getExpectedText(): string;
+
+  /**
+   * The expected failures at the rightmost failure position, from which
+   * `getExpectedText` is built.
+   */
+  getRightmostFailures(): Failure[];
 
   /**
    * If this MatchResult is a failure, returns an Interval indicating

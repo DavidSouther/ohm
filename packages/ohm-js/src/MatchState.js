@@ -235,7 +235,10 @@ export class MatchState {
       const app = this.currentApplication();
       const resolved = app ? expr.substituteParams(app.args) : expr;
       const failures = this.recovery.cache.failuresOf(
-        resolved, resolved === expr, this.grammar, this._isLexicalFailureAt(pos)
+        resolved,
+        resolved === expr,
+        this.grammar,
+        this._isLexicalFailureAt(pos)
       );
       const summary = {position: pos, failures};
       this._recoveryFailureSummary = mergeFailureSummaries(
@@ -331,8 +334,16 @@ export class MatchState {
     return !!this.trace;
   }
 
-  hasNecessaryInfo(entry) {
+  hasNecessaryInfo(entry, app) {
     const {memoTable} = this;
+    // Reevaluate across token boundaries: a lexical rule can itself enter a
+    // syntactic rule, so its expectations cannot all be reclassified together.
+    if (
+      !app.isSyntactic() &&
+      memoTable.tokenContexts[entry] !== this._isLexicalFailureAt(this.inputStream.pos)
+    ) {
+      return false;
+    }
     if (this.trace && !memoTable.traces[entry]) {
       return false;
     }
@@ -348,18 +359,7 @@ export class MatchState {
     return true;
   }
 
-  // Failures at a reused lexical application's start depend on its caller's token.
-  _reusedFailures(failures, position, origPos, app) {
-    if (position !== origPos || app.isSyntactic()) return failures;
-    const lexical = this._isLexicalFailureAt(origPos);
-    return failures.map(failure => {
-      const copy = failure.clone();
-      copy.lexical = lexical;
-      return copy;
-    });
-  }
-
-  useMemoizedResult(origPos, entry, app) {
+  useMemoizedResult(origPos, entry) {
     const {memoTable} = this;
     if (this.recovery && !this.trace) {
       const record = this.recovery.cache.memoRecords.get(entry);
@@ -367,8 +367,7 @@ export class MatchState {
       const stored = memoTable.summaries[entry];
       if (stored) {
         const position = origPos + memoTable.rightmostFailureOffset[entry];
-        const failures = stored.position === position
-          ? this._reusedFailures(stored.failures, position, origPos, app) : [];
+        const failures = stored.position === position ? stored.failures : [];
         this._recoveryFailureSummary = mergeFailureSummaries(
           {position, failures},
           this._recoveryFailureSummary
@@ -395,10 +394,7 @@ export class MatchState {
       this.positionToRecordFailures === memoRecRightmostFailurePosition &&
       memoTable.failures[entry]
     ) {
-      const failures = this._reusedFailures(
-        Object.values(memoTable.failures[entry]), memoRecRightmostFailurePosition, origPos, app
-      );
-      this.recordFailures(failures, true);
+      this.recordFailures(memoTable.failures[entry], true);
     }
 
     this.inputStream.examinedLength = Math.max(
