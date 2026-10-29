@@ -60,6 +60,22 @@ function isBlock(fallible) {
 }
 
 const recoveryStop = new pexprs.Apply('recoveryStop');
+const recoveryToken = new pexprs.Apply('recoveryToken');
+
+// Prefer whole-token progress, with a one-code-unit fallback.
+function nextCandidate(state, tokenStart, stepsByToken) {
+  if (stepsByToken) {
+    const {inputStream} = state;
+    const origNumBindings = state._bindings.length;
+    inputStream.pos = tokenStart;
+    const matched = state.eval(recoveryToken);
+    state.truncateBindings(origNumBindings);
+    if (matched && inputStream.pos > tokenStart) {
+      return inputStream.pos;
+    }
+  }
+  return tokenStart + 1;
+}
 
 function emptyIteration(state) {
   return state._rowBasedIteration
@@ -244,6 +260,14 @@ pexprs.Fallible.prototype.recover = function (
   code unit. Comments are stepped over whole, by the ordinary space skipping
   of a syntactic rule.
 
+  A grammar may define a rule named `recoveryToken` that matches one whole
+  token, such as a string literal, an identifier or a number. A scan then
+  steps from one candidate to the next by one `recoveryToken` match, so a
+  join expression or stop marker inside a token is never a candidate. Where it
+  does not match with progress, such as at an unterminated string, the scan
+  steps one code unit. Without it, every code unit is a candidate. Ordinary
+  matching never evaluates it.
+
   A grammar may define a rule named `recoveryStop`, such as the keywords that
   begin a top-level item. A scan inside a block nested in another block also
   stops where it matches, so a block that lost its closer ends at the next
@@ -262,13 +286,14 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
     nested && state.grammar.rules.recoveryStop
       ? [...state._syncStack, recoveryStop]
       : state._syncStack;
+  const stepsByToken = !!state.grammar.rules.recoveryToken;
   let found = {stoppedAt: end};
   const origTokenEnd = state._suspendRecovery();
   for (let p = scanStart; p <= end; ) {
     inputStream.pos = p;
     const next = Math.max(state.skipSpacesIfInSyntacticContext(), p);
     if (next < searchFrom) {
-      p = next + 1;
+      p = nextCandidate(state, next, stepsByToken);
       continue;
     }
     inputStream.pos = p;
@@ -283,7 +308,7 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
       found = {stoppedAt: p};
       break;
     }
-    p = next + 1;
+    p = nextCandidate(state, next, stepsByToken);
   }
   state._resumeRecovery(origTokenEnd);
   return found;
