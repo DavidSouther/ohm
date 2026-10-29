@@ -15,6 +15,63 @@
 import test from 'ava';
 import * as ohm from '../index.mjs';
 
+const FALLIBLE = String.raw`
+Chips {
+  Chip = "CHIP" name "{" Part* "}"
+  Part = PartBody ! ";"
+  PartBody = name "(" name ")"
+  name = letter alnum*
+}`;
+
+const PLAIN = FALLIBLE.replace('PartBody ! ";"', 'PartBody ";"');
+const LOOKAHEAD = FALLIBLE.replace('Part = PartBody ! ";"', 'Part = PartBody ! &";" ";"');
+
+const VALID = 'CHIP A { N(a); M(b); }';
+const BROKEN = 'CHIP A { N(a b); M(c); X(; }';
+const UNCLOSED = 'CHIP A { N(a); M(b';
+const FIRST_TOKEN = 'CHIP A { 1N(a); M(c); }';
+const MISSING = 'CHIP A { ; M(c); }';
+const INPUTS = [VALID, BROKEN, UNCLOSED, FIRST_TOKEN, MISSING];
+
+const FIRST_TOKEN_MESSAGE = 'Line 1, col 10: expected "}" or a letter';
+
+// An iteration followed by a closer, bounded by a stop marker.
+const BLOCKS = String.raw`
+Blocks {
+  Prog = Sub*
+  Sub = "sub" "{" Stmt* ! &"}" "}"
+  Stmt = StmtBody ! ";"
+  StmtBody = Let | Do
+  Let = "let" letter
+  Do = "do" letter
+}`;
+
+const RECOVER = {recover: true};
+
+const EXPECTED_RECOVERIES = [
+  {startIdx: 9, endIdx: 15, position: 13, message: 'Line 1, col 14: expected ")"'},
+  {startIdx: 23, endIdx: 25, position: 25, message: 'Line 1, col 26: expected a letter'},
+];
+
+function recoveries(result) {
+  return result.getRecoveredFailures().map(f => ({
+    startIdx: f.interval.startIdx,
+    endIdx: f.interval.endIdx,
+    position: f.position,
+    message: f.shortMessage,
+  }));
+}
+
+function outcome(result) {
+  return result.succeeded()
+    ? {succeeded: true, recovered: recoveries(result)}
+    : {succeeded: false, message: result.shortMessage};
+}
+
+function run(source, input, options) {
+  return outcome(ohm.grammar(source).match(input, undefined, options));
+}
+
 // Structure of a rule body, without source locations.
 function bodyShape(rhs) {
   const g = ohm.grammar(String.raw`
@@ -69,7 +126,53 @@ test('syntax: `!` is looser than `*`, `&` and `~`, and tighter than sequence', t
   }
 });
 
+test('with recover, a part broken at its first character recovers', t => {
+  t.deepEqual(run(FALLIBLE, FIRST_TOKEN, RECOVER), {
+    succeeded: true,
+    recovered: [{startIdx: 9, endIdx: 14, position: 9, message: FIRST_TOKEN_MESSAGE}],
+  });
+  // A bare `;` is a missing part: nothing is skipped and the synchronizer is consumed.
+  t.deepEqual(run(FALLIBLE, MISSING, RECOVER), {
+    succeeded: true,
+    recovered: [{startIdx: 9, endIdx: 9, position: 9, message: FIRST_TOKEN_MESSAGE}],
+  });
+});
+
+test('a parse recovery cannot finish reports every error it found', t => {
+  // Two broken parts and no closing brace: both recoveries, then the final failure.
+  const r = ohm.grammar(FALLIBLE).match('CHIP A { N(a b); X(; M(c', undefined, RECOVER);
+  t.true(r.failed());
+  t.is(r.shortMessage, ohm.grammar(PLAIN).match('CHIP A { N(a b); X(; M(c').shortMessage);
+  t.deepEqual(
+    r.getRecoveredFailures().map(f => f.shortMessage),
+    [
+      'Line 1, col 14: expected ")"',
+      'Line 1, col 20: expected a letter',
+      'Line 1, col 25: expected ")"',
+    ]
+  );
+});
+
 test('a synchronizer must have arity 1', t => {
   t.throws(() => bodyShape('A ! (B C)'), {message: /arity/});
   t.notThrows(() => bodyShape('A ! &Close'));
+});
+
+test('every recovery consumes input, so recovery terminates', t => {
+  // A zero-width synchronizer cannot recover a missing part; the match fails as plain.
+  t.deepEqual(run(LOOKAHEAD, MISSING, RECOVER), run(PLAIN, MISSING));
+
+  // Thirty stray separators give thirty recoveries, each consuming its `;`.
+  const strays = 'sub { ' + '; '.repeat(30) + '}';
+  const {succeeded, recovered} = run(BLOCKS, strays, RECOVER);
+  t.true(succeeded);
+  t.is(recovered.length, 30);
+  t.true(recovered.every((r, i) => r.position === 6 + 2 * i));
+});
+
+test('`B ! &C` stops before the synchronizer and recovers the same mistakes', t => {
+  for (const input of INPUTS) {
+    t.deepEqual(run(LOOKAHEAD, input), run(PLAIN, input), input);
+  }
+  t.deepEqual(run(LOOKAHEAD, BROKEN, RECOVER).recovered, EXPECTED_RECOVERIES);
 });
