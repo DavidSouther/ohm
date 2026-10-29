@@ -148,3 +148,54 @@ test('valid and invalid matches of one grammar are independent of the cache-free
   const inputs = [source(0), source(2), source(0), source(0), source(3), source(1), source(0)];
   for (const input of inputs) t.deepEqual(run(input), fresh(input));
 });
+
+test('probeFirstPass forces or skips the cache-free first pass and reports the outcome', t => {
+  const match = (g, input, probeFirstPass) =>
+    g.match(input, undefined, {recover: true, probeFirstPass});
+  const recordsMade = result => result._recovery.cache.stats.evaluated;
+
+  for (const probe of [true, false]) {
+    const g = ohm.grammar(HDL);
+    const valid = match(g, source(0), probe);
+    t.deepEqual(valid.getRecoveryProbe(), {probed: probe, better: 'probe'});
+    // A probe that succeeds never builds a record; otherwise the cache is on.
+    t.is(recordsMade(valid) > 0, !probe);
+    const invalid = match(g, source(2), probe);
+    t.deepEqual(invalid.getRecoveryProbe(), {probed: probe, better: 'cached'});
+    t.true(recordsMade(invalid) > 0);
+  }
+
+  // 'auto' probes after a valid match, or with no history, and not after an invalid one.
+  const g = ohm.grammar(HDL);
+  const sequence = [source(2), source(0), source(0), source(3), source(0)];
+  const probed = sequence.map(input => g.match(input, undefined, {recover: true}))
+    .map(result => result.getRecoveryProbe().probed);
+  t.deepEqual(probed, [true, false, true, true, false]);
+});
+
+test('probeFirstPass never changes a result, and is reported for traces', t => {
+  const summary = result => [
+    result.succeeded(),
+    result.message,
+    result.getRecoveredFailures().length,
+  ];
+  for (const input of [source(0), source(2)]) {
+    const results = [true, false, 'auto'].map(probeFirstPass =>
+      summary(ohm.grammar(HDL).match(input, undefined, {recover: true, probeFirstPass}))
+    );
+    t.deepEqual(results[1], results[0]);
+    t.deepEqual(results[2], results[0]);
+  }
+  const options = {recover: true, probeFirstPass: false};
+  const traced = ohm.grammar(HDL).trace(source(0), undefined, options);
+  t.deepEqual(traced.result.getRecoveryProbe(), {probed: false, better: 'probe'});
+  t.is(ohm.grammar(HDL).match(source(0)).getRecoveryProbe(), undefined);
+});
+
+test('probeFirstPass rejects values other than true, false and auto', t => {
+  const g = ohm.grammar(HDL);
+  const error = t.throws(() =>
+    g.match(source(0), undefined, {recover: true, probeFirstPass: 'yes'})
+  );
+  t.regex(error.message, /probeFirstPass/);
+});

@@ -255,6 +255,12 @@ export function missingFailAction(name, type, failure) {
   );
 }
 
+export function invalidProbeFirstPass(value) {
+  return createError(
+    `Invalid probeFirstPass option: ${String(value)}. Use true, false or 'auto'.`
+  );
+}
+
 export function matcherCannotRecover(reason) {
   return createError(
     `This matcher cannot recover: ${reason}. ` +

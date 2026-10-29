@@ -90,6 +90,14 @@ export class MatchResult {
     return this._recoveredFailures.slice();
   }
 
+  // For a recovering match, how its first pass ran: `probed` is whether it ran without the reuse
+  // cache, and `better` is the choice that would have been cheaper in hindsight ('probe' if the
+  // first pass succeeded, 'cached' if it failed). Undefined without recovery.
+  getRecoveryProbe() {
+    const report = this._recovery?.firstPass;
+    return report ? {probed: report.probed, better: report.better} : undefined;
+  }
+
   toString() {
     return this.succeeded()
       ? '[match succeeded]'

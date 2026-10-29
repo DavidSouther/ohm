@@ -24,6 +24,8 @@ export class RecoveryContext {
     this.attempts = new RecoveryAttempts();
     this.positionIndex = new SourcePositions(input);
     this.cache = new RecoveryCache(this);
+    // How the first pass ran; see `matchRecovering` and MatchResult#getRecoveryProbe.
+    this.firstPass = undefined;
   }
 
   chooseAttempt(position) {
@@ -63,12 +65,16 @@ function runPass(matcher, startExpr, ctx, tracing) {
 export function matchRecovering(matcher, startExpr, opts) {
   matcher._prepareForRecovery();
 
-  // Nothing is reused within a single pass, and valid input needs only one, so when the
-  // grammar's previous recovering match was valid, the first pass runs without the reuse cache
-  // and the match restarts with it enabled if that pass fails. Otherwise a failing probe would
-  // cost an extra pass on every invalid input.
+  // Nothing is reused within a single pass, and valid input needs only one. A "probe" is a first
+  // pass without the reuse cache; if it fails, the match restarts with the cache enabled, which
+  // costs an extra pass. `probeFirstPass` is true or false to force that choice. With 'auto'
+  // the probe runs when the grammar's previous recovering match was valid, or there was none.
   let ctx = new RecoveryContext(matcher.getInput());
-  let probing = firstPassSucceeded.get(matcher.grammar) ?? true;
+  const {probeFirstPass} = opts;
+  let probing =
+    probeFirstPass === 'auto' ? firstPassSucceeded.get(matcher.grammar) ?? true : probeFirstPass;
+  const report = {probed: probing, better: undefined};
+  ctx.firstPass = report;
   ctx.cache.disabled = probing;
   let first;
   let firstPassSeen = false;
@@ -77,6 +83,7 @@ export function matchRecovering(matcher, startExpr, opts) {
     if (!firstPassSeen) {
       firstPassSeen = true;
       firstPassSucceeded.set(matcher.grammar, result.succeeded());
+      report.better = result.succeeded() ? 'probe' : 'cached';
     }
     if (probing && !result.succeeded()) {
       // The probe's memo entries have no recovery records, so later permits could not
@@ -84,6 +91,7 @@ export function matchRecovering(matcher, startExpr, opts) {
       probing = false;
       matcher._resetMemoTable();
       ctx = new RecoveryContext(matcher.getInput());
+      ctx.firstPass = report;
       continue;
     }
     if (result.succeeded()) {
