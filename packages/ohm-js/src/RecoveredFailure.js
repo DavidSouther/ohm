@@ -23,8 +23,22 @@ export class RecoveredFailure {
   }
 }
 
-export function byPosition(a, b) {
+function byPosition(a, b) {
   return a.position - b.position;
+}
+
+// Report identical diagnostics once while preserving distinct skip regions.
+export function distinctByPosition(failures) {
+  const seen = new Set();
+  const found = [];
+  for (const f of failures) {
+    const k = `${f.interval.startIdx}:${f.interval.endIdx}:${f.position}:${f.shortMessage}`;
+    if (!seen.has(k)) {
+      seen.add(k);
+      found.push(f);
+    }
+  }
+  return found.sort(byPosition);
 }
 
 // A `_fail` node also carries the recoveries made inside the attempt it replaced,
@@ -44,5 +58,5 @@ export function collectRecoveredFailures(cst) {
     }
   };
   walk(cst);
-  return found.sort(byPosition);
+  return distinctByPosition(found);
 }
