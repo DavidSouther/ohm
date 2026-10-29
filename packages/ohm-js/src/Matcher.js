@@ -4,6 +4,7 @@ import {
   matcherCannotRecover,
 } from './errors.js';
 import {MatchState} from './MatchState.js';
+import {MemoTable} from './MemoTable.js';
 import {matchRecovering} from './Recovery.js';
 import * as pexprs from './pexprs.js';
 
@@ -17,7 +18,7 @@ function firstPassOption({firstPass = 'auto'}) {
 export class Matcher {
   constructor(grammar) {
     this.grammar = grammar;
-    this._memoTable = [];
+    this._memoTable = new MemoTable();
     this._input = '';
     this._isMemoTableStale = false;
     // 'plain' or 'recover'. Plain matches memoize without recording recovery
@@ -26,7 +27,7 @@ export class Matcher {
   }
 
   _resetMemoTable() {
-    this._memoTable = [];
+    this._memoTable = new MemoTable();
     this._isMemoTableStale = false;
   }
 
@@ -43,12 +44,7 @@ export class Matcher {
   }
 
   _invalidateMemoEntries(invalidatedIdx, endPos) {
-    const {_memoTable: memoTable} = this;
-    const limit = Math.min(endPos, memoTable.length);
-    for (let pos = 0; pos < limit; pos++) {
-      const posInfo = memoTable[pos];
-      if (posInfo) posInfo.clearObsoleteEntries(pos, invalidatedIdx);
-    }
+    this._memoTable.invalidate(invalidatedIdx, endPos);
   }
 
   getInput() {
@@ -89,35 +85,10 @@ export class Matcher {
       this._isMemoTableStale = true;
     }
 
-    // update memo table (similar to the above)
-    const oldLen = memoTable.length;
-    const deleteCount = endIdx - startIdx;
-    const insertCount = str.length;
-    const delta = insertCount - deleteCount;
-    const newLen = oldLen + delta;
+    // update memo table
+    memoTable.replaceRange(startIdx, endIdx, str.length, this._input.length);
 
-    // Move the tail segment to its new location.
-    if (oldLen > endIdx) {
-      if (delta > 0) {
-        // Grow first to make room, then shift the tail right.
-        memoTable.length = newLen;
-        memoTable.copyWithin(startIdx + insertCount, endIdx, oldLen);
-      } else if (delta < 0) {
-        // Shift the tail left first, then shrink (shrinking first would drop tail entries).
-        memoTable.copyWithin(startIdx + insertCount, endIdx, oldLen);
-        memoTable.length = newLen;
-      } else {
-        memoTable.copyWithin(startIdx + insertCount, endIdx, oldLen);
-      }
-    } else if (delta !== 0) {
-      memoTable.length = newLen;
-    }
-
-    // Clear the inserted range.
-    if (insertCount > 0) {
-      memoTable.fill(undefined, startIdx, startIdx + insertCount);
-    }
-
+    // Invalidate memoRecs
     this._invalidateMemoEntries(startIdx, startIdx);
 
     return this;
