@@ -1,27 +1,30 @@
 import {grammarDoesNotSupportIncrementalParsing} from './errors.js';
 import {MatchState} from './MatchState.js';
+import {MemoTable} from './MemoTable.js';
+import {memoTableView} from './MemoTableView.js';
 import * as pexprs from './pexprs.js';
 
 export class Matcher {
   constructor(grammar) {
     this.grammar = grammar;
-    this._memoTable = [];
+    this._memo = new MemoTable();
     this._input = '';
     this._isMemoTableStale = false;
   }
 
+  // The memo table as a read-only array of PosInfo-shaped snapshots, one per input position, for
+  // tools that inspect memoization. The engine works on `_memo`.
+  get _memoTable() {
+    return memoTableView(this._memo);
+  }
+
   _resetMemoTable() {
-    this._memoTable = [];
+    this._memo = new MemoTable();
     this._isMemoTableStale = false;
   }
 
   _invalidateMemoEntries(invalidatedIdx, endPos) {
-    const {_memoTable: memoTable} = this;
-    const limit = Math.min(endPos, memoTable.length);
-    for (let pos = 0; pos < limit; pos++) {
-      const posInfo = memoTable[pos];
-      if (posInfo) posInfo.clearObsoleteEntries(pos, invalidatedIdx);
-    }
+    this._memo.invalidate(invalidatedIdx, endPos);
   }
 
   getInput() {
@@ -37,7 +40,7 @@ export class Matcher {
 
   replaceInputRange(startIdx, endIdx, str) {
     const prevInput = this._input;
-    const memoTable = this._memoTable;
+    const memoTable = this._memo;
 
     // Grammar.match() creates a fresh Matcher and calls replaceInputRange(0, 0, input).
     // In that scenario, there is nothing to preserve or invalidate, so avoid extra work.
@@ -62,16 +65,10 @@ export class Matcher {
       this._isMemoTableStale = true;
     }
 
-    // update memo table (similar to the above)
-    const restOfMemoTable = memoTable.slice(endIdx);
-    memoTable.length = startIdx;
-    for (let idx = 0; idx < str.length; idx++) {
-      memoTable.push(undefined);
-    }
-    for (const posInfo of restOfMemoTable) {
-      memoTable.push(posInfo);
-    }
+    // update memo table
+    memoTable.replaceRange(startIdx, endIdx, str.length, this._input.length);
 
+    // Invalidate memoRecs
     this._invalidateMemoEntries(startIdx, startIdx);
 
     return this;

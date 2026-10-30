@@ -1,6 +1,5 @@
 import {InputStream} from './InputStream.js';
 import {MatchResult} from './MatchResult.js';
-import {PosInfo} from './PosInfo.js';
 import {Trace} from './Trace.js';
 import * as pexprs from './pexprs.js';
 import * as util from './util.js';
@@ -25,7 +24,8 @@ export class MatchState {
     this.grammar = matcher.grammar;
     this.input = matcher.getInput();
     this.inputStream = new InputStream(this.input);
-    this.memoTable = matcher._memoTable;
+    this.memoTable = matcher._memo;
+    this.memoTable.beginPass(this.input.length);
 
     this.userData = undefined;
     this.doNotMemoize = false;
@@ -51,20 +51,20 @@ export class MatchState {
     return pos - this._posStack[this._posStack.length - 1];
   }
 
-  enterApplication(posInfo, app) {
+  enterApplication(app, memoKeyId) {
     this._posStack.push(this.inputStream.pos);
     this._applicationStack.push(app);
     this.inLexifiedContextStack.push(false);
-    posInfo.enter(app);
+    this.memoTable.enter(this.inputStream.pos, memoKeyId);
     this._rightmostFailurePositionStack.push(this.rightmostFailurePosition);
     this.rightmostFailurePosition = -1;
   }
 
-  exitApplication(posInfo, optNode) {
+  exitApplication(optNode) {
     const origPos = this._posStack.pop();
     this._applicationStack.pop();
     this.inLexifiedContextStack.pop();
-    posInfo.exit();
+    this.memoTable.exit(origPos);
 
     this.rightmostFailurePosition = Math.max(
       this.rightmostFailurePosition,
@@ -145,18 +145,6 @@ export class MatchState {
     }
   }
 
-  getCurrentPosInfo() {
-    return this.getPosInfo(this.inputStream.pos);
-  }
-
-  getPosInfo(pos) {
-    let posInfo = this.memoTable[pos];
-    if (!posInfo) {
-      posInfo = this.memoTable[pos] = new PosInfo();
-    }
-    return posInfo;
-  }
-
   processFailure(pos, expr) {
     this.rightmostFailurePosition = Math.max(this.rightmostFailurePosition, pos);
 
@@ -216,13 +204,13 @@ export class MatchState {
 
   // Returns the memoized trace entry for `expr` at `pos`, if one exists, `null` otherwise.
   getMemoizedTraceEntry(pos, expr) {
-    const posInfo = this.memoTable[pos];
-    if (posInfo && expr instanceof pexprs.Apply) {
-      const memoRec = posInfo.memo[expr.toMemoKey()];
-      if (memoRec && memoRec.traceEntry) {
-        const entry = memoRec.traceEntry.cloneWithExpr(expr);
-        entry.isMemoized = true;
-        return entry;
+    const {memoTable} = this;
+    if (expr instanceof pexprs.Apply) {
+      const entry = memoTable.find(pos, memoTable.keyIdOf(expr));
+      if (entry >= 0 && memoTable.traces[entry]) {
+        const traceEntry = memoTable.traces[entry].cloneWithExpr(expr);
+        traceEntry.isMemoized = true;
+        return traceEntry;
       }
     }
     return null;
@@ -245,28 +233,31 @@ export class MatchState {
     return !!this.trace;
   }
 
-  hasNecessaryInfo(memoRec) {
-    if (this.trace && !memoRec.traceEntry) {
+  hasNecessaryInfo(entry) {
+    const {memoTable} = this;
+    if (this.trace && !memoTable.traces[entry]) {
       return false;
     }
 
     if (
       this.recordedFailures &&
-      this.inputStream.pos + memoRec.rightmostFailureOffset === this.positionToRecordFailures
+      this.inputStream.pos + memoTable.rightmostFailureOffset[entry] ===
+        this.positionToRecordFailures
     ) {
-      return !!memoRec.failuresAtRightmostPosition;
+      return !!memoTable.failures[entry];
     }
 
     return true;
   }
 
-  useMemoizedResult(origPos, memoRec) {
+  useMemoizedResult(origPos, entry) {
+    const {memoTable} = this;
     if (this.trace) {
-      this.trace.push(memoRec.traceEntry);
+      this.trace.push(memoTable.traces[entry]);
     }
 
     const memoRecRightmostFailurePosition =
-      this.inputStream.pos + memoRec.rightmostFailureOffset;
+      this.inputStream.pos + memoTable.rightmostFailureOffset[entry];
     this.rightmostFailurePosition = Math.max(
       this.rightmostFailurePosition,
       memoRecRightmostFailurePosition
@@ -274,19 +265,20 @@ export class MatchState {
     if (
       this.recordedFailures &&
       this.positionToRecordFailures === memoRecRightmostFailurePosition &&
-      memoRec.failuresAtRightmostPosition
+      memoTable.failures[entry]
     ) {
-      this.recordFailures(memoRec.failuresAtRightmostPosition, true);
+      this.recordFailures(memoTable.failures[entry], true);
     }
 
     this.inputStream.examinedLength = Math.max(
       this.inputStream.examinedLength,
-      memoRec.examinedLength + origPos
+      memoTable.examinedLength[entry] + origPos
     );
 
-    if (memoRec.value) {
-      this.inputStream.pos += memoRec.matchLength;
-      this.pushBinding(memoRec.value, origPos);
+    const value = memoTable.values[entry];
+    if (value) {
+      this.inputStream.pos += memoTable.matchLength[entry];
+      this.pushBinding(value, origPos);
       return true;
     }
     return false;
