@@ -34,16 +34,13 @@ export class MatchResult {
     if (this.failed()) {
       common.defineLazyProperty(this, 'message', function () {
         const detail = 'Expected ' + this.getExpectedText();
-        return (
-          util.getLineAndColumnMessage(this.input, this.getRightmostFailurePosition()) + detail
-        );
+        return this._getLineAndColumn().toString() + detail;
       });
       common.defineLazyProperty(this, 'shortMessage', function () {
         const detail = 'expected ' + this.getExpectedText();
-        const errorInfo = util.getLineAndColumn(
-          this.input,
-          this.getRightmostFailurePosition()
-        );
+        const errorInfo = this._recovery?.positionIndex
+          ? this._recovery.positionIndex.getLineAndColumnNumbers(this.getRightmostFailurePosition())
+          : this._getLineAndColumn();
         return 'Line ' + errorInfo.lineNum + ', col ' + errorInfo.colNum + ': ' + detail;
       });
     }
@@ -51,6 +48,13 @@ export class MatchResult {
 
   succeeded() {
     return !!this._cst;
+  }
+
+  _getLineAndColumn() {
+    const position = this.getRightmostFailurePosition();
+    return this._recovery?.positionIndex
+      ? this._recovery.positionIndex.getLineAndColumn(position)
+      : util.getLineAndColumn(this.input, position);
   }
 
   failed() {
@@ -67,7 +71,7 @@ export class MatchResult {
       const matchResultWithFailures = this.matcher._match(this.startExpr, {
         tracing: false,
         positionToRecordFailures: this.getRightmostFailurePosition(),
-        // Re-match under the same recovery permissions, or the expected text
+        // Re-match under the same recovery corrections, or the expected text
         // will not match this result's failure position.
         recovery: this._recovery,
       });
@@ -84,6 +88,14 @@ export class MatchResult {
         this.succeeded() && this._recovery ? collectRecoveredFailures(this._cst) : [];
     }
     return this._recoveredFailures.slice();
+  }
+
+  // For a recovering match, how its first pass ran: `mode` is 'probe' (without the reuse cache)
+  // or 'cached', and `better` is the mode that would have been cheaper in hindsight ('probe' if
+  // the first pass succeeded, 'cached' if it failed). Undefined without recovery.
+  getFirstPass() {
+    const report = this._recovery?.firstPass;
+    return report ? {mode: report.mode, better: report.better} : undefined;
   }
 
   toString() {

@@ -139,6 +139,35 @@ export interface MatchOptions {
    * Grammar#match, or Grammar#trace for recovery in those cases.
    */
   recover?: boolean;
+
+  /**
+   * Only meaningful with `recover`. Controls whether the first pass of a
+   * recovering match runs without recovery's reuse cache. That "probe" pass is
+   * cheaper when the input is valid, but a failed probe costs one extra pass.
+   * `'probe'` always probes and `'cached'` never does. `'auto'` (the default)
+   * probes when the grammar's previous recovering match succeeded on its
+   * first pass, or when there was none. The option never changes a result.
+   * Read MatchResult#getFirstPass afterwards to see which way was cheaper.
+   */
+  firstPass?: FirstPassMode;
+}
+
+/**
+ * How a recovering match chooses its first pass; see MatchOptions#firstPass.
+ */
+export type FirstPassMode = 'auto' | 'probe' | 'cached';
+
+/**
+ * How the first pass of a recovering match ran.
+ */
+export interface FirstPassReport {
+  /** 'probe' if the first pass ran without the reuse cache, else 'cached'. */
+  mode: 'probe' | 'cached';
+  /**
+   * The mode that was cheaper in hindsight: 'probe' if the first pass
+   * succeeded, 'cached' if it failed and a probe only added a pass.
+   */
+  better: 'probe' | 'cached';
 }
 
 /**
@@ -232,6 +261,12 @@ export interface MatchResult {
    * `shortMessage` is the same as for a match without `recover`.
    */
   getRecoveredFailures(): RecoveredFailure[];
+
+  /**
+   * For a match with `recover`, how its first pass ran and which choice would
+   * have been cheaper; undefined without `recover`. See MatchOptions#firstPass.
+   */
+  getFirstPass(): FirstPassReport | undefined;
 }
 
 export interface SucceededMatchResult extends MatchResult {
