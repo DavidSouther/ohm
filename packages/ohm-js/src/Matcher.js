@@ -1,9 +1,20 @@
-import {grammarDoesNotSupportIncrementalParsing, matcherCannotRecover} from './errors.js';
+import {
+  grammarDoesNotSupportIncrementalParsing,
+  invalidFirstPass,
+  matcherCannotRecover,
+} from './errors.js';
 import {MatchState} from './MatchState.js';
 import {MemoTable} from './MemoTable.js';
 import {memoTableView} from './MemoTableView.js';
 import {matchRecovering} from './Recovery.js';
 import * as pexprs from './pexprs.js';
+
+function firstPassOption({firstPass = 'auto'}) {
+  if (firstPass !== 'auto' && firstPass !== 'probe' && firstPass !== 'cached') {
+    throw invalidFirstPass(firstPass);
+  }
+  return firstPass;
+}
 
 export class Matcher {
   constructor(grammar) {
@@ -94,6 +105,7 @@ export class Matcher {
     return this._match(this._getStartExpr(optStartApplicationStr), {
       incremental: options.incremental ?? true,
       recover: !!options.recover,
+      firstPass: firstPassOption(options),
       tracing: false,
     });
   }
@@ -102,6 +114,7 @@ export class Matcher {
     return this._match(this._getStartExpr(optStartApplicationStr), {
       incremental: options.incremental ?? true,
       recover: !!options.recover,
+      firstPass: firstPassOption(options),
       tracing: true,
     });
   }
@@ -112,6 +125,7 @@ export class Matcher {
       incremental: true,
       positionToRecordFailures: undefined,
       recover: false, // run the recovery pass driver
+      firstPass: 'auto', // see matchRecovering
       recovery: undefined, // one pass of a recovering match (a RecoveryContext)
       ...options,
     };

@@ -114,6 +114,14 @@ pexprs.Seq.prototype.eval = function (state) {
 };
 
 pexprs.Iter.prototype.eval = function (state) {
+  if (
+    state.recovery &&
+    !state.trace &&
+    !state.recovery.cache.disabled &&
+    state.recovery.cache.current?.expression === this
+  ) {
+    return state.recovery.cache.iterate(state, this);
+  }
   if (state._rowBasedIteration) {
     return this.evalRowBased(state);
   }
@@ -304,6 +312,7 @@ pexprs.Apply.prototype.eval = function (state) {
 };
 
 pexprs.Apply.prototype.handleCycle = function (state, keyId) {
+  if (state.recovery && !state.trace) state.recovery.cache.leftRecursion();
   const {memoTable} = state;
   const {pos} = state.inputStream;
   const currentLeftRecursion = memoTable.currentLeftRecursion(pos);
@@ -350,6 +359,7 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
 
   if (state.doNotMemoize) {
     state.doNotMemoize = false;
+    if (state.recovery) state.recovery.cache.disabled = true;
   } else if (isHeadOfLeftRecursion) {
     value = this.growSeedResult(body, state, origPos, currentLR, value);
     memoTable.endLeftRecursion(origPos);
@@ -385,6 +395,23 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
     if (memoEntry >= 0) {
       memoTable.failures[memoEntry] = state.cloneRecordedFailures();
       memoTable.rightmostFailureOffset[memoEntry] = state._getRightmostFailureOffset();
+    }
+  }
+  if (memoEntry >= 0 && state.recovery && !state.trace) {
+    if (isHeadOfLeftRecursion && !description) {
+      const seedSummary = memoTable.summaries[memoEntry];
+      memoTable.summaries[memoEntry] = {
+        position: state.rightmostFailurePosition,
+        failures:
+          seedSummary?.position === state.rightmostFailurePosition ? seedSummary.failures : [],
+      };
+    } else {
+      memoTable.summaries[memoEntry] = state._recoveryFailureSummary;
+    }
+    const record = state.recovery.cache.current;
+    if (record) {
+      state.recovery.cache.memoRecords.set(memoEntry, record);
+      record.memoEntry = memoEntry;
     }
   }
 
@@ -439,34 +466,42 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrEntry,
 
   const {inputStream, memoTable} = state;
 
-  while (true) {
-    memoTable.matchLength[lrEntry] = inputStream.pos - origPos;
-    memoTable.values[lrEntry] = newValue;
-    memoTable.failures[lrEntry] = state.cloneRecordedFailures();
+  if (state.recovery && !state.trace) state.recovery.cache.lrDepth++;
+  try {
+    while (true) {
+      memoTable.matchLength[lrEntry] = inputStream.pos - origPos;
+      memoTable.values[lrEntry] = newValue;
+      memoTable.failures[lrEntry] = state.cloneRecordedFailures();
+      if (state.recovery && !state.trace) {
+        memoTable.summaries[lrEntry] = state._recoveryFailureSummary;
+      }
 
-    if (state.isTracing()) {
-      // Before evaluating the body again, add a trace node for this application to the memo entry.
-      // Its only child is a copy of the trace node from `newValue`, which will always be the last
-      // element in `state.trace`.
-      const seedTrace = state.trace[state.trace.length - 1];
-      memoTable.traces[lrEntry] = new Trace(
-        state.input,
-        origPos,
-        inputStream.pos,
-        this,
-        true,
-        [newValue],
-        [seedTrace.clone()]
-      );
+      if (state.isTracing()) {
+        // Keep this application's seed trace available while evaluating its body again.
+        // Its only child is a copy of the trace node from `newValue`, which will always be the last
+        // element in `state.trace`.
+        const seedTrace = state.trace[state.trace.length - 1];
+        memoTable.traces[lrEntry] = new Trace(
+          state.input,
+          origPos,
+          inputStream.pos,
+          this,
+          true,
+          [newValue],
+          [seedTrace.clone()]
+        );
+      }
+      inputStream.pos = origPos;
+      newValue = this.evalOnce(body, state);
+      if (inputStream.pos - origPos <= memoTable.matchLength[lrEntry]) {
+        break;
+      }
+      if (state.isTracing()) {
+        state.trace.splice(-2, 1); // Drop the trace for the old seed.
+      }
     }
-    inputStream.pos = origPos;
-    newValue = this.evalOnce(body, state);
-    if (inputStream.pos - origPos <= memoTable.matchLength[lrEntry]) {
-      break;
-    }
-    if (state.isTracing()) {
-      state.trace.splice(-2, 1); // Drop the trace for the old seed.
-    }
+  } finally {
+    if (state.recovery && !state.trace) state.recovery.cache.lrDepth--;
   }
   if (state.isTracing()) {
     // The last entry is for an unused result -- pop it and save it in the "real" entry.

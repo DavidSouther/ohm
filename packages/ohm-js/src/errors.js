@@ -253,6 +253,12 @@ export function missingCorrectionAction(name, type, failure) {
   );
 }
 
+export function invalidFirstPass(value) {
+  return createError(
+    `Invalid firstPass option: ${String(value)}. Use 'auto', 'probe' or 'cached'.`
+  );
+}
+
 export function matcherCannotRecover(reason) {
   return createError(
     `This matcher cannot recover: ${reason}. ` +

@@ -227,8 +227,31 @@ export class CorrectionNode extends Node {
   constructor(matchLength, recoveredFailure, optNestedFailures) {
     super(matchLength);
     this.recoveredFailure = recoveredFailure;
-    this.nestedFailures = optNestedFailures || [];
-    correctionOwns(this, recoveredFailure, this.nestedFailures);
+    correctionOwns(this, recoveredFailure, optNestedFailures);
+    if (optNestedFailures?.forEachUnique) {
+      Object.defineProperty(this, '_nestedFailureEffects', {
+        value: optNestedFailures,
+        configurable: true,
+      });
+      const replace = failures => {
+        Object.defineProperty(this, 'nestedFailures', {
+          value: failures,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+        delete this._nestedFailureEffects;
+        return failures;
+      };
+      Object.defineProperty(this, 'nestedFailures', {
+        configurable: true,
+        enumerable: true,
+        get: () => replace(optNestedFailures.toArray()),
+        set: replace,
+      });
+    } else {
+      this.nestedFailures = optNestedFailures || [];
+    }
   }
 
   get ctorName() {
