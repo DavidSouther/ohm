@@ -71,7 +71,7 @@ export interface Grammar {
    * supergrammar, or if there is no supergrammar specified, it is the
    * first rule in this grammar.
    */
-  match(input: string, startRule?: string): MatchResult;
+  match(input: string, startRule?: string, options?: MatchOptions): MatchResult;
 
   /**
    * Create a new Matcher object which supports incrementally matching
@@ -83,7 +83,7 @@ export interface Grammar {
    * Like match() except returns a trace object whose toString() returns
    * a summary of each parsing step useful for debugging.
    */
-  trace(input: string, startRule?: string): Object;
+  trace(input: string, startRule?: string, options?: MatchOptions): Object;
 
   /**
    * Create a new Semantics object for this Grammar.
@@ -128,6 +128,53 @@ export class UnicodeChar extends PExpr {}
 export class CaseInsensitiveTerminal extends PExpr {}
 
 /**
+ * Options for Grammar#match, Grammar#trace, Matcher#match and Matcher#trace.
+ */
+export interface MatchOptions {
+  /**
+   * When true, a match that fails is retried with recovery at `B ! C`
+   * recovery points, and recovered input appears as `_correction` nodes. Default
+   * false. Without it, `B ! C` matches exactly as the sequence `B C`.
+   * A Matcher throws if recovery is requested after a match without recovery,
+   * or after its input changes following an earlier match. Use a fresh Matcher,
+   * Grammar#match, or Grammar#trace for recovery in those cases.
+   */
+  recover?: boolean;
+}
+
+/**
+ * A rightmost failure of a match.
+ */
+export interface Failure {
+  toString(): string;
+}
+
+/**
+ * A failure that a recovery point skipped over.
+ */
+export interface RecoveredFailure {
+  /**
+   * The input skipped by this recovery. For the last entry of a failed
+   * recovering match, this is an empty interval at the failure position.
+   */
+  readonly interval: Interval;
+  /**
+   * Input position of the error: the rightmost failure position that a match
+   * without `recover` would report for this mistake.
+   */
+  readonly position: number;
+  /**
+   * The error message that a match without `recover` gives for this mistake,
+   * in the format of `MatchResult#shortMessage`.
+   */
+  readonly shortMessage: string;
+  /** As on a failed MatchResult, for this mistake. */
+  getExpectedText(): string;
+  /** As on a failed MatchResult, for this mistake. */
+  getRightmostFailures(): Failure[];
+}
+
+/**
  * Matcher objects are used to incrementally match a changing input
  * against a Grammar, e.g. in an editor or IDE.
  */
@@ -153,12 +200,12 @@ export interface Matcher {
   /**
    * Like Grammar#match, but operates incrementally.
    */
-  match(optStartRule?: string): MatchResult;
+  match(optStartRule?: string, options?: MatchOptions): MatchResult;
 
   /**
    * Like Grammar#trace, but operates incrementally.
    */
-  trace(optStartRule?: string): Object;
+  trace(optStartRule?: string, options?: MatchOptions): Object;
 }
 
 /**
@@ -177,6 +224,14 @@ export interface MatchResult {
    * True iff match did not succeed
    */
   failed(): this is FailedMatchResult;
+
+  /**
+   * Every error that recovery skipped over, in input order; empty without
+   * `recover`. On a failed match with `recover`, the list holds the errors
+   * recovered before the match gave up, followed by the final failure, and
+   * `shortMessage` is the same as for a match without `recover`.
+   */
+  getRecoveredFailures(): RecoveredFailure[];
 }
 
 export interface SucceededMatchResult extends MatchResult {}
@@ -279,6 +334,15 @@ export interface BaseActionDict<T> {
   _iter?: (this: IterationNode, ...children: Node[]) => T;
   _nonterminal?: (this: NonterminalNode, ...children: Node[]) => T;
   _terminal?: (this: TerminalNode) => T;
+  /**
+   * Called for a diagnostic-bearing correction node, which has no children.
+   * `B ! C` contributes three children: the matched B (or ordinary optional
+   * absence), a correction slot, and the actual matched C. On a clean match
+   * the correction slot is ordinary optional absence; after recovery it is
+   * a `_correction` node whose sourceString is the skipped input and whose
+   * recoveredFailure describes the error. Recovery requires C to match.
+   */
+  _correction?: (this: Node) => T;
 
   // Built-in rules
 
@@ -324,6 +388,16 @@ export type Action<T> = (this: Node, ...args: Node[]) => T;
  * A node in the parse tree, passed to Action functions.
  */
 export interface Node {
+  /** The diagnostic carried by a `_correction` node; absent on other nodes. */
+  recoveredFailure?: RecoveredFailure;
+
+  /**
+   * The recovered failures at or under this node, in source order; empty
+   * without recovery. Read at the root, the elements are the objects that
+   * MatchResult.getRecoveredFailures() lists.
+   */
+  readonly recoveredFailures: readonly RecoveredFailure[];
+
   /**
    * Returns the child at index idx.
    */

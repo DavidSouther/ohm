@@ -8,7 +8,7 @@ import * as pexprs from './pexprs.js';
 // Private stuff
 // --------------------------------------------------------------------
 
-const SPECIAL_ACTION_NAMES = ['_iter', '_terminal', '_nonterminal', '_default'];
+const SPECIAL_ACTION_NAMES = ['_iter', '_terminal', '_nonterminal', '_default', '_correction'];
 
 function getSortedRuleValues(grammar) {
   return Object.keys(grammar.rules)
@@ -84,16 +84,16 @@ export class Grammar {
     );
   }
 
-  match(input, optStartApplication) {
+  match(input, optStartApplication, options = {}) {
     const m = this.matcher();
     m.replaceInputRange(0, 0, input);
-    return m.match(optStartApplication);
+    return m.match(optStartApplication, options);
   }
 
-  trace(input, optStartApplication) {
+  trace(input, optStartApplication, options = {}) {
     const m = this.matcher();
     m.replaceInputRange(0, 0, input);
-    return m.trace(optStartApplication);
+    return m.trace(optStartApplication, options);
   }
 
   createSemantics() {

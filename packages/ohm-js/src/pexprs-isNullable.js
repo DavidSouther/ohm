@@ -43,6 +43,11 @@ pexprs.Seq.prototype._isNullable = function (grammar, memo) {
   return this.factors.every(factor => factor._isNullable(grammar, memo));
 };
 
+// Check ordinary `B C` nullability; recovery eligibility depends on its context.
+pexprs.Fallible.prototype._isNullable = function (grammar, memo) {
+  return this.guarded._isNullable(grammar, memo) && this.join._isNullable(grammar, memo);
+};
+
 pexprs.Star.prototype._isNullable =
   pexprs.Opt.prototype._isNullable =
   pexprs.Not.prototype._isNullable =

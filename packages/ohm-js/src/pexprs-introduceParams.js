@@ -36,6 +36,12 @@ pexprs.Seq.prototype.introduceParams = function (formals) {
   return this;
 };
 
+pexprs.Fallible.prototype.introduceParams = function (formals) {
+  this.guarded = this.guarded.introduceParams(formals);
+  this.join = this.join.introduceParams(formals);
+  return this;
+};
+
 pexprs.Iter.prototype.introduceParams =
   pexprs.Not.prototype.introduceParams =
   pexprs.Lookahead.prototype.introduceParams =

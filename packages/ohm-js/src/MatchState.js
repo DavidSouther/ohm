@@ -17,7 +17,7 @@ util.awaitBuiltInRules(builtInRules => {
 const applySpaces = new pexprs.Apply('spaces');
 
 export class MatchState {
-  constructor(matcher, startExpr, optPositionToRecordFailures) {
+  constructor(matcher, startExpr, optPositionToRecordFailures, optRecovery) {
     this.matcher = matcher;
     this.startExpr = startExpr;
 
@@ -41,10 +41,44 @@ export class MatchState {
     this._rightmostFailurePositionStack = [];
     this._recordedFailuresStack = [];
 
+    // Recovery at `B ! C`. `recovery` is the RecoveryContext shared by the
+    // passes of a recovering match, or undefined.
+    this.recovery = optRecovery;
+    // Stop markers: join expressions of the fallibles whose attempt is in
+    // progress. A scan stops where any of them matches.
+    this._syncStack = [];
+    // Number of blocks whose guarded attempt is active.
+    this._blockDepth = 0;
+    this._recoveryLog = []; // RecoveredFailures made so far in this pass
+    this._noRecoveryDepth = 0; // > 0 inside `~`, `&` and recovery scans
+    // Changes whenever an evaluation depends on stop markers or skipped
+    // recording an attempt. A changed value prevents later reuse of the
+    // application's result; left-recursion seeds stay stored for growth and tracing.
+    this._recoveryTaint = 0;
+    // Marks the next trace entry (the Fallible that just recovered) as recovered.
+    this._traceRecovered = false;
+    // The end of the last complete token matched in the current application:
+    // the farthest position reached by a successful evaluation in a syntactic
+    // context, or -1. Matches inside `~`, `&` and recovery scans do not count.
+    // Tracked only while recovering.
+    this._tokenEnd = -1;
+    this._tokenEndStack = [];
+
     if (optPositionToRecordFailures !== undefined) {
       this.positionToRecordFailures = optPositionToRecordFailures;
       this.recordedFailures = Object.create(null);
     }
+  }
+
+  _suspendRecovery() {
+    const tokenEnd = this._tokenEnd;
+    this._noRecoveryDepth++;
+    return tokenEnd;
+  }
+
+  _resumeRecovery(tokenEnd) {
+    this._noRecoveryDepth--;
+    this._tokenEnd = tokenEnd;
   }
 
   posToOffset(pos) {
@@ -58,6 +92,10 @@ export class MatchState {
     this.memoTable.enter(this.inputStream.pos, memoKeyId);
     this._rightmostFailurePositionStack.push(this.rightmostFailurePosition);
     this.rightmostFailurePosition = -1;
+    if (this.recovery) {
+      this._tokenEndStack.push(this._tokenEnd);
+      this._tokenEnd = -1;
+    }
   }
 
   exitApplication(optNode) {
@@ -70,6 +108,9 @@ export class MatchState {
       this.rightmostFailurePosition,
       this._rightmostFailurePositionStack.pop()
     );
+    if (this.recovery) {
+      this._tokenEnd = Math.max(this._tokenEnd, this._tokenEndStack.pop());
+    }
 
     if (optNode) {
       this.pushBinding(optNode, origPos);
@@ -256,6 +297,11 @@ export class MatchState {
       this.trace.push(memoTable.traces[entry]);
     }
 
+    const tokenEndOffset = memoTable.tokenEndOffset[entry];
+    if (this.recovery && tokenEndOffset >= 0) {
+      this._tokenEnd = Math.max(this._tokenEnd, origPos + tokenEndOffset);
+    }
+
     const memoRecRightmostFailurePosition =
       this.inputStream.pos + memoTable.rightmostFailureOffset[entry];
     this.rightmostFailurePosition = Math.max(
@@ -315,11 +361,18 @@ export class MatchState {
       const traceEntry = this.getTraceEntry(memoPos, expr, ans, bindings);
       traceEntry.isImplicitSpaces = expr === applySpaces;
       traceEntry.isRootNode = expr === this.startExpr;
+      if (this._traceRecovered) {
+        traceEntry.isRecovered = true;
+        this._traceRecovered = false;
+      }
       origTrace.push(traceEntry);
       this.trace = origTrace;
     }
 
     if (ans) {
+      if (this.recovery && inputStream.pos > this._tokenEnd && this.inSyntacticContext()) {
+        this._tokenEnd = inputStream.pos;
+      }
       if (this.recordedFailures && inputStream.pos === this.positionToRecordFailures) {
         Object.keys(this.recordedFailures).forEach(key => {
           this.recordedFailures[key].makeFluffy();

@@ -1,4 +1,5 @@
 import * as common from './common.js';
+import {inheritRecoveries, correctionOwns} from './RecoveryOwnership.js';
 
 // --------------------------------------------------------------------
 // Private stuff
@@ -106,6 +107,10 @@ export class Node {
   isOptional() {
     return false;
   }
+
+  isCorrection() {
+    return false;
+  }
 }
 
 // Terminals
@@ -132,6 +137,7 @@ export class NonterminalNode extends Node {
     this.ruleName = ruleName;
     this.children = children;
     this.childOffsets = childOffsets;
+    inheritRecoveries(this, children);
   }
 
   get ctorName() {
@@ -161,6 +167,7 @@ export class ListNode extends Node {
     super(matchLength);
     this.children = children;
     this.childOffsets = childOffsets;
+    inheritRecoveries(this, children);
     this.optional = isOptional;
   }
 
@@ -181,6 +188,7 @@ export class SeqNode extends Node {
     super(matchLength);
     this.children = children;
     this.childOffsets = childOffsets;
+    inheritRecoveries(this, children);
   }
 
   get ctorName() {
@@ -195,6 +203,7 @@ export class IterationNode extends Node {
     super(matchLength);
     this.children = children;
     this.childOffsets = childOffsets;
+    inheritRecoveries(this, children);
     this.optional = isOptional;
   }
 
@@ -208,5 +217,25 @@ export class IterationNode extends Node {
 
   isOptional() {
     return this.optional;
+  }
+}
+
+// A correction spans skipped input and carries its diagnostic, plus diagnostics
+// from any failed guarded subtree discarded by the recovery.
+
+export class CorrectionNode extends Node {
+  constructor(matchLength, recoveredFailure, optNestedFailures) {
+    super(matchLength);
+    this.recoveredFailure = recoveredFailure;
+    this.nestedFailures = optNestedFailures || [];
+    correctionOwns(this, recoveredFailure, this.nestedFailures);
+  }
+
+  get ctorName() {
+    return '_correction';
+  }
+
+  isCorrection() {
+    return true;
   }
 }
