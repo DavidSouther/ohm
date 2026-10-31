@@ -1,24 +1,4 @@
 // --------------------------------------------------------------------
-// Private Stuff
-// --------------------------------------------------------------------
-
-// Helpers
-
-const escapeStringFor = {};
-for (let c = 0; c < 128; c++) {
-  escapeStringFor[c] = String.fromCharCode(c);
-}
-escapeStringFor["'".charCodeAt(0)] = "\\'";
-escapeStringFor['"'.charCodeAt(0)] = '\\"';
-escapeStringFor['\\'.charCodeAt(0)] = '\\\\';
-escapeStringFor['\b'.charCodeAt(0)] = '\\b';
-escapeStringFor['\f'.charCodeAt(0)] = '\\f';
-escapeStringFor['\n'.charCodeAt(0)] = '\\n';
-escapeStringFor['\r'.charCodeAt(0)] = '\\r';
-escapeStringFor['\t'.charCodeAt(0)] = '\\t';
-escapeStringFor['\u000b'.charCodeAt(0)] = '\\v';
-
-// --------------------------------------------------------------------
 // Exports
 // --------------------------------------------------------------------
 
@@ -59,7 +39,7 @@ export function defineLazyProperty(obj, propName, getterFn) {
 
 export function clone(obj) {
   if (obj) {
-    return Object.assign({}, obj);
+    return {...obj};
   }
   return obj;
 }
@@ -81,11 +61,31 @@ export function repeat(x, n) {
 }
 
 export function getDuplicates(array) {
-  const duplicates = [];
+  return [...getDuplicatesSet(array)];
+}
+
+export function getDuplicatesSet(array) {
+  const duplicates = new Set();
+  // Avoid a Map allocation for short lists.
+  if (array.length < 24) {
+    for (let idx = 0; idx < array.length; idx++) {
+      const x = array[idx];
+      if (array.lastIndexOf(x) !== idx && !duplicates.has(x)) {
+        duplicates.add(x);
+      }
+    }
+    return duplicates;
+  }
+
+  const lastIndices = new Map();
   for (let idx = 0; idx < array.length; idx++) {
-    const x = array[idx];
-    if (array.lastIndexOf(x) !== idx && duplicates.indexOf(x) < 0) {
-      duplicates.push(x);
+    if (idx in array) lastIndices.set(array[idx], idx);
+  }
+  for (let idx = 0; idx < array.length; idx++) {
+    const value = array[idx];
+    // lastIndexOf never finds NaN and skips holes; preserve those cases.
+    if (value !== value || lastIndices.get(value) !== idx) {
+      duplicates.add(value);
     }
   }
   return duplicates;
@@ -102,6 +102,9 @@ export function copyWithoutDuplicates(array) {
 }
 
 export function isSyntactic(ruleName) {
+  const code = ruleName.charCodeAt(0);
+  // ASCII characters other than a-z are unchanged by uppercasing.
+  if (code < 128) return code < 97 || code > 122;
   const firstChar = ruleName[0];
   return firstChar === firstChar.toUpperCase();
 }
