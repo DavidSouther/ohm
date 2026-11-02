@@ -707,6 +707,38 @@ Assembler.MEMO_COL_SIZE_BYTES = 4 * 256;
 
 Assembler.STACK_FRAME_SIZE_BYTES = 8;
 
+// The Wasm compiler has no recovery support, so grammars with `B ! C` are
+// rejected up front.
+function findFallible(exp) {
+  if (!exp || typeof exp !== 'object') return undefined;
+  // Fallible is absent in ohm-js builds without recovery points.
+  if (ohm.pexprs.Fallible && exp instanceof ohm.pexprs.Fallible) return exp;
+  const children = [
+    ...(exp.terms || []),
+    ...(exp.factors || []),
+    ...(exp.args || []),
+    ...(exp.expr ? [exp.expr] : []),
+  ];
+  for (const child of children) {
+    const found = findFallible(child);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+export function assertNoFallibles(grammar) {
+  for (const name in grammar.rules) {
+    const {body} = grammar.rules[name];
+    const found = findFallible(body);
+    if (found) {
+      throw new Error(
+        `Rule ${name}: the recovery operator '!' (${found}) is not supported by ` +
+          '@ohm-js/wasm. Use ohm-js to match grammars with recovery points.'
+      );
+    }
+  }
+}
+
 export class Compiler {
   constructor(grammar) {
     assert(grammar && 'superGrammar' in grammar, 'Not a valid grammar: ' + grammar);
@@ -723,6 +755,7 @@ export class Compiler {
       );
       grammar = ohm.grammar(grammar.source.contents);
     }
+    assertNoFallibles(grammar);
 
     this.grammar = grammar;
 

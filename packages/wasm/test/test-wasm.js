@@ -1198,3 +1198,22 @@ test.failing('ranges w/ code points > 0xFFFF', async t => {
 
   t.true(g.match('x', 'notFace').succeeded());
 });
+
+test('a grammar with a recovery point is rejected clearly', t => {
+  const g = ohm.grammar('G { start = item*\n item = "a" ! ";" }');
+  t.throws(() => new Compiler(g), {message: /recovery operator '!'.*not supported/});
+});
+
+test('inherited recovery points are rejected unless overridden', t => {
+  const {Base, Child, Override} = ohm.grammars(String.raw`
+    Base { start = "a" ! ";" }
+    Child <: Base {}
+    Override <: Base { start := "a" ";" }
+  `);
+  for (const g of [Base, Child]) {
+    t.throws(() => new Compiler(g), {
+      message: /Rule start:.*recovery operator '!'.*not supported/,
+    });
+  }
+  t.notThrows(() => new Compiler(Override).compile());
+});

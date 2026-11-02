@@ -1,6 +1,7 @@
 import * as common from './common.js';
 import * as util from './util.js';
 import {Interval} from './Interval.js';
+import {collectRecoveredFailures} from './RecoveredFailure.js';
 
 // --------------------------------------------------------------------
 // Private stuff
@@ -23,6 +24,12 @@ export class MatchResult {
     this._cstOffset = cstOffset;
     this._rightmostFailurePosition = rightmostFailurePosition;
     this._rightmostFailures = optRecordedFailures;
+
+    // `_recovery`: the RecoveryContext when this result came from a recovering
+    // match. `_recoveredFailures`: preset when such a match fails; otherwise
+    // computed on demand.
+    this._recovery = undefined;
+    this._recoveredFailures = undefined;
 
     if (this.failed()) {
       common.defineLazyProperty(this, 'message', function () {
@@ -60,10 +67,23 @@ export class MatchResult {
       const matchResultWithFailures = this.matcher._match(this.startExpr, {
         tracing: false,
         positionToRecordFailures: this.getRightmostFailurePosition(),
+        // Re-match under the same recovery permissions, or the expected text
+        // will not match this result's failure position.
+        recovery: this._recovery,
       });
       this._rightmostFailures = matchResultWithFailures.getRightmostFailures();
     }
     return this._rightmostFailures;
+  }
+
+  // Returns a fresh array of recovery diagnostics, or [] without recovery.
+  // If recovery cannot finish the match, includes the final unrecovered failure.
+  getRecoveredFailures() {
+    if (!this._recoveredFailures) {
+      this._recoveredFailures =
+        this.succeeded() && this._recovery ? collectRecoveredFailures(this._cst) : [];
+    }
+    return this._recoveredFailures.slice();
   }
 
   toString() {

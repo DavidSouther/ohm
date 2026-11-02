@@ -105,6 +105,16 @@ export class Seq extends PExpr {
   }
 }
 
+// A fallible `B ! C`: `guarded` is the guarded expression B, and `join` is
+// the join expression C, where recovery resumes.
+export class Fallible extends PExpr {
+  constructor(guarded, join) {
+    super();
+    this.guarded = guarded;
+    this.join = join;
+  }
+}
+
 // Iterators and optionals
 
 export class Iter extends PExpr {

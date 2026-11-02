@@ -247,7 +247,10 @@ pexprs.Not.prototype.eval = function (state) {
   const origPos = inputStream.pos;
   state.pushFailuresInfo();
 
+  // Predicates inspect input without committing recovery.
+  const origTokenEnd = state._suspendRecovery();
   const ans = state.eval(this.expr);
+  state._resumeRecovery(origTokenEnd);
 
   state.popFailuresInfo();
   if (ans) {
@@ -262,7 +265,10 @@ pexprs.Not.prototype.eval = function (state) {
 pexprs.Lookahead.prototype.eval = function (state) {
   const {inputStream} = state;
   const origPos = inputStream.pos;
-  if (state.eval(this.expr)) {
+  const origTokenEnd = state._suspendRecovery();
+  const ans = state.eval(this.expr);
+  state._resumeRecovery(origTokenEnd);
+  if (ans) {
     inputStream.pos = origPos;
     return true;
   } else {
@@ -284,11 +290,15 @@ pexprs.Apply.prototype.eval = function (state) {
   }
 
   const entry = memoTable.find(pos, keyId);
-  if (entry >= 0 && memoTable.shouldUseMemoizedResult(pos, entry)) {
-    if (state.hasNecessaryInfo(entry)) {
-      return state.useMemoizedResult(pos, entry);
+  if (entry >= 0) {
+    if (memoTable.isTainted(entry)) {
+      memoTable.remove(entry);
+    } else if (memoTable.shouldUseMemoizedResult(pos, entry)) {
+      if (state.hasNecessaryInfo(entry)) {
+        return state.useMemoizedResult(pos, entry);
+      }
+      memoTable.remove(entry);
     }
-    memoTable.remove(entry);
   }
   return app.reallyEval(state, keyId);
 };
@@ -329,6 +339,10 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
   const origInputStreamExaminedLength = inputStream.examinedLength;
   inputStream.examinedLength = 0;
 
+  // Never reuse a result that depends on enclosing stop markers or that
+  // skipped recording a fallible's attempt; see `_recoveryTaint`.
+  const origRecoveryTaint = state._recoveryTaint;
+
   let value = this.evalOnce(body, state);
   const currentLR = memoTable.currentLeftRecursion(origPos);
   const isHeadOfLeftRecursion = currentLR >= 0 && memoTable.headKey(currentLR) === keyId;
@@ -342,8 +356,14 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
     memoEntry = currentLR;
     memoTable.examinedLength[memoEntry] = inputStream.examinedLength - origPos;
     memoTable.rightmostFailureOffset[memoEntry] = state._getRightmostFailureOffset();
-  } else if (currentLR < 0 || !memoTable.isInvolved(currentLR, keyId)) {
-    // This application is not involved in left recursion, so it's ok to memoize it.
+    // The seed must remain available during growth, and its trace entry is
+    // needed until the enclosing evaluation finishes. Prevent later reuse if
+    // this completed result depends on the recovery context.
+    memoTable.setTainted(memoEntry, state._recoveryTaint !== origRecoveryTaint);
+  } else if (
+    (currentLR < 0 || !memoTable.isInvolved(currentLR, keyId)) &&
+    state._recoveryTaint === origRecoveryTaint
+  ) {
     memoEntry = memoTable.add(
       origPos,
       keyId,
@@ -352,7 +372,7 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
       value,
       state.cloneRecordedFailures(),
       state._getRightmostFailureOffset(),
-      -1
+      state._tokenEnd < 0 ? -1 : state._tokenEnd - origPos
     );
   }
   const succeeded = !!value;

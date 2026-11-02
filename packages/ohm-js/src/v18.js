@@ -150,6 +150,19 @@ class TerminalAdapter extends V18Node {
   }
 }
 
+// The correction slot of a recovered `B ! C`, spanning the skipped input.
+class CorrectionAdapter extends V18Node {
+  constructor(absStart, absEnd, input, recoveredFailure) {
+    super();
+    this.ctorName = '_correction';
+    this.source = {startIdx: absStart, endIdx: absEnd};
+    this.sourceString = input.slice(absStart, absEnd);
+    this.matchLength = absEnd - absStart;
+    this.children = [];
+    this.recoveredFailure = recoveredFailure;
+  }
+}
+
 class NonterminalAdapter extends V18Node {
   constructor(ctorName, absStart, absEnd, input, matchLength, adaptedChildren) {
     super();
@@ -197,6 +210,10 @@ function adaptNode(node, absStart, baseStart, input) {
 
   if (node.isTerminal()) {
     return new TerminalAdapter(absStart, absEnd, input);
+  }
+
+  if (node.isCorrection()) {
+    return new CorrectionAdapter(absStart, absEnd, input, node.recoveredFailure);
   }
 
   // v17 ListNode (row-based iteration) → v18 ListNode or OptNode

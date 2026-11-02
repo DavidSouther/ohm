@@ -119,6 +119,21 @@ export class Builder {
     return new pexprs.Opt(expr);
   }
 
+  bang(fExpr, jExpr) {
+    if (!(fExpr instanceof pexprs.PExpr)) {
+      fExpr = this.fromRecipe(fExpr);
+    }
+    if (!(jExpr instanceof pexprs.PExpr)) {
+      jExpr = this.fromRecipe(jExpr);
+    }
+    // A join expression written `&C` keeps its binding even when lookaheads are
+    // eliminated (v18 compatibility), so a fallible always has two slots.
+    if (jExpr instanceof pexprs.Not && jExpr.eliminatedLookahead) {
+      jExpr = new pexprs.Lookahead(jExpr.eliminatedLookahead).withSource(jExpr.source);
+    }
+    return new pexprs.Fallible(fExpr, jExpr);
+  }
+
   not(expr) {
     if (!(expr instanceof pexprs.PExpr)) {
       expr = this.fromRecipe(expr);
@@ -132,7 +147,11 @@ export class Builder {
     }
     // For v18 compatibility, where we don't want a binding for lookahead.
     if (this.options.eliminateLookaheads) {
-      return new pexprs.Not(new pexprs.Not(expr));
+      const not = new pexprs.Not(new pexprs.Not(expr));
+      // Non-enumerable so recipes, JSON.stringify and structural comparisons
+      // of rule bodies do not see it.
+      Object.defineProperty(not, 'eliminatedLookahead', {value: expr});
+      return not;
     }
     return new pexprs.Lookahead(expr);
   }

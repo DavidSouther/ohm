@@ -18,6 +18,7 @@ pexprs.Alt.prototype.toDisplayString = pexprs.Seq.prototype.toDisplayString = fu
 pexprs.any.toDisplayString =
   pexprs.end.toDisplayString =
   pexprs.Iter.prototype.toDisplayString =
+  pexprs.Fallible.prototype.toDisplayString =
   pexprs.Not.prototype.toDisplayString =
   pexprs.Lookahead.prototype.toDisplayString =
   pexprs.Lex.prototype.toDisplayString =

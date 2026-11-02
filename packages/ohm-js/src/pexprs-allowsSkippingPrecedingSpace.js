@@ -29,6 +29,7 @@ pexprs.any.allowsSkippingPrecedingSpace =
 */
 pexprs.Alt.prototype.allowsSkippingPrecedingSpace =
   pexprs.Iter.prototype.allowsSkippingPrecedingSpace =
+  pexprs.Fallible.prototype.allowsSkippingPrecedingSpace =
   pexprs.Lex.prototype.allowsSkippingPrecedingSpace =
   pexprs.Lookahead.prototype.allowsSkippingPrecedingSpace =
   pexprs.Not.prototype.allowsSkippingPrecedingSpace =
