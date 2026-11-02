@@ -1,6 +1,6 @@
 import {Grammar} from './Grammar.js';
 import {InputStream} from './InputStream.js';
-import {getDuplicates} from './common.js';
+import {getDuplicatesSet} from './common.js';
 import * as errors from './errors.js';
 import * as pexprs from './pexprs.js';
 
@@ -42,9 +42,9 @@ export class GrammarDecl {
   }
 
   installOverriddenOrExtendedRule(name, formals, body, source) {
-    const duplicateParameterNames = getDuplicates(formals);
-    if (duplicateParameterNames.length > 0) {
-      throw errors.duplicateParameterNames(name, duplicateParameterNames, source);
+    const duplicateParameterNames = getDuplicatesSet(formals);
+    if (duplicateParameterNames.size > 0) {
+      throw errors.duplicateParameterNames(name, [...duplicateParameterNames], source);
     }
     const ruleInfo = this.ensureSuperGrammar().rules[name];
     const expectedFormals = ruleInfo.formals;
@@ -155,9 +155,9 @@ export class GrammarDecl {
     } else if (this.rules[name]) {
       throw errors.duplicateRuleDeclaration(name, this.name, this.name, source);
     }
-    const duplicateParameterNames = getDuplicates(formals);
-    if (duplicateParameterNames.length > 0) {
-      throw errors.duplicateParameterNames(name, duplicateParameterNames, source);
+    const duplicateParameterNames = getDuplicatesSet(formals);
+    if (duplicateParameterNames.size > 0) {
+      throw errors.duplicateParameterNames(name, [...duplicateParameterNames], source);
     }
     return this.install(name, formals, body, description, source, primitive);
   }

@@ -130,6 +130,21 @@ test('unicode code point escapes', t => {
 describe('unicode', test => {
   const m = ohm.grammar('M {}');
 
+  test('non-ASCII and underscore syntactic rule names skip whitespace', t => {
+    for (const name of ['É', 'Ω', 'Ж', '漢', '_Pair', '𐐀']) {
+      const g = ohm.grammar(`G { ${name} = "a" "b" }`);
+      assertSucceeds(t, g.match(' a b '), name);
+    }
+  });
+
+  test('non-ASCII lowercase rule names keep whitespace significant', t => {
+    for (const name of ['é', 'ω', 'ж']) {
+      const g = ohm.grammar(`G { ${name} = "a" "b" }`);
+      assertSucceeds(t, g.match('ab'), name);
+      assertFails(t, g.match('a b'), name);
+    }
+  });
+
   test('recognition', t => {
     assertSucceeds(t, m.match('a', 'lower'));
     assertSucceeds(t, m.match('\u00E9', 'lower'), 'small letter e with acute');
