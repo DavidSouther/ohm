@@ -3,6 +3,7 @@ import {RecoveredFailure} from './RecoveredFailure.js';
 import {CorrectionNode, IterationNode, ListNode} from './nodes.js';
 import * as pexprs from './pexprs-main.js';
 import {partitionRecoveries} from './RecoveryOwnership.js';
+import {mergeFailureSummaries} from './RecoveryCache.js';
 
 // --------------------------------------------------------------------
 // Fallible: `B ! C`
@@ -102,7 +103,7 @@ pexprs.Fallible.prototype.eval = function (state) {
 
   const key = recoveryKey(this, state, origPos);
   const origNumBindings = state._bindings.length;
-  const logMark = state._recoveryLog.length;
+  const logMark = state._recoveryLog;
   const sync = activeJoin(this, state);
 
   // Isolate the attempt's failures so its own farthest failure can be recorded
@@ -113,7 +114,7 @@ pexprs.Fallible.prototype.eval = function (state) {
   const outerTokenEnd = state._tokenEnd;
   state._tokenEnd = origPos;
   const blockDepth = isBlock(this) ? 1 : 0;
-  state._syncStack.push(sync);
+  state._pushRecoverySync(sync);
   state._blockDepth += blockDepth;
 
   // Try the guarded expression and its join before considering recovery.
@@ -123,14 +124,15 @@ pexprs.Fallible.prototype.eval = function (state) {
   const ok = guardedMatched && state.eval(this.join);
 
   state._blockDepth -= blockDepth;
-  state._syncStack.pop();
+  state._popRecoverySync();
   const tokenEnd = state._tokenEnd;
   state._tokenEnd = Math.max(outerTokenEnd, tokenEnd);
   const attemptRightmost = state.rightmostFailurePosition;
   const attemptFailures = state.recordedFailures;
+  const attemptSummary = state._recoveryFailureSummary;
   state.popFailuresInfo();
 
-  const correction = ok ? undefined : ctx.corrections.get(key);
+  const correction = ok ? undefined : ctx.cache.readCorrection(key);
   if (correction) {
     state._recoveryTaint++;
     state.truncateBindings(origNumBindings + (guardedMatched ? 1 : 0));
@@ -144,7 +146,7 @@ pexprs.Fallible.prototype.eval = function (state) {
     state.truncateBindings(origNumBindings);
     inputStream.pos = origPos;
   } else if (!ok) {
-    ctx.attempts.set(key, {
+    ctx.cache.writeAttempt(state, {
       key,
       start: origPos,
       rightmost: attemptRightmost,
@@ -156,6 +158,10 @@ pexprs.Fallible.prototype.eval = function (state) {
   // without expected text.
   state.rightmostFailurePosition = Math.max(state.rightmostFailurePosition, attemptRightmost);
   state.recordedFailures = attemptFailures;
+  state._recoveryFailureSummary = mergeFailureSummaries(
+    attemptSummary,
+    state._recoveryFailureSummary
+  );
   return ok;
 };
 
@@ -173,7 +179,12 @@ pexprs.Fallible.prototype.recover = function (
   guardedEnd
 ) {
   const {inputStream} = state;
-  const attemptLog = state._recoveryLog.splice(logMark);
+  const attemptLog = state._recoveryLog.since(logMark);
+  const {owned, discarded: nested} = partitionRecoveries(
+    attemptLog,
+    guardedMatched ? state._bindings.at(-1) : undefined
+  );
+  state._recoveryLog = logMark;
   // Scan steps are not traced; only the matching join expression's entry joins the
   // Fallible's children.
   const outerTrace = state.trace;
@@ -193,8 +204,7 @@ pexprs.Fallible.prototype.recover = function (
     state.trace = outerTrace;
   }
   if (!found) {
-    state._recoveryLog.length = logMark;
-    state._recoveryLog.push(...attemptLog);
+    state._recoveryLog = logMark.concat(attemptLog);
     return false;
   }
 
@@ -203,13 +213,9 @@ pexprs.Fallible.prototype.recover = function (
     correction.position,
     correction.result
   );
-  // Retain only diagnostics actually owned by B in its slot. A successful B
-  // may also have logged recoveries in failed alternatives or a failed last row.
-  const {owned, discarded: nested} = partitionRecoveries(
-    attemptLog,
-    guardedMatched ? state._bindings.at(-1) : undefined
-  );
-  state._recoveryLog.push(...owned);
+  // B may have logged discarded alternatives or a failed final iteration row.
+  // Their diagnostics belong to the correction, rather than to retained B.
+  state._recoveryLog = state._recoveryLog.concat(owned);
   state.pushBinding(
     new CorrectionNode(found.skipEnd - scanStart, recovered, nested),
     scanStart
@@ -217,7 +223,7 @@ pexprs.Fallible.prototype.recover = function (
   state._bindings.push(found.joinNode);
   state._bindingOffsets.push(found.joinOffset);
   inputStream.pos = found.afterSync;
-  state._recoveryLog.push(recovered, ...nested);
+  state._recoveryLog = state._recoveryLog.append(recovered).concat(nested);
   if (outerTrace) {
     if (syncTrace) outerTrace.push(syncTrace);
     state._traceRecovered = true;

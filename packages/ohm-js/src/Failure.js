@@ -12,6 +12,7 @@
   - isStringTerminal() : bool
   - isCode() : bool
   - isFluffy() : bool
+  - isLexical() : bool  (failed inside a token that had already begun)
   - makeFluffy() : void
   - subsumes(Failure) : bool
 */
@@ -29,6 +30,7 @@ export class Failure {
     this.text = text;
     this.type = type;
     this.fluffy = false;
+    this.lexical = false;
   }
 
   getPExpr() {
@@ -59,6 +61,10 @@ export class Failure {
     return this.fluffy;
   }
 
+  isLexical() {
+    return this.lexical;
+  }
+
   makeFluffy() {
     this.fluffy = true;
   }
@@ -84,6 +90,7 @@ export class Failure {
     if (this.isFluffy()) {
       failure.makeFluffy();
     }
+    failure.lexical = this.lexical;
     return failure;
   }
 

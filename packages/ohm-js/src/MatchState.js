@@ -1,6 +1,8 @@
 import {InputStream} from './InputStream.js';
 import {MatchResult} from './MatchResult.js';
 import {Trace} from './Trace.js';
+import {mergeFailureSummaries, noFailures} from './RecoveryCache.js';
+import {emptyEffects} from './RecoveryEffects.js';
 import * as pexprs from './pexprs.js';
 import * as util from './util.js';
 
@@ -26,6 +28,7 @@ export class MatchState {
     this.inputStream = new InputStream(this.input);
     this.memoTable = matcher._memo;
     this.memoTable.beginPass(this.input.length);
+    if (optRecovery) optRecovery.cache.memoTable = this.memoTable;
 
     this.userData = undefined;
     this.doNotMemoize = false;
@@ -36,6 +39,8 @@ export class MatchState {
     this._applicationStack = [];
     this._posStack = [0];
     this.inLexifiedContextStack = [false];
+    this._tokenStart = -1;
+    this._tokenStartStack = [];
 
     this.rightmostFailurePosition = -1;
     this._rightmostFailurePositionStack = [];
@@ -47,9 +52,14 @@ export class MatchState {
     // Stop markers: join expressions of the fallibles whose attempt is in
     // progress. A scan stops where any of them matches.
     this._syncStack = [];
+    this._syncContext = 0;
+    this._syncContextStack = [];
     // Number of blocks whose guarded attempt is active.
     this._blockDepth = 0;
-    this._recoveryLog = []; // RecoveredFailures made so far in this pass
+    this._recoveryLog = emptyEffects;
+    this._attemptEffects = emptyEffects;
+    this._recoveryFailureSummary = noFailures;
+    this._recoveryFailureSummaryStack = [];
     this._noRecoveryDepth = 0; // > 0 inside `~`, `&` and recovery scans
     // Changes whenever an evaluation depends on stop markers or skipped
     // recording an attempt. A changed value prevents later reuse of the
@@ -76,6 +86,17 @@ export class MatchState {
     return tokenEnd;
   }
 
+  _pushRecoverySync(join) {
+    this._syncStack.push(join);
+    this._syncContextStack.push(this._syncContext);
+    this._syncContext = this.recovery.cache.enterContext(this._syncContext, join);
+  }
+
+  _popRecoverySync() {
+    this._syncStack.pop();
+    this._syncContext = this._syncContextStack.pop();
+  }
+
   _resumeRecovery(tokenEnd) {
     this._noRecoveryDepth--;
     this._tokenEnd = tokenEnd;
@@ -89,6 +110,8 @@ export class MatchState {
     this._posStack.push(this.inputStream.pos);
     this._applicationStack.push(app);
     this.inLexifiedContextStack.push(false);
+    this._tokenStartStack.push(this._tokenStart);
+    this._tokenStart = this._tokenStartFor(app);
     this.memoTable.enter(this.inputStream.pos, memoKeyId);
     this._rightmostFailurePositionStack.push(this.rightmostFailurePosition);
     this.rightmostFailurePosition = -1;
@@ -102,6 +125,7 @@ export class MatchState {
     const origPos = this._posStack.pop();
     this._applicationStack.pop();
     this.inLexifiedContextStack.pop();
+    this._tokenStart = this._tokenStartStack.pop();
     this.memoTable.exit(origPos);
 
     this.rightmostFailurePosition = Math.max(
@@ -119,10 +143,28 @@ export class MatchState {
 
   enterLexifiedContext() {
     this.inLexifiedContextStack.push(true);
+    this._tokenStartStack.push(this._tokenStart);
+    if (this._tokenStart < 0) this._tokenStart = this.inputStream.pos;
   }
 
   exitLexifiedContext() {
     this.inLexifiedContextStack.pop();
+    this._tokenStart = this._tokenStartStack.pop();
+  }
+
+  _tokenStartFor(app) {
+    if (app.isSyntactic()) return -1;
+    return this._tokenStart < 0 ? this.inputStream.pos : this._tokenStart;
+  }
+
+  _isLexicalFailureAt(pos) {
+    return this._tokenStart >= 0 && this._tokenStart < pos;
+  }
+
+  _failureOf(expr, pos) {
+    const failure = expr.toFailure(this.grammar);
+    failure.lexical = this._isLexicalFailureAt(pos);
+    return failure;
   }
 
   currentApplication() {
@@ -189,6 +231,22 @@ export class MatchState {
   processFailure(pos, expr) {
     this.rightmostFailurePosition = Math.max(this.rightmostFailurePosition, pos);
 
+    if (this.recovery && !this.trace) {
+      const app = this.currentApplication();
+      const resolved = app ? expr.substituteParams(app.args) : expr;
+      const failures = this.recovery.cache.failuresOf(
+        resolved,
+        resolved === expr,
+        this.grammar,
+        this._isLexicalFailureAt(pos)
+      );
+      const summary = {position: pos, failures};
+      this._recoveryFailureSummary = mergeFailureSummaries(
+        summary,
+        this._recoveryFailureSummary
+      );
+    }
+
     if (this.recordedFailures && pos === this.positionToRecordFailures) {
       const app = this.currentApplication();
       if (app) {
@@ -202,7 +260,7 @@ export class MatchState {
         // parameters.
       }
 
-      this.recordFailure(expr.toFailure(this.grammar), false);
+      this.recordFailure(this._failureOf(expr, pos), false);
     }
   }
 
@@ -210,8 +268,10 @@ export class MatchState {
     const key = failure.toKey();
     if (!this.recordedFailures[key]) {
       this.recordedFailures[key] = shouldCloneIfNew ? failure.clone() : failure;
-    } else if (this.recordedFailures[key].isFluffy() && !failure.isFluffy()) {
-      this.recordedFailures[key].clearFluffy();
+    } else {
+      const prior = this.recordedFailures[key];
+      if (prior.isFluffy() && !failure.isFluffy()) prior.clearFluffy();
+      if (!failure.isLexical()) prior.lexical = false;
     }
   }
 
@@ -274,8 +334,16 @@ export class MatchState {
     return !!this.trace;
   }
 
-  hasNecessaryInfo(entry) {
+  hasNecessaryInfo(entry, app) {
     const {memoTable} = this;
+    // Reevaluate across token boundaries: a lexical rule can itself enter a
+    // syntactic rule, so its expectations cannot all be reclassified together.
+    if (
+      !app.isSyntactic() &&
+      memoTable.tokenContexts[entry] !== this._isLexicalFailureAt(this.inputStream.pos)
+    ) {
+      return false;
+    }
     if (this.trace && !memoTable.traces[entry]) {
       return false;
     }
@@ -293,6 +361,18 @@ export class MatchState {
 
   useMemoizedResult(origPos, entry) {
     const {memoTable} = this;
+    if (this.recovery && !this.trace) {
+      const record = this.recovery.cache.memoRecords.get(entry);
+      if (record) this.recovery.cache.depend(record);
+      const stored = memoTable.summaries[entry];
+      if (stored) {
+        const position = origPos + memoTable.rightmostFailureOffset[entry];
+        this._recoveryFailureSummary = mergeFailureSummaries(
+          {position, failures: stored.position === position ? stored.failures : []},
+          this._recoveryFailureSummary
+        );
+      }
+    }
     if (this.trace) {
       this.trace.push(memoTable.traces[entry]);
     }
@@ -334,6 +414,11 @@ export class MatchState {
   // will have `expr.getArity()` more elements than before, and the input stream's position may
   // have increased. On failure, `bindings` and position will be unchanged.
   eval(expr) {
+    if (this.recovery && !this.trace) return this.recovery.cache.evaluate(this, expr);
+    return this.evalUncached(expr);
+  }
+
+  evalUncached(expr) {
     const {inputStream} = this;
     const origNumBindings = this._bindings.length;
     const origUserData = this.userData;
@@ -400,12 +485,21 @@ export class MatchState {
 
   getMatchResult() {
     this.grammar._setUpMatchState(this);
+    if (
+      this.recovery &&
+      (this.userData !== undefined || this.inputStream.constructor !== InputStream)
+    ) {
+      this.recovery.cache.disabled = true;
+    }
     this.eval(this.startExpr);
     let rightmostFailures;
     if (this.recordedFailures) {
       rightmostFailures = Object.keys(this.recordedFailures).map(
         key => this.recordedFailures[key]
       );
+    } else if (this.recovery && !this.trace) {
+      // Summaries share their failure lists, so hand the result its own array.
+      rightmostFailures = this._recoveryFailureSummary.failures.slice();
     }
     const cst = this._bindings[0];
     if (cst) {
@@ -438,10 +532,12 @@ export class MatchState {
   pushFailuresInfo() {
     this._rightmostFailurePositionStack.push(this.rightmostFailurePosition);
     this._recordedFailuresStack.push(this.recordedFailures);
+    this._recoveryFailureSummaryStack.push(this._recoveryFailureSummary);
   }
 
   popFailuresInfo() {
     this.rightmostFailurePosition = this._rightmostFailurePositionStack.pop();
     this.recordedFailures = this._recordedFailuresStack.pop();
+    this._recoveryFailureSummary = this._recoveryFailureSummaryStack.pop();
   }
 }
