@@ -119,6 +119,16 @@ Succeeds if the expression `expr` cannot be matched, and does not consume anythi
 
 Matches _expr_ as if in a lexical context. This can be used to prevent whitespace skipping before an expression that appears in the body of a syntactic rule. For further information, see [Syntactic vs. Lexical Rules](#syntactic-lexical).
 
+### Fallible: <span>!</span>
+
+<pre><code><i>guarded</i> ! <i>join</i></code></pre>
+
+`!` binds more tightly than sequence and alternation (`|`), and less tightly than repetition, lookahead, and lexification. Thus `a b ! c d` groups as `a (b ! c) d`, and `item* ! end` guards the repetition.
+
+Matches _guarded_ followed by _join_. With [recovery enabled](./api-reference.md#match-options), failure of either expression can trigger recovery: retain _guarded_ if it matched, and skip input until _join_ matches. The join consumes input normally; use `&expr` to leave it unconsumed, or `end` to join at the end of input. Recovery requires an actual join match; it does not insert missing input.
+
+If _guarded_ is a repetition, recovery retains its matched prefix and skips the remaining damaged input up to the join. It does not restart that repetition after skipping. Each operand must produce exactly one value for a semantic action; wrap a multi-value expression in a rule. The guarded operand cannot be a direct positive or negative lookahead expression. A Fallible contributes three values: guarded material, a correction slot, and the join. See [Error recovery with Fallible](./fallible.md) for recipes and [semantic actions](./api-reference.md#fallible-actions) for their shapes.
+
 ### Comment
 
 Inside an Ohm grammar, you can use both single-line (`//`) comments like

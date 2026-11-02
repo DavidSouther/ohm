@@ -45,4 +45,8 @@ test('doc/extras.md', () => {
   markscript.evaluateFile(scriptRel('../../../doc/extras.md'), markscriptConfig);
 });
 
+test('doc/fallible.md', () => {
+  markscript.evaluateFile(scriptRel('../../../doc/fallible.md'), markscriptConfig);
+});
+
 test.run();

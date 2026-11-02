@@ -70,17 +70,19 @@ console.log(Object.keys(grammars));
 
 A Grammar instance `g` has the following methods:
 
-<a name="Grammar.match"><b><pre class="api">g.match(str: string, optStartRule?: string) &rarr; MatchResult</pre></b></a>
+<a name="Grammar.match"><b><pre class="api">g.match(str: string, optStartRule?: string, options?: object) &rarr; MatchResult</pre></b></a>
 
 Try to match `str` against `g`, returning a [MatchResult](#matchresult-objects). If `optStartRule` is given, it specifies the rule on which to start matching. By default, the start rule is inherited from the supergrammar, or if there is no supergrammar specified, it is the first rule in `g`'s definition.
+
+<span id="match-options"></span>Set `options.recover` to `true` to attempt recovery at [Fallible expressions](./syntax-reference.md#fallible-) after a failed match. It defaults to `false`, in which case `guarded ! join` recognizes the same input as `guarded join`. For example, use `g.match(input, undefined, {recover: true})` with the default start rule. See [Error recovery with Fallible](./fallible.md) for recipes.
 
 <b><pre class="api">g.matcher()</pre></b>
 
 Create a new [Matcher](#matcher-objects) object which supports incrementally matching `g` against a changing input string.
 
-<a name="Grammar.trace"><b><pre class="api" id="trace">g.trace(str: string, optStartRule?: string) &rarr; Trace</pre></b></a>
+<a name="Grammar.trace"><b><pre class="api" id="trace">g.trace(str: string, optStartRule?: string, options?: object) &rarr; Trace</pre></b></a>
 
-Try to match `str` against `g`, returning a Trace object. `optStartRule` has the same meaning as in `g.match`. Trace objects have a `toString()` method, which returns a string which summarizes each parsing step (useful for debugging).
+Try to match `str` against `g`, returning a Trace object. `optStartRule` and `options` have the same meaning as in `g.match`. Trace objects have a `toString()` method, which returns a string which summarizes each parsing step (useful for debugging).
 
 <b><pre class="api">g.createSemantics() &rarr; Semantics</pre></b>
 
@@ -108,13 +110,15 @@ Set the input string to `str`.
 
 Edit the current input string, replacing the characters between `startIdx` and `endIdx` with `str`.
 
-<b><pre class="api">m.match(optStartRule?: string) &rarr; MatchResult</pre></b>
+<b><pre class="api">m.match(optStartRule?: string, options?: object) &rarr; MatchResult</pre></b>
 
 Like [Grammar's `match` method](#Grammar.match), but operates incrementally.
 
-<b><pre class="api">m.trace(optStartRule?: string) &rarr; Trace</pre></b>
+Recovery requires a Matcher that has not matched without recovery and whose input has not changed after an earlier match. Calling match with recovery on a matcher with stale recovery data will throw. Use a fresh Matcher or `g.match` for recovery after edits.
 
-Like [Grammar's `trace` method](#Grammar.trace), but operates incrementally.
+<b><pre class="api">m.trace(optStartRule?: string, options?: object) &rarr; Trace</pre></b>
+
+Like [Grammar's `trace` method](#Grammar.trace), with the same recovery restrictions as `m.match`.
 
 ## MatchResult objects
 
@@ -129,6 +133,17 @@ Return `true` if the match succeeded, otherwise `false`.
 <b><pre class="api">r.failed() &rarr; boolean</pre></b>
 
 Return `true` if the match failed, otherwise `false`.
+
+<b><pre class="api">r.getRecoveredFailures() &rarr; Array</pre></b>
+
+Return recovery diagnostics in input order. A successful recovering match can still have diagnostics. Without recovery, or on a clean match, the array is empty. If a recovering match fails, it contains earlier recoveries followed by the final failure.
+
+Each diagnostic has these properties and methods:
+
+- `interval`: the skipped input as an Interval. The final failure of an unsuccessful recovering match has an empty interval at its failure position.
+- `position`: the error's input index, which can differ from the skipped interval's start.
+- `shortMessage`: the error message, formatted like a failed MatchResult's `shortMessage`.
+- `getExpectedText()` and `getRightmostFailures()`: describe what was expected at the error.
 
 ### MatchFailure objects
 
@@ -148,7 +163,26 @@ Return the index in the input stream at which the match failed.
 
 <b><pre class="api">r.getRightmostFailures() &rarr; Array</pre></b>
 
-Return an array of Failure objects describing the failures the occurred at the rightmost failure position.
+Return an array of Failure objects describing the failures that occurred at the rightmost failure position.
+
+### Failure objects
+
+Failures describe individual expectations returned by `getRightmostFailures()` on a failed match or a recovery diagnostic.
+
+<b><pre class="api">f.isFluffy() &rarr; boolean</pre></b>
+
+Return whether the expectation is incidental to a successful optional or repeated expression. Default error messages omit these expectations.
+
+<b><pre class="api">f.isLexical() &rarr; boolean</pre></b>
+
+Return whether the expectation failed inside a lexical token that had already consumed input. A failure at the start of a token returns `false`, as does an expectation in a syntactic rule. Classification follows the token context, including when results are reused during recovery. A diagnostic can contain both lexical and non-lexical expectations.
+
+<!-- @markscript
+  const lexicalFailures = ohm.grammar('Tokens { Start = hex | name hex = "0x" hexDigit+ name = letter+ }');
+  const visibleFailures = result => result.getRightmostFailures().filter(f => !f.isFluffy());
+  assert(visibleFailures(lexicalFailures.match('0xZ')).every(f => f.isLexical()));
+  assert(visibleFailures(lexicalFailures.match(';')).every(f => !f.isLexical()));
+-->
 
 <h2 id="semantics">Semantics, Operations, and Attributes</h2>
 
@@ -185,11 +219,12 @@ Exactly like `semantics.extendOperation`, except it will extend an Attribute of 
 
 ### Semantic Actions
 
-A semantic action is a function that computes the value of an operation or attribute for a specific type of node in the parse tree. There are three different types of parse nodes:
+A semantic action is a function that computes the value of an operation or attribute for a specific type of node in the parse tree. There are four different types of parse nodes:
 
 - _Rule application_, or _non-terminal_ nodes, which correspond to rule application expressions
 - _Terminal_ nodes, for string and number literals, and keyword expressions
 - _Iteration_ nodes, which are associated with expressions inside a [repetition operator](./syntax-reference.md#repetition-operators) (`*`, `+`, and `?`)
+- _Correction_ nodes, which describe input skipped by Fallible recovery
 
 Generally, you write a semantic action for each rule in your grammar, and store them together in an _action dictionary_. For example, given the following grammar:
 
@@ -238,8 +273,11 @@ The matching semantic action for a particular node is chosen as follows:
 - On a _rule application_ (non-terminal) node, first look for a semantic action with the same name as the rule (e.g., 'FullName'). If the action dictionary does not have a property with that name, use the action named `_nonterminal`, if it exists. If there is no `_nonterminal` action, and the node has exactly one child, then return the result of invoking the operation/attribute on the child node.
 - On a terminal node (e.g., a node produced by the parsing expression `"hello"`), use the semantic action named `_terminal`.
 - On an iteration node (e.g., a node produced by the parsing expression `letter+`), use the semantic action named `_iter`.
+- On a correction node, use `_correction`, which takes no arguments and has no default action.
 
-<span id="special-actions"></span>The `_iter`, `_nonterminal`, and `_terminal` actions are sometimes called _special actions_. `_iter` and `_nonterminal` take a variable number of arguments, which are typically captured into an array using [rest parameter syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/rest_parameters) , e.g. `_iter(...children) { ... }`. The `_terminal` action takes no arguments.
+<span id="special-actions"></span>The `_iter`, `_nonterminal`, `_terminal`, and `_correction` actions are sometimes called _special actions_. `_iter` and `_nonterminal` take a variable number of arguments, which are typically captured into an array using [rest parameter syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/rest_parameters) , e.g. `_iter(...children) { ... }`. The `_terminal` and `_correction` actions take no arguments.
+
+<span id="fallible-actions"></span>A `guarded ! join` expression always contributes three arguments, even without recovery: the guarded node, a correction slot, and the join node. If the guarded expression failed, its argument is an empty optional node. The correction slot is an empty optional node on clean input and a childless `_correction` node after recovery. Its `sourceString` is the skipped input. An operation that visits this node must define `_correction`; `_nonterminal` does not handle it.
 
 <!-- @markscript
   markscript.transformNextBlock((code) =>
@@ -289,6 +327,14 @@ The substring of the input that was consumed by the node. Equivalent to `n.sourc
 <b><pre class="api">n.numChildren: number</pre></b>
 
 The number of child nodes that the node has.
+
+<b><pre class="api">n.recoveredFailure: object | undefined</pre></b>
+
+The diagnostic on a correction node; `undefined` on other nodes. It has the same shape as entries from `getRecoveredFailures()`.
+
+<b><pre class="api">n.recoveredFailures: Array</pre></b>
+
+Read-only recovery diagnostics at or below this node, in input order. At the root, these are the same diagnostic objects listed by `getRecoveredFailures()`.
 
 <b><pre class="api">n.isOptional() &rarr; boolean</pre></b>
 

@@ -2,6 +2,7 @@
 
 - [Ohm/JS API Reference](./api-reference.md)
 - [Ohm Syntax Reference](./syntax-reference.md)
+- [Error recovery with Fallible](./fallible.md) explains recovery boundaries, diagnostics, and practical recipes.
 - Learn more about the [Ohm philosophy](./philosophy.md)
 - See [Patterns and Pitfalls](./patterns-and-pitfalls.md) for some common Ohm patterns and solutions to frequently-encountered difficulties.
 

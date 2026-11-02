@@ -94,9 +94,43 @@ The common way to handle operator precedence in Ohm is to use left-recursive rul
 
 Note that the rule for the lower precedence operators (`+` and `-`) invokes the rule for the higher-precedence operators (`*`/`/`). This ensures that the higher-precedence operators "bind more tightly". See Ray Toal's [Operator Precedence and Associativity Examples](https://github.com/ohmjs/ohm/tree/main/examples/operators) for more.
 
+#### Recovering expressions
+
+Keep the precedence rules intact and put a [Fallible boundary](./syntax-reference.md#fallible-) after expression rules. With `Start = Statement*`, `Statement = exp ! ";"`, and recovery enabled, `2+;3*4;` produces two statements.
+
+In the first statement, the addition fails because its right operand is missing. Backtracking lets `exp` succeed on `2`. The join then fails at `+`, so recovery retains the expression node, records `+` as the correction, and matches the semicolon as the join. Schematically, omitting intermediate CST wrappers:
+
+```text
+Statement(exp(2), "+", ";")
+Statement(exp(mulExp(3, 4)), empty, ";")
+```
+
+Here `empty` is the empty optional correction slot. Each expression belongs to its own `Statement`; the second retains normal multiplication precedence. See [Error recovery with Fallible](./fallible.md) for handling retained input.
+
 #### 🐍 Ambiguous recursion
 
 Notice that in the arithmetic grammar above, `mulExp` appears on the right hand side of all of `addExp`'s cases. Be careful that you don't write rules that are "ambiguously recursive", e.g. `addExp = addExp "+" addExp`. If you write your grammar like this, a reader can't tell whether `+` is left-associative or right-associative. (In Ohm, you will actually get a right-associative parse — see [#56](https://github.com/ohmjs/ohm/issues/56) for details.)
+
+### Recovery points and prediction
+
+Place recovery points around complete items with stable synchronization boundaries,
+for example `Statement = Expr ! ";"`. The expression grammar inside `Expr` may use
+ordinary left recursion; keeping it recovery-free allows it to retain ordinary
+memoization. Recovery inside an active left-recursive cycle adds performance
+overhead, breaking memoizations into more finely-grained recovery aware keys.
+
+Keep prediction and synchronization helpers transitively recovery-free. Inside `&`
+or `~`, a fallible `B ! C` acts as `B C` and cannot commit recovery. A rule that reaches
+such a marker through other rule calls still has this restriction. Recursive
+lookahead over a recovery-bearing rule can reevaluate suffixes at different call
+depths even on valid input. Prefer a recovery-free prediction helper when a rule is
+shared between prediction and consuming parsing. Join expressions and
+`recoveryToken`/`recoveryStop` helpers also run with recovery suspended.
+
+A pure lookahead **join** is a different case: `Stmt* ! &"}"` places the marker outside
+the predicate and is an ordinary synchronization pattern. It is the fallible reached
+*inside* a predicate that warrants attention.
+
 
 ## Semantics
 
