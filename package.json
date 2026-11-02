@@ -1,4 +1,5 @@
 {
+  "name": "ohm-monorepo",
   "private": true,
   "packageManager": "pnpm@10.10.0",
   "scripts": {
@@ -6,7 +7,8 @@
     "ci-test": "bin/ci-test.sh",
     "format": "bin/format.sh",
     "lint": "eslint --cache .",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "prepare": "npm run build --workspace=ohm-js"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.4",
@@ -18,5 +20,41 @@
     "eslint-plugin-ava": "^15.1.0",
     "typescript": "^5.8.3"
   },
-  "version": "0.0.0"
+  "version": "17.5.0",
+  "main": "./packages/ohm-js/dist/ohm.cjs",
+  "module": "./packages/ohm-js/index.mjs",
+  "types": "./packages/ohm-js/index.d.ts",
+  "exports": {
+    ".": [
+      {
+        "types": "./packages/ohm-js/index.d.ts",
+        "import": "./packages/ohm-js/index.mjs",
+        "require": "./packages/ohm-js/dist/ohm.cjs"
+      },
+      "./packages/ohm-js/dist/ohm.cjs"
+    ],
+    "./extras": [
+      {
+        "types": "./packages/ohm-js/extras/index.d.ts",
+        "import": "./packages/ohm-js/extras/index.mjs",
+        "require": "./packages/ohm-js/dist/ohm-extras.cjs"
+      },
+      "./packages/ohm-js/dist/ohm-extras.cjs"
+    ],
+    "./v18": {
+      "import": "./packages/ohm-js/src/v18.js",
+      "require": "./packages/ohm-js/dist/ohm-v18.cjs"
+    }
+  },
+  "files": [
+    "packages/ohm-js/package.json",
+    "packages/ohm-js/src",
+    "packages/ohm-js/dist",
+    "packages/ohm-js/extras",
+    "packages/ohm-js/index.mjs",
+    "packages/ohm-js/index.d.ts"
+  ],
+  "workspaces": [
+    "packages/ohm-js"
+  ]
 }
