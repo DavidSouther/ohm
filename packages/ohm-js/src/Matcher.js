@@ -15,6 +15,15 @@ export class Matcher {
     this._isMemoTableStale = false;
   }
 
+  _invalidateMemoEntries(invalidatedIdx, endPos) {
+    const {_memoTable: memoTable} = this;
+    const limit = Math.min(endPos, memoTable.length);
+    for (let pos = 0; pos < limit; pos++) {
+      const posInfo = memoTable[pos];
+      if (posInfo) posInfo.clearObsoleteEntries(pos, invalidatedIdx);
+    }
+  }
+
   getInput() {
     return this._input;
   }
@@ -55,13 +64,7 @@ export class Matcher {
       memoTable.push(posInfo);
     }
 
-    // Invalidate memoRecs
-    for (let pos = 0; pos < startIdx; pos++) {
-      const posInfo = memoTable[pos];
-      if (posInfo) {
-        posInfo.clearObsoleteEntries(pos, startIdx);
-      }
-    }
+    this._invalidateMemoEntries(startIdx, startIdx);
 
     return this;
   }
