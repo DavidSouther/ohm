@@ -87,7 +87,7 @@ Editors spend most of their time looking at input that does not parse. The desig
 - **Recovery points are in the grammar.** `B ! C` ("B, recovering at C") keeps what matched of `B` and skips input up to `C` when parsing fails. Where `B` matched and only `C` is missing, the references inside `B` survive.
 - **A statement that fails to match contributes no symbols.** Its definitions are missing and its references are not seen. The service must not turn that into confident errors.
 - **Uncertain, not wrong.** An unresolved name that sits in or beside skipped input is reported as `ref.uncertain`, never as an undefined-name error. Rename warns (`incomplete`) when skipped spans lie inside the symbol's reach.
-- **Last good analysis.** A truncated or unclosed file makes the match fail with no tree. The service keeps the previous outline and symbols, marks the analysis `stale`, reports the syntax diagnostic, and refuses rename.
+- **Last good analysis.** A truncated or unclosed file makes the match fail with no tree. The service keeps the previous outline and symbols, marks the analysis `stale`, reports the syntax diagnostic, and refuses rename. Stale symbol answers are in the *last good text's* offsets, so they are only correct when the edit was after them (typing at the end of the file, as in B.4(d)). The reference engine keeps one cache per language object, not per document, and does not map offsets across edits; a real service must key the cache by document and either map offsets through the edit or refuse positional queries while stale. Reviewed finding, not yet fixed in the reference engine.
 - **Recovery is a grammar change.** Adding `!` to a rule adds a correction child, which changes the rule's arity and so breaks positional actions, so recovery points go on rules the actions do not depend on, or in a wrapper rule. This is the one place where existing code can constrain a language.
 
 ## 6. Diagnostics
@@ -173,7 +173,7 @@ The documentation's example, `1 + (2 - 3) + 4`, evaluates to 4.
 
 Completion still works from the grammar alone: after `1 + ` it offers `(` and a digit, after `1 ` it offers `-` and `+`. After an earlier unrecovered error, `completionsAt` reports the end of input as unknown (`unreliable`) rather than guessing.
 
-**After.** Recovery is a grammar change, made by inheritance in four lines:
+**After.** Recovery is a grammar change, made by inheritance: one line for the recovery point and three that add string literals (a language change, which the `recoveryToken` demonstration needs):
 
 ```ohm
 ArithmeticRecovering <: Arithmetic {
@@ -378,13 +378,13 @@ The language has an evaluator, which is an independent check on rename: a rename
 
 #### What the example shows
 
-- Part A needs no names at all: recovery is a four-line grammar change plus one new action, and it turns "one error, no tree" into "keep the good statements" on three of five inputs.
+- Part A needs no names at all: recovery is one grammar line (the recovery point) plus one new action, and it turns "one error, no tree" into "keep the good statements" on three of five inputs.
 - Part B's declaration is two role lines for five grammar lines, and it turns the same grammar into outline, definition, references and a rename that refuses unsafe edits.
-- Two departures from the sketch were needed: `start`, and `visibleIn` can only name a child of the same rule, so sequential top-level `let` was not modelled.
+- Three departures from the sketch were needed: `start`; `in: "@N"` also searches the nearest enclosing rule with a ref at N; and `visibleIn` can only name a child of the same rule, so sequential top-level `let` (declare before use) is not modelled.
 
 ## 10. Worked example: HDL
 
-The grammar is the web-ide's real HDL grammar (`base.ohm` followed by `hdl.ohm`, 114 lines, unmodified). The host supplies a chip registry, since a part's chip name resolves outside the file. The roles are 8 entries on 6 rules:
+The grammar is the web-ide's real HDL grammar (`base.ohm` followed by `hdl.ohm`, 112 lines, unmodified). The host supplies a chip registry, since a part's chip name resolves outside the file. The roles are 8 entries on 6 rules:
 
 ```js
 const roles = {
@@ -494,7 +494,7 @@ For HDL there is no evaluator, so the check is metamorphic: rename a definition,
 
 ## 11. Existing languages
 
-For a language that already has actions, adoption is: write a roles block (7 to 20 entries across the four languages tried), check it against an oracle where one exists, and, if the language should recover from errors, add recovery points to the grammar. Nothing in the existing actions is edited.
+For a language that already has actions, adoption is: write a roles block (7 to 20 entries across the four languages tried), check it against an oracle where one exists, and, if the language should recover from errors, add recovery points to the grammar. Nothing in the existing actions is edited, but recovery is not free: a `!` adds a correction child, so positional actions on that rule must change arity (Part A adds a `Program` action; ES5 needed a wrapper rule; adding `!` to the real Ohm meta-grammar breaks `buildGrammar`). "Zero edits" means zero edits for the roles; recovery points go on rules the actions do not depend on, or on new wrapper rules.
 
 A language's own checker can *propose* a draft: renaming a token and watching which of its diagnostics move found definition versus reference for pins in HDL and about two thirds of Jack's entries; it found 1 of 20 for ES5, which has no checker. It is a proposer, not a mechanism, because it is silently wrong when an action is refactored.
 
@@ -505,7 +505,10 @@ A language's own checker can *propose* a draft: renaming a token and watching wh
 - **Large files**: a recovering match took 3.0 s of a 3.2 s analysis on 24 KB of ES5. Debouncing, or incremental recovering matches, is needed there.
 - **Approximations in the reference engine.** `ref.uncertain` is conservative (any skipped span in the scope chain). Implicit definitions can mask lost declarations (10.3c). A new name is checked only against the identifier rule, so HDL accepts `IN` as a pin name. Sequential top-level visibility, reserved words and symbol completion are not modelled.
 - **Not built**: symbol completion, both adapters, one engine across all four prototype languages (the reference engine runs two; the others were prototyped separately).
-- **Validation.** Independent oracles where they existed: Jack, recompile after rename, 150 of 150 identical; ES5, ESLint's scope analysis, 270 of 270 groups; Ohm, recompile renamed grammars; the toy language, evaluation after rename; HDL, a metamorphic rename. They ran against the fork's source, not the web-ide's own test suites.
+- **Recovery on typing.** Most end-of-file typing states have no tree (280 of 282 prefixes of valid toy programs in a review), so end-of-file editing depends on the stale path above. Mid-file edits do well (3 of 258 single-character deletions lost the tree; no paren, quote or `+` insertion did). "Three of five recover" in Part A counts inputs whose two failures are exactly the end-of-file cases. `Stmts ! end` was not evaluated on the let language.
+- **Latency and concurrency.** Each call re-analyses the whole document: about 40 ms for 333 bytes, 0.5 s for 28 KB and 1.1 s for 57 KB of HDL, and rename grows faster than linearly. There is no cancellation or document-version model; an LSP adapter needs both.
+- **The oracles are partial.** The toy evaluator catches missed sites and capture but not over-renaming (renaming both `x` in `let a = 1 in let a = a + 1 in a` keeps the value). Of the 106 refusals, 69 are invalid names put in the pool by construction and 37 are real collisions. The HDL metamorphic check uses the engine as its own oracle, and 57 of its 183 accepted renames were flagged `incomplete`.
+- **Validation.** Oracles where they existed (the Jack, ES5 and Ohm runs are not reproducible from this repository; only the toy and HDL runs use the reference engine): Jack, recompile after rename, 150 of 150 identical; ES5, ESLint's scope analysis, 270 of 270 groups; Ohm, recompile renamed grammars; the toy language, evaluation after rename; HDL, a metamorphic rename. They ran against the fork's source, not the web-ide's own test suites.
 
 ## Appendix: the vocabulary tail
 
@@ -522,3 +525,7 @@ HDL alone suggests `def`, `ref`, `scope`, member lookup and implicit definitions
 - ES5 specifics, shown necessary by ablation: conditional entries (`=` versus `+=`), properties grouped by name, weak definitions, opaque namespaces (labels), dynamic scope (`with`), `arguments`; the temporal dead zone was tested only on a scratch grammar;
 - file level: export from the file name, and a placeholder symbol for a file that failed or lost its header;
 - workspace level: cross-file namespaces and a family rename with a collision check.
+
+## Related work
+
+Not yet a survey; the points a reader will ask about. Scope-graph and stack-graph systems state name resolution as a graph the grammar author writes; the role model is the same idea in a smaller vocabulary tied to Ohm rules, and stack graphs are now unmaintained. tree-sitter, Lezer and antlr4-c3 give syntax and (for antlr4-c3) completion candidates but derive no symbol table; Langium and Xtext derive scoping from a grammar plus author scope providers and are the closest relatives; Marr et al. describe language servers built from parse-based definitions. Automatic PEG error recovery reaches only partial recovery rates in the literature, which is why recovery points here are written in the grammar. A proper comparison is a follow-up in the plan (decision 7).
