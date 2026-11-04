@@ -58,7 +58,38 @@ fragments(result).fragments(); // ['abc', 'def']
   assert.deepEqual(fragments(statements.match('abc; def;')).fragments(), ['abc', 'def']);
 -->
 
-This action deliberately keeps partial statements. An AST builder might instead mark or discard a statement when `correction.recoveredFailure` is present. The action reads nodes directly; operations that traverse correction nodes must provide a zero-argument `_correction` action. See [Fallible actions](./api-reference.md#fallible-actions).
+This action deliberately keeps partial statements. An AST builder might instead mark or discard a statement when `correction.recoveredFailure` is present. The action reads nodes directly; an operation that traverses correction nodes can provide a zero-argument `_correction` action, and otherwise gets `undefined` there. See [Fallible actions](./api-reference.md#fallible-actions).
+
+## Traverse recovered input without handling it
+
+A generic traversal, such as a pretty printer or a counter built from `_nonterminal`, `_iter` and `_terminal`, reaches correction nodes too. Without a `_correction` action, a correction node yields `undefined`, so a traversal that has nothing useful to do with skipped input needs no extra code.
+
+```js
+const retained = statements.createSemantics().addOperation('retained', {
+  _nonterminal(...children) {
+    return children.reduce((n, child) => n + (child.retained() ?? 0), 0);
+  },
+  _iter(...children) {
+    return children.reduce((n, child) => n + (child.retained() ?? 0), 0);
+  },
+  _terminal() {
+    return 1;
+  }
+});
+retained(result).retained(); // 8: `abc`, `;`, `def` and `;`, but not the skipped `12`
+```
+
+<!-- @markscript
+  assert.equal(retained(result).retained(), 8);
+  const strict = statements.createSemantics().addOperation('strict', {
+    _nonterminal(...children) { return children.map(child => child.strict()); },
+    _iter(...children) { return children.map(child => child.strict()); },
+    _terminal() { return 1; }
+  }, {corrections: 'throw'});
+  assert.throws(() => strict(result).strict(), /_correction/);
+-->
+
+Pass `{corrections: 'throw'}` when reaching skipped input would be a mistake, for example in an operation that builds a tree and expects to handle every correction itself. Use `child.isCorrection()` to tell the node apart, or pass a function for what the operation should produce there. An explicit `_correction` action always takes precedence. See the [`corrections` option](./api-reference.md#corrections-option).
 
 ## Choose a block boundary
 

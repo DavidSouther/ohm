@@ -197,23 +197,27 @@ This returns a parse node, whose properties correspond to the operations and att
 
 A Semantics instance `s` has the following methods, which all return `this` so they can be chained:
 
-<b><pre class="api">mySemantics.addOperation(nameOrSignature: string, actionDict: object) &rarr; Semantics</pre></b>
+<b><pre class="api">mySemantics.addOperation(nameOrSignature: string, actionDict: object, options?: object) &rarr; Semantics</pre></b>
 
 Add a new Operation to this Semantics, using the [semantic actions](#semantic-actions) contained in `actionDict`. The first argument is either a name (e.g. `'prettyPrint'`) or a _signature_ which specifies the operation name and zero or more named parameters (e.g., `'prettyPrint()'`, `'prettyPrint(depth, strict)'`). It is an error if there is already an operation or attribute called `name` in this semantics.
 
 If the operation has arguments, they are accessible via `this.args` within a semantic action. For example, `this.args.depth` would hold the value of the `depth` argument for the current action.
 
-<b><pre class="api">mySemantics.addAttribute(name: string, actionDict: object) &rarr; Semantics</pre></b>
+<span id="corrections-option"></span>`options.corrections` sets what the operation does at a `_correction` node, which holds input that [recovery](./fallible.md) skipped. A `_correction` action in `actionDict` always wins. Otherwise, `'skip'` (the default) makes a correction node yield `undefined`, and `'throw'` makes reaching one an error. A function is a zero-arity action, as if `actionDict` defined it. An invalid option throws a `TypeError`. Recovery is opt-in, so without it there are no correction nodes and this never applies.
+
+<b><pre class="api">mySemantics.addAttribute(name: string, actionDict: object, options?: object) &rarr; Semantics</pre></b>
 
 Exactly like `semantics.addOperation`, except it will add an Attribute to the semantics rather than an Operation.
 
-<b><pre class="api">mySemantics.extendOperation(name: string, actionDict: object) &rarr; Semantics</pre></b>
+<b><pre class="api">mySemantics.extendOperation(name: string, actionDict: object, options?: object) &rarr; Semantics</pre></b>
 
 Extend the Operation named `name` with the semantic actions contained in `actionDict`. `name` must be the name of an operation in the super semantics — i.e., you must first extend the Semantics via [`extendSemantics`](#extendSemantics) before you can extend any of its operations.
 
-<b><pre class="api">semantics.extendAttribute(name: string, actionDict: object) &rarr; Semantics</pre></b>
+<b><pre class="api">semantics.extendAttribute(name: string, actionDict: object, options?: object) &rarr; Semantics</pre></b>
 
 Exactly like `semantics.extendOperation`, except it will extend an Attribute of the super semantics rather than an Operation.
+
+An extension inherits the correction policy of the operation it extends, and `options.corrections` replaces it. A `_correction` action, whether the extension defines it or inherits it, still takes precedence over the policy.
 
 ### Semantic Actions
 
@@ -271,11 +275,11 @@ The matching semantic action for a particular node is chosen as follows:
 - On a _rule application_ (non-terminal) node, first look for a semantic action with the same name as the rule (e.g., 'FullName'). If the action dictionary does not have a property with that name, use the action named `_nonterminal`, if it exists. If there is no `_nonterminal` action, and the node has exactly one child, then return the result of invoking the operation/attribute on the child node.
 - On a terminal node (e.g., a node produced by the parsing expression `"hello"`), use the semantic action named `_terminal`.
 - On an iteration node (e.g., a node produced by the parsing expression `letter+`), use the semantic action named `_iter`.
-- On a correction node, use `_correction`, which takes no arguments and has no default action.
+- On a correction node, use `_correction`, which takes no arguments. If the operation has no `_correction` action, it follows its [`corrections` option](#corrections-option): by default the node yields `undefined`.
 
 <span id="special-actions"></span>The `_iter`, `_nonterminal`, `_terminal`, and `_correction` actions are sometimes called _special actions_. `_iter` and `_nonterminal` take a variable number of arguments, which are typically captured into an array using [rest parameter syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/rest_parameters) , e.g. `_iter(...children) { ... }`. The `_terminal` and `_correction` actions take no arguments.
 
-<span id="fallible-actions"></span>A `guarded ! join` expression always contributes three arguments, even without recovery: the guarded node, a correction slot, and the join node. If the guarded expression failed, its argument is an empty optional node. The correction slot is an empty optional node on clean input and a childless `_correction` node after recovery. Its `sourceString` is the skipped input. An operation that visits this node must define `_correction`; `_nonterminal` does not handle it.
+<span id="fallible-actions"></span>A `guarded ! join` expression always contributes three arguments, even without recovery: the guarded node, a correction slot, and the join node. If the guarded expression failed, its argument is an empty optional node. The correction slot is an empty optional node on clean input and a childless `_correction` node after recovery. Its `sourceString` is the skipped input. An operation that visits this node can define `_correction`; `_nonterminal` does not handle it. Without one, the node follows the operation's [`corrections` option](#corrections-option): by default it yields `undefined`.
 
 <!-- @markscript
   markscript.transformNextBlock((code) =>
@@ -301,6 +305,10 @@ Get the child at index `idx`.
 <b><pre class="api">n.isTerminal() &rarr; boolean</pre></b>
 
 `true` if the node is a terminal node, otherwise `false`.
+
+<b><pre class="api">n.isCorrection() &rarr; boolean</pre></b>
+
+`true` if the node is a `_correction` node, which holds input that recovery skipped, otherwise `false`.
 
 <b><pre class="api">n.isIteration() &rarr; boolean</pre></b>
 

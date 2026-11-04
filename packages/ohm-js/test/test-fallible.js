@@ -474,21 +474,43 @@ test('`_correction` has arity 0 and reads its failure from the node', t => {
 
 test('`_nonterminal` and `_default` never receive a `_correction` node', t => {
   const g = stmtsGrammar;
-  const s = g.createSemantics().addOperation('count', {
-    _nonterminal(...children) {
-      return children.reduce((n, c) => n + c.count(), 1);
+  const s = g.createSemantics().addOperation(
+    'count',
+    {
+      _nonterminal(...children) {
+        return children.reduce((n, c) => n + c.count(), 1);
+      },
+      _iter(...children) {
+        return children.reduce((n, c) => n + c.count(), 0);
+      },
+      _terminal() {
+        return 0;
+      },
     },
-    _iter(...children) {
-      return children.reduce((n, c) => n + c.count(), 0);
-    },
-    _terminal() {
-      return 0;
-    },
-  });
+    {corrections: 'throw'}
+  );
   t.is(s(g.match('{ a; }', undefined, RECOVER)).count(), 6);
   t.throws(() => s(g.match('{ a b; }', undefined, RECOVER)).count(), {
     message: /Missing semantic action for _correction/,
   });
+
+  // By default the correction node is skipped; it still never reaches those actions.
+  const seen = [];
+  const lenient = g.createSemantics().addOperation('visit', {
+    _nonterminal(...children) {
+      seen.push(this.ctorName);
+      children.forEach(c => c.visit());
+    },
+    _iter(...children) {
+      seen.push(this.ctorName);
+      children.forEach(c => c.visit());
+    },
+    _terminal() {
+      seen.push(this.ctorName);
+    },
+  });
+  t.notThrows(() => lenient(g.match('{ a b; }', undefined, RECOVER)).visit());
+  t.false(seen.includes('_correction'));
 });
 
 // --------------------------------------------------------------------
