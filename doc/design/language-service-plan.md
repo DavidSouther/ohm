@@ -12,56 +12,13 @@ A language author supplies an Ohm grammar and semantic actions. A language servi
 
 The service is an editor-neutral library: offsets in, plain data out. A Monaco adapter runs it in the page; an LSP adapter serves it to other editors.
 
-This plan covers the work needed to get there, in four parts: three small prerequisites in `ohm-js`, the language-service track in this repository, the downstream web-ide track, and future work.
+This plan covers the work needed to get there, in four parts: one small prerequisite in `ohm-js`, the language-service track in this repository, the downstream web-ide track, and future work.
 
-## 1. Prerequisites in `ohm-js`
+## 1. Prerequisite in `ohm-js`
 
-Three independent branches off `feat/fallible`. Each is useful on its own and none depends on another.
+One branch off `feat/fallible`.
 
-### P1. Recovering matchers accept edits
-
-**Status:** implemented as PR 29, with review feedback applied.
-
-**Today.** `Matcher._prepareForRecovery` (`packages/ohm-js/src/Matcher.js`) throws when the input changed after an earlier match, or when the memo table came from a plain match. It then resets the memo table anyway, because a fresh `RecoveryContext` has no attempts for previously memoized entries. The guards are covered by `test/test-fallible.js` ("a matcher with a stale or plain memo table refuses to recover"), `doc/api-reference.md` and the `recover` option comment in `index.d.ts`.
-
-**Finding.** The guards were meant as a performance safeguard. Measurements say they are not needed:
-
-- They do not protect correctness. With the stale flag bypassed, an edited matcher produced exactly the result of a fresh `grammar.match(text, undefined, {recover: true})` on 1,613 random edit sequences over two HDL chips (success, recovered failures with position, interval and message, failure position): 0 mismatches, 0 throws.
-- Removing them costs nothing, since a recovering match already starts from an empty memo.
-- The reuse they might be guarding is not worth building in its simple form. Typing a new line one character at a time into a 27 KB chip, only 4 of 25 intermediate states were valid; trying plain incremental first and recovering from scratch otherwise averaged 577 ms against 601 ms for always matching fresh.
-
-**Change (P1a).** Remove both guards. A recovering match is allowed on any matcher after any edit and always starts from an empty memo. Update the test, `doc/api-reference.md` and `index.d.ts`. Add the random-edit property test (edited matcher equals fresh match) to the suite, including a grammar with `supportsIncrementalParsing: false`.
-
-**Effect.** A language service can hold one `Matcher` per document, call `replaceInputRange` on every change, and match with recovery. There is no speed-up yet; this fixes the API contract that real reuse (section 4) would later sit behind.
-
-**Size.** Hours.
-
-### P2. A correction policy for operations
-
-**Status:** implemented as PR 30. The review set the default to `'skip'`; the text below reflects that.
-
-**Today.** `Operation.execute` (`packages/ohm-js/src/Semantics.js`) checks for a correction node after the node-name lookup and before `_nonterminal` and `_default`, so an operation with no `_correction` action throws `missingCorrectionAction`. `test/test-fallible-acceptance.js` ("an operation without a `_correction` action throws on a recovered node") pins that. `Wrapper` exposes `recoveredFailure` but not `isCorrection()`.
-
-**Change.** A policy on the operation:
-
-```js
-semantics.addOperation(signature, actions, {corrections: 'skip' | 'throw' | fn});
-// also addAttribute, extendOperation, extendAttribute
-```
-
-- `'skip'` is the default: a correction node yields `undefined` and the operation continues. The author must tolerate `undefined` in child results, and can filter with `isCorrection()`. Recovery is opt-in, so without it the policy never applies.
-- `'throw'` restores today's strict behavior.
-- A function is a zero-arity action, equivalent to defining `_correction`.
-- An explicit `_correction` action always wins. The policy is a field on the operation: extensions inherit it, an option replaces it in either direction, and `toRecipe` writes it only when it differs from the inherited one.
-- `Wrapper#isCorrection()` becomes public so generic `_nonterminal(...children)` traversals can filter.
-
-**Caveat from prototyping (section 5).** The default only helps an operation that tolerates `undefined`. In the ES5 example, `hoistDeclarations` throws on a recovered tree and `toES5` prints "undefined"; the role table below survives because it runs none of the author's actions.
-
-**Tests.** The default skips and `'throw'` throws (the two existing tests that pinned the throw now opt in); function form; explicit action wins; extension and inheritance in both directions; recipe round trip; attributes memoize `undefined`.
-
-**Size.** A day.
-
-### P3. A minimal cursor: `Wrapper#pathAt`
+### A minimal cursor: `Wrapper#pathAt`
 
 **Today.** `Wrapper` has `children`, `source`, `ctorName`, but no parent, no ancestor path and no way to ask which node is at an offset. Hover, definition, rename, selection ranges and completion all start from that question.
 
@@ -72,7 +29,7 @@ wrapper.pathAt(offset: number, bias?: 'left' | 'right'): Wrapper[]
 // root -> deepest node that covers `offset`; the last element is the node itself
 ```
 
-Everything else an editor needs is derivable from the path with existing members (`isLexical()`, `ctorName`, `source`) and `isCorrection()` from P2:
+Everything else an editor needs is derivable from the path with existing members (`isLexical()`, `ctorName`, `source`) and `isCorrection()`:
 
 - the token at the cursor: walk back from the end of the path while the node is lexical;
 - whether the cursor is inside skipped input: any path element is a correction;
@@ -102,11 +59,7 @@ Those helpers belong in the language-service package (track A), not in `ohm-js`.
 
 **Size.** A few days, including types in `index.d.ts` and docs.
 
-### Order
-
-P1a, P2 and P3 can be three PRs in parallel. Track A depends on all three.
-
-## 2. Track A: the language service (this repository, branched from `feat/fallible` plus P1-P3)
+## 2. Track A: the language service (this repository, branched from `feat/fallible` plus the cursor)
 
 New packages follow `packages/semantics` (ESM TypeScript, `tsc`, `ava`) in this pnpm workspace: `packages/language`, `packages/lsp`, `packages/monaco`.
 
@@ -114,19 +67,19 @@ New packages follow `packages/semantics` (ESM TypeScript, `tsc`, `ava`) in this 
 |---|---|---|---|
 | A0 | Scaffolding for the three packages, CI wiring, a docs page | none | The packages build and test empty |
 | A1 | `introspect(grammar)`: keywords, punctuation, token rules by naming convention (overridable), bracket pairs, foldable rules. Built in the package by walking `grammar.rules`; a stable `grammar.describe()` in `ohm-js` only if the walk proves brittle | none | The model for a real grammar (web-ide HDL) matches a hand-written expectation |
-| A2 | Document analysis: one `Matcher` per document, always recovering, token list, `pathAt` queries, syntax diagnostics, and the last good analysis kept when a parse yields no tree (truncated or unclosed input gives zero facts in every prototype) | P1a, P2, P3 | An edit sequence equals a fresh analysis (property test); a truncated file keeps the previous outline |
+| A2 | Document analysis: one `Matcher` per document, always recovering, token list, `pathAt` queries, syntax diagnostics, and the last good analysis kept when a parse yields no tree (truncated or unclosed input gives zero facts in every prototype) | the cursor | An edit sequence equals a fresh analysis (property test); a truncated file keeps the previous outline |
 | A3 | Completion part A: expected string terminals at the cursor from a prefix parse, partial-token filtering, replace range | A2 | Reproduces the verified cases below |
-| A4 | The role model and its engine: the vocabulary in section 5, an engine that walks the concrete syntax tree for table-form roles (it runs none of the author's operations), a `SymbolTable` with scope chains and a workspace layer, `uncertain` marking from damage analysis, and a validator that checks roles against an oracle (the language's own checker or compiler where one exists) | P2, A2 | Tables for HDL, Jack, the Ohm grammar language and ES5 pass the checks in section 5 on one shared engine (today there are four prototype copies) |
+| A4 | The role model and its engine: the vocabulary in section 5, an engine that walks the concrete syntax tree for table-form roles (it runs none of the author's operations), a `SymbolTable` with scope chains and a workspace layer, `uncertain` marking from damage analysis, and a validator that checks roles against an oracle (the language's own checker or compiler where one exists) | A2 | Tables for HDL, Jack, the Ohm grammar language and ES5 pass the checks in section 5 on one shared engine (today there are four prototype copies) |
 | A4b | Table proposer: probe the language's existing checker (rename a token, watch which diagnostics move) to draft a table for review | A4 | Drafts about two thirds of Jack's rows; says plainly where there is no checker to probe (ES5: one of 20 entries) |
 | A4c | The clean-sheet API: `defineLanguage(grammar, actions)` with tagged and function-form role actions normalising to the same model, a codemod from a table to inline roles, and documentation that leads with it | A4 | Each of HDL and Jack round-trips table to inline and back to an identical table; the escape-hatch form handles one ES5 case the declarative vocabulary does not |
-| A5 | Features on facts: definition, references, document highlight, rename, outline, hover, quick fixes from diagnostic suggestions, folding, selection ranges, semantic tokens | A3, A4, P3 | Golden-file tests with a cursor marker |
+| A5 | Features on facts: definition, references, document highlight, rename, outline, hover, quick fixes from diagnostic suggestions, folding, selection ranges, semantic tokens | A3, A4 | Golden-file tests with a cursor marker |
 | A6 | Completion part B (symbols): record the rule stack at the cursor failure (`Failure.context`, enabled by a `completionAt` match option); memo bypass in that mode | A4 | A spike shows the stack survives memoization |
 | A7 | Emitters: TextMate, Monarch, `language-configuration.json` | A1 | Generated Monarch matches the web-ide's hand-written highlighting for its six languages |
 | A8 | Adapters: `monaco` (providers in the page) and `lsp` (stdio, `vscode-languageserver`; offset to UTF-16 position conversion that handles `\r`, which Ohm's column does not count) | A5 | One `Language` served over both with identical results |
 
 **Verified for A3.** Against the web-ide's HDL grammar, a prefix parse's rightmost failures at the cursor are the legal next tokens: after `PARTS:` they are `}`, `CLOCKED` and an identifier start; after `Nand(a=` they are `false`, `true` and an identifier start; after `IN a, ` they are `;` and an identifier start. The same holds with `{recover: true}` when an earlier error exists (the final recovered failure lists them). A partial word reports its failure at the start of the token (`CHI` at its first character), so completion filters by what was typed.
 
-**Critical path.** P1a, P2, P3 -> A2 -> A3 -> A4 -> A5 -> A8. A1, A6 and A7 branch off it.
+**Critical path.** The cursor -> A2 -> A3 -> A4 -> A5 -> A8. A1, A6 and A7 branch off it.
 
 **Risks.**
 
@@ -148,7 +101,7 @@ Written here so the dependency is visible; these are tracked in the web-ide repo
 | B5 | Symbol completion for HDL (part and pin names) | A6, B3 |
 | B6 | VS Code extension: generated TextMate and language configuration replace the hand-written files; diagnostics through the shared service | A7, A8 |
 | B7 | Jack and VM: nested scopes, per-function labels, cross-file classes | A4, B4 |
-| B8 | Editing performance: one `Matcher` per document, debounce and cancellation, stale-while-revalidate for large files | P1a |
+| B8 | Editing performance: one `Matcher` per document, debounce and cancellation, stale-while-revalidate for large files | none |
 
 Constraints that carry over from that repository: formatting, linting, type checks and tests only through its `npm run` and `npm test` scripts; user-facing text through Lingui macros; `simulator` returns `Result<T, E>`. B6 and B7 should wait until B2 and B3 show the vocabulary holds for HDL and ASM.
 
@@ -187,7 +140,7 @@ What the author still has to supply:
 
 1. **The table.** It cannot be inferred. Grammar-only inference gave 15 false "undefined" diagnostics on a valid HDL chip, and on ES5 guessed 3 of 13 roles right, found 0 of 8 scopes, and produced 802 false "undefined" out of 1,126 references. Name heuristics mislabel `compoundIdentifier` (Jack) and `caseName` (Ohm).
 2. **Recovery points in the grammar.** They are a grammar change, constrained by the arities that existing positional actions fix (ES5 needed a wrapper rule for `Program`; adding them to the real Ohm meta-grammar breaks `buildGrammar`), and a join must guard the next construct's head or recovery swallows it.
-3. **Operations that must tolerate `undefined`** if they run on recovered trees (P2's caveat).
+3. **Operations that must tolerate `undefined`** if they run on recovered trees. A correction node yields `undefined` unless an operation opts into `corrections: 'throw'`, and in the ES5 example `hoistDeclarations` throws on a recovered tree while `toES5` prints "undefined". The role table survives because it runs none of the author's operations.
 
 ### Two ways in: an on-ramp and a destination
 
@@ -248,7 +201,6 @@ A recovering match took 3.0 s of a 3.2 s analysis on 24 KB of ES5. Large files n
 
 - For an existing language, roles cannot be edited into its actions without migrating it, so a table beside them (0 edits) is the way in. The engine walks the syntax tree for the table form and does not run the author's operations. Roles written in the action block (the clean-sheet API) normalise to the same model, and are the proposed destination.
 - A flat scope with one definition per symbol is not enough, and neither is inference from rule names.
-- "No `_correction` action needed" holds only for operations that tolerate `undefined`.
 - Typed member lookup is expressible in the table, not an author hook.
 
 ## 6. Decisions
