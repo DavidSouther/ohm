@@ -280,24 +280,108 @@ test('Matcher#match and Matcher#trace take the recover option', t => {
   t.true(m.trace(undefined, RECOVER).succeeded);
 });
 
-test('a matcher with a stale or plain memo table refuses to recover', t => {
+// What a match reports, for comparing a reused Matcher with a fresh match.
+function outcomeOf(result) {
+  return {
+    succeeded: result.succeeded(),
+    recovered: result
+      .getRecoveredFailures()
+      .map(f => [f.position, f.interval.startIdx, f.interval.endIdx, f.shortMessage]),
+    failure: result.failed()
+      ? [result.getRightmostFailurePosition(), result.shortMessage]
+      : null,
+  };
+}
+
+test('a matcher can recover after a plain match, after an edit, and repeatedly', t => {
   const g = stmtsGrammar;
 
-  const stale = g.matcher();
-  stale.setInput('{ a; }');
-  stale.match(undefined, RECOVER);
-  stale.replaceInputRange(2, 3, 'b b');
-  t.throws(() => stale.match(undefined, RECOVER), {message: /recover/});
+  const edited = g.matcher();
+  edited.setInput('{ a; }');
+  t.is(edited.match(undefined, RECOVER).getRecoveredFailures().length, 0);
+  edited.replaceInputRange(2, 3, 'b b');
+  t.deepEqual(
+    outcomeOf(edited.match(undefined, RECOVER)),
+    outcomeOf(g.match('{ b b; }', undefined, RECOVER))
+  );
+  t.is(edited.match(undefined, RECOVER).getRecoveredFailures().length, 1);
 
   const plain = g.matcher();
   plain.setInput('{ a b; }');
-  plain.match();
-  t.throws(() => plain.match(undefined, RECOVER), {message: /recover/});
+  t.true(plain.match().failed());
+  t.deepEqual(
+    outcomeOf(plain.match(undefined, RECOVER)),
+    outcomeOf(g.match('{ a b; }', undefined, RECOVER))
+  );
+
+  // A plain match after recovering still reports the plain result.
+  t.true(plain.match().failed());
+  t.is(plain.match().getRecoveredFailures().length, 0);
 
   const again = g.matcher();
   again.setInput('{ a b; }');
   t.is(again.match(undefined, RECOVER).getRecoveredFailures().length, 1);
   t.is(again.match(undefined, RECOVER).getRecoveredFailures().length, 1);
+});
+
+// Any interleaving of edits, plain matches and recovering matches on one Matcher gives the same
+// results as matching the current input with a fresh Matcher.
+test('a reused matcher matches like a fresh one over random edits', t => {
+  const g = stmtsGrammar;
+  const alphabet = ' {};ab\n{}';
+  let seed = 20240607;
+  const random = n => {
+    seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
+    return seed % n;
+  };
+
+  for (const start of ['{ a; b; }', '{ ab; a b; }', '{ a;\n b; }']) {
+    for (let run = 0; run < 400; run++) {
+      const m = g.matcher();
+      let text = start;
+      m.setInput(text);
+      for (let step = 0; step < 5; step++) {
+        const from = random(text.length + 1);
+        const to = Math.min(text.length, from + random(3));
+        const insert = random(4) === 0 ? '' : alphabet[random(alphabet.length)];
+        m.replaceInputRange(from, to, insert);
+        text = text.slice(0, from) + insert + text.slice(to);
+
+        const recover = random(2) === 0;
+        const options = recover ? RECOVER : undefined;
+        const reused = outcomeOf(m.match(undefined, options));
+        const fresh = outcomeOf(g.match(text, undefined, options));
+        if (JSON.stringify(reused) !== JSON.stringify(fresh)) {
+          t.deepEqual(
+            reused,
+            fresh,
+            `${recover ? 'recovering' : 'plain'} match of ${JSON.stringify(text)}`
+          );
+          return;
+        }
+      }
+    }
+  }
+  t.pass();
+});
+
+// A grammar that does not support incremental parsing still cannot match incrementally
+// without recovery, but recovery starts from scratch and so can follow an edit.
+test('recovery after an edit works in a grammar without incremental parsing', t => {
+  const g = ohm.grammar(
+    'G <: IndentationSensitive { Start = Item* ! end  Item = letter+ ! ";" }',
+    {
+      IndentationSensitive: ohm.ExperimentalIndentationSensitive,
+    }
+  );
+  const m = g.matcher();
+  m.setInput('a; b;');
+  t.true(m.match().succeeded());
+  m.replaceInputRange(2, 2, '12');
+  t.throws(() => m.match(), {message: /incremental/});
+  const edited = m.match(undefined, RECOVER);
+  t.deepEqual(outcomeOf(edited), outcomeOf(g.match('a;12 b;', undefined, RECOVER)));
+  t.is(edited.getRecoveredFailures().length, 1);
 });
 
 // --------------------------------------------------------------------

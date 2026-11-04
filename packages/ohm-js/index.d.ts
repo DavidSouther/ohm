@@ -135,9 +135,6 @@ export interface MatchOptions {
    * When true, a match that fails is retried with recovery at `B ! C`
    * recovery points, and recovered input appears as `_correction` nodes. Default
    * false. Without it, `B ! C` matches exactly as the sequence `B C`.
-   * A Matcher throws if recovery is requested after a match without recovery,
-   * or after its input changes following an earlier match. Use a fresh Matcher,
-   * Grammar#match, or Grammar#trace for recovery in those cases.
    */
   recover?: boolean;
 
