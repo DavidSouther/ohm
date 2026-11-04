@@ -164,8 +164,9 @@ test('syntax: `!` is looser than `*`, `&` and `~`, and tighter than sequence', t
 });
 
 function withoutAbsence(tree) {
-  if (Array.isArray(tree))
-    { return tree.filter(x => !Array.isArray(x) || x.length).map(withoutAbsence); }
+  if (Array.isArray(tree)) {
+    return tree.filter(x => !Array.isArray(x) || x.length).map(withoutAbsence);
+  }
   if (tree && tree.children) return {...tree, children: withoutAbsence(tree.children)};
   return tree;
 }
@@ -479,9 +480,9 @@ test('`B ! &C` stops before the synchronizer and recovers the same mistakes', t 
   t.deepEqual(run(LOOKAHEAD, BROKEN, RECOVER).recovered, EXPECTED_RECOVERIES);
 });
 
-test('an operation without a `_correction` action throws on a recovered node', t => {
+test('an operation without a `_correction` action skips a recovered node by default', t => {
   const g = ohm.grammar(FALLIBLE);
-  const s = g.createSemantics().addOperation('count', {
+  const actions = {
     Chip(_c, _n, _o, parts, _cl) {
       return parts.children.reduce((sum, p) => sum + p.count(), 0);
     },
@@ -491,7 +492,17 @@ test('an operation without a `_correction` action throws on a recovered node', t
     PartBody(_name, _open, _arg, _close) {
       return 1;
     },
+  };
+
+  // By default a correction node yields `undefined`.
+  const lenient = g.createSemantics().addOperation('count', actions);
+  t.is(lenient(g.match(VALID, undefined, RECOVER)).count(), 2);
+  t.notThrows(() => lenient(g.match(BROKEN, undefined, RECOVER)).count());
+
+  // `corrections: 'throw'` makes it an error.
+  const strict = g.createSemantics().addOperation('count', actions, {corrections: 'throw'});
+  t.is(strict(g.match(VALID, undefined, RECOVER)).count(), 2);
+  t.throws(() => strict(g.match(BROKEN, undefined, RECOVER)).count(), {
+    message: /_correction/,
   });
-  t.is(s(g.match(VALID, undefined, RECOVER)).count(), 2);
-  t.throws(() => s(g.match(BROKEN, undefined, RECOVER)).count(), {message: /_correction/});
 });

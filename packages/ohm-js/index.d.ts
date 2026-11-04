@@ -337,15 +337,15 @@ export interface FailedMatchResult extends MatchResult {
 export interface OperationOptions {
   /**
    * What the operation or attribute does at a `_correction` node, which holds input that recovery
-   * skipped. It only fills in `_correction`: an explicit `_correction` action always wins.
+   * skipped. A `_correction` action, if the action dictionary defines one, always wins.
    *
-   * - `'throw'` (the default): reaching a correction node is an error.
-   * - `'skip'`: a correction node yields `undefined`. The operation must tolerate `undefined` in
-   *   the results of its children; use Node#isCorrection to filter them.
+   * - `'skip'` (the default): a correction node yields `undefined`. The operation must tolerate
+   *   `undefined` in the results of its children; use Node#isCorrection to filter them.
+   * - `'throw'`: reaching a correction node is an error.
    * - a function: a zero-arity action, as if the action dictionary defined `_correction`.
    *
-   * `'throw'` is refused by `extendOperation` and `extendAttribute`, which cannot undo an
-   * inherited policy; define a `_correction` action that throws instead.
+   * An extension inherits the policy of the operation it extends, and this option replaces it.
+   * Without recovery there are no correction nodes, so the policy never applies.
    */
   corrections?: 'throw' | 'skip' | ((this: Node) => unknown);
 }

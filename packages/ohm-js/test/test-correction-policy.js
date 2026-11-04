@@ -1,7 +1,8 @@
 /**
  * The `corrections` option of `addOperation`, `addAttribute`, `extendOperation` and
- * `extendAttribute`, and `Wrapper#isCorrection`. test-fallible-acceptance.js pins the default:
- * an operation with no `_correction` action throws on a recovered node.
+ * `extendAttribute`, and `Wrapper#isCorrection`. By default a correction node yields `undefined`;
+ * `corrections: 'throw'` makes it an error. test-fallible-acceptance.js covers the user-facing
+ * behavior on a larger grammar.
  */
 
 import test from 'ava';
@@ -78,52 +79,54 @@ test('isCorrection is true only on correction nodes', t => {
   t.true(found.length > 1);
 });
 
-test("an operation throws on a correction node by default, with 'throw', and for attributes", t => {
-  const byDefault = grammar.createSemantics().addOperation('count', terminals);
-  t.throws(() => byDefault(broken()).count(), {message: /_correction/});
-
-  const explicit = grammar
-    .createSemantics()
-    .addOperation('count', terminals, {corrections: 'throw'});
-  t.throws(() => explicit(broken()).count(), {message: /_correction/});
-
-  const emptyOptions = grammar.createSemantics().addOperation('count', terminals, {});
-  t.throws(() => emptyOptions(broken()).count(), {message: /_correction/});
+test('a correction node yields undefined by default, and with {} or "skip"', t => {
+  const fragments = {
+    Start(statements) {
+      return statements.children.map(statement => statement.fragments());
+    },
+    Stmt(letters, correction, _semi) {
+      return [letters.sourceString, correction.fragments()];
+    },
+    _iter(...children) {
+      return children.map(child => child.fragments());
+    },
+  };
+  for (const options of [undefined, {}, {corrections: 'skip'}]) {
+    const s = grammar.createSemantics().addOperation('fragments', fragments, options);
+    // The first correction slot holds the skipped input; the second is an empty optional.
+    t.deepEqual(s(broken()).fragments(), [
+      ['abc', undefined],
+      ['def', []],
+    ]);
+  }
 
   const attribute = grammar.createSemantics().addAttribute('count', terminalsAttribute);
-  t.throws(() => attribute(broken()).count, {message: /_correction/});
-
-  // Without a correction there is nothing to throw about.
-  t.is(byDefault(grammar.match(CLEAN)).count(), TERMINALS);
+  t.is(attribute(broken()).count, TERMINALS);
 });
 
-test("corrections: 'skip' yields undefined for a correction node", t => {
-  const s = grammar.createSemantics().addOperation(
-    'fragments',
-    {
-      Start(statements) {
-        return statements.children.map(statement => statement.fragments());
-      },
-      Stmt(letters, correction, _semi) {
-        return [letters.sourceString, correction.fragments()];
-      },
-      _iter(...children) {
-        return children.map(child => child.fragments());
-      },
-    },
-    {corrections: 'skip'}
-  );
-  // The first correction slot holds the skipped input; the second is an empty optional.
-  t.deepEqual(s(broken()).fragments(), [
-    ['abc', undefined],
-    ['def', []],
-  ]);
-});
-
-test("corrections: 'skip' lets a traversal that knows nothing about recovery finish", t => {
-  const s = grammar.createSemantics().addOperation('count', terminals, {corrections: 'skip'});
+test('a traversal that knows nothing about recovery finishes a recovered tree', t => {
+  const s = grammar.createSemantics().addOperation('count', terminals);
   t.is(s(broken()).count(), TERMINALS);
   t.is(s(grammar.match(CLEAN)).count(), TERMINALS);
+});
+
+test("corrections: 'throw' makes a correction node an error, for operations and attributes", t => {
+  const operation = grammar
+    .createSemantics()
+    .addOperation('count', terminals, {corrections: 'throw'});
+  t.throws(() => operation(broken()).count(), {
+    message: /Missing semantic action for _correction/,
+  });
+
+  const attribute = grammar
+    .createSemantics()
+    .addAttribute('count', terminalsAttribute, {corrections: 'throw'});
+  t.throws(() => attribute(broken()).count, {
+    message: /Missing semantic action for _correction/,
+  });
+
+  // Without a correction there is nothing to throw about.
+  t.is(operation(grammar.match(CLEAN)).count(), TERMINALS);
 });
 
 test('a function is a zero-arity action for correction nodes', t => {
@@ -145,7 +148,7 @@ test('a function is a zero-arity action for correction nodes', t => {
 });
 
 test('an explicit `_correction` action wins over the option', t => {
-  for (const corrections of ['skip', () => 'from the option']) {
+  for (const corrections of ['throw', 'skip', () => 'from the option']) {
     const s = grammar.createSemantics().addOperation(
       'tag',
       {
@@ -168,7 +171,7 @@ test('an explicit `_correction` action wins over the option', t => {
   }
 });
 
-test('an attribute with a correction policy memoizes its result', t => {
+test('an attribute memoizes what a correction yields', t => {
   let calls = 0;
   const s = grammar.createSemantics().addAttribute(
     'tagged',
@@ -194,45 +197,64 @@ test('an attribute with a correction policy memoizes its result', t => {
   t.deepEqual(root.tagged, ['fix', []]);
   t.deepEqual(root.tagged, ['fix', []]);
   t.is(calls, 1);
-});
 
-test('extendOperation and extendAttribute take the option, and extensions inherit it', t => {
-  const attributeActions = {
-    _nonterminal(...children) {
-      return children.reduce((sum, child) => sum + (child.size ?? 0), 0);
+  // The default memoizes `undefined` as well.
+  let reads = 0;
+  const skipping = grammar.createSemantics().addAttribute('read', {
+    Stmt(_letters, correction, _semi) {
+      reads++;
+      return correction.read;
     },
     _iter(...children) {
-      return children.reduce((sum, child) => sum + (child.size ?? 0), 0);
+      return children.map(child => child.read);
     },
-    _terminal() {
-      return 1;
+    Start(statements) {
+      return statements.children.map(statement => statement.read);
     },
-  };
+  });
+  const skipped = skipping(broken());
+  t.deepEqual(skipped.read, [undefined, []]);
+  t.deepEqual(skipped.read, [undefined, []]);
+  t.is(reads, 2);
+});
+
+test('extensions inherit the policy, and an option replaces it', t => {
   const base = grammar
     .createSemantics()
-    .addOperation('count', terminals)
-    .addAttribute('size', attributeActions);
+    .addOperation('count', terminals, {corrections: 'throw'});
 
-  // Extending can set the policy without changing the base.
-  const extended = grammar
+  // Inherited: still strict, and the base is unaffected by extending it.
+  const inherited = grammar.extendSemantics(base).extendOperation('count', {
+    _terminal() {
+      return 2;
+    },
+  });
+  t.throws(() => inherited(broken()).count(), {message: /_correction/});
+
+  // Replaced, in both directions.
+  const relaxed = grammar
     .extendSemantics(base)
-    .extendOperation('count', {}, {corrections: 'skip'})
-    .extendAttribute('size', {}, {corrections: 'skip'});
+    .extendOperation('count', {}, {corrections: 'skip'});
+  t.is(relaxed(broken()).count(), TERMINALS);
   t.throws(() => base(broken()).count(), {message: /_correction/});
-  t.throws(() => base(broken()).size, {message: /_correction/});
-  t.is(extended(broken()).count(), TERMINALS);
-  t.is(extended(broken()).size, TERMINALS);
+
+  const lenient = grammar.createSemantics().addOperation('count', terminals);
+  const strict = grammar
+    .extendSemantics(lenient)
+    .extendOperation('count', {}, {corrections: 'throw'});
+  t.throws(() => strict(broken()).count(), {message: /_correction/});
+  t.is(lenient(broken()).count(), TERMINALS);
 
   // A later extension keeps the policy it inherits, whatever else it overrides.
-  const again = grammar.extendSemantics(extended).extendOperation('count', {
+  const again = grammar.extendSemantics(relaxed).extendOperation('count', {
     _terminal() {
       return 2;
     },
   });
   t.is(again(broken()).count(), 2 * TERMINALS);
 
-  // An extension may also replace the policy.
-  const replaced = grammar.extendSemantics(extended).extendOperation(
+  // A function option adds an action, which wins over a policy, inherited or not.
+  const handled = grammar.extendSemantics(base).extendOperation(
     'count',
     {},
     {
@@ -241,21 +263,66 @@ test('extendOperation and extendAttribute take the option, and extensions inheri
       },
     }
   );
-  t.is(replaced(broken()).count(), TERMINALS + 100);
+  t.is(handled(broken()).count(), TERMINALS + 100);
+  const stillHandled = grammar
+    .extendSemantics(handled)
+    .extendOperation('count', {}, {corrections: 'throw'});
+  t.is(stillHandled(broken()).count(), TERMINALS + 100);
+});
 
-  // 'throw' cannot undo an inherited policy, so it is refused rather than ignored.
-  t.throws(
-    () =>
-      grammar.extendSemantics(extended).extendOperation('count', {}, {corrections: 'throw'}),
-    {message: /Cannot extend operation 'count' with corrections: 'throw'/}
+test('extendAttribute takes the option too', t => {
+  const base = grammar.createSemantics().addAttribute('count', terminalsAttribute);
+  const strict = grammar
+    .extendSemantics(base)
+    .extendAttribute('count', {}, {corrections: 'throw'});
+  t.throws(() => strict(broken()).count, {message: /_correction/});
+  t.is(base(broken()).count, TERMINALS);
+});
+
+// Recipes are source text for a function, as in test-recipes.js.
+const roundTrip = semantics => ohm.makeRecipe(eval(semantics.toRecipe()));
+
+test('a non-default policy survives a recipe round trip', t => {
+  const strict = grammar
+    .createSemantics()
+    .addOperation('count', terminals, {corrections: 'throw'});
+  const copy = roundTrip(strict);
+  t.throws(() => copy(copy.getGrammar().match(BROKEN, undefined, RECOVER)).count(), {
+    message: /_correction/,
+  });
+
+  const lenient = grammar.createSemantics().addOperation('count', terminals);
+  const lenientCopy = roundTrip(lenient);
+  t.is(
+    lenientCopy(lenientCopy.getGrammar().match(BROKEN, undefined, RECOVER)).count(),
+    TERMINALS
+  );
+
+  // Only the options that differ from the inherited policy are written.
+  t.false(lenient.toRecipe().includes('corrections'));
+  t.true(strict.toRecipe().includes('"corrections": "throw"'));
+
+  const handled = grammar.createSemantics().addOperation('count', terminals, {
+    corrections() {
+      return 100;
+    },
+  });
+  const handledCopy = roundTrip(handled);
+  t.is(
+    handledCopy(handledCopy.getGrammar().match(BROKEN, undefined, RECOVER)).count(),
+    TERMINALS + 100
   );
 });
 
-test('a correction policy survives a recipe round trip', t => {
-  const s = grammar.createSemantics().addOperation('count', terminals, {corrections: 'skip'});
-  // Recipes are source text for a function, as in test-recipes.js.
-  const copy = ohm.makeRecipe(eval(s.toRecipe()));
-  t.is(copy(copy.getGrammar().match(BROKEN, undefined, RECOVER)).count(), TERMINALS);
+test('an extension keeps its policy through a recipe round trip', t => {
+  const base = grammar.createSemantics().addOperation('count', terminals);
+  const extended = grammar
+    .extendSemantics(base)
+    .extendOperation('count', {}, {corrections: 'throw'});
+  const copy = roundTrip(extended);
+  t.throws(() => copy(copy.getGrammar().match(BROKEN, undefined, RECOVER)).count(), {
+    message: /_correction/,
+  });
 });
 
 test('invalid options are refused', t => {

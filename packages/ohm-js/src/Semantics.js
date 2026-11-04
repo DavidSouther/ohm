@@ -276,7 +276,7 @@ export class Semantics {
     ['Operation', 'Attribute'].forEach(type => {
       const semanticOperations = this[type.toLowerCase() + 's'];
       Object.keys(semanticOperations).forEach(name => {
-        const {actionDict, formals, builtInDefault} = semanticOperations[name];
+        const {actionDict, formals, builtInDefault, corrections} = semanticOperations[name];
 
         let signature = name;
         if (formals.length > 0) {
@@ -284,8 +284,10 @@ export class Semantics {
         }
 
         let method;
+        let inheritedCorrections = 'skip';
         if (hasSuperSemantics(this) && this.super[type.toLowerCase() + 's'][name]) {
           method = 'extend' + type;
+          inheritedCorrections = this.super[type.toLowerCase() + 's'][name].corrections;
         } else {
           method = 'add' + type;
         }
@@ -303,7 +305,12 @@ export class Semantics {
             srcArray.push('\n      ' + JSON.stringify(actionName) + ': ' + source);
           }
         });
-        str += srcArray.join(',') + '\n    })';
+        // A function option is already one of the actions; only a changed policy needs the option.
+        const options =
+          corrections === inheritedCorrections
+            ? ''
+            : ', {"corrections": ' + JSON.stringify(corrections) + '}';
+        str += srcArray.join(',') + '\n    }' + options + ')';
       });
     });
     str += ';\n  })';
@@ -346,12 +353,13 @@ export class Semantics {
     Object.keys(actionDict).forEach(name => {
       realActionDict[name] = actionDict[name];
     });
-    applyCorrectionPolicy(realActionDict, actionDict, checkedOptions, {type, name});
+    addCorrectionAction(realActionDict, actionDict, checkedOptions);
 
+    const corrections = policyOf(checkedOptions, 'skip');
     const entry =
       type === 'operation'
-        ? new Operation(name, formals, realActionDict, builtInDefault)
-        : new Attribute(name, realActionDict, builtInDefault);
+        ? new Operation(name, formals, realActionDict, builtInDefault, corrections)
+        : new Attribute(name, realActionDict, builtInDefault, corrections);
 
     // The following check is not strictly necessary (it will happen later anyway) but it's better
     // to catch errors early.
@@ -441,16 +449,13 @@ export class Semantics {
     Object.keys(actionDict).forEach(name => {
       newActionDict[name] = actionDict[name];
     });
-    applyCorrectionPolicy(newActionDict, actionDict, checkedOptions, {
-      type,
-      name,
-      extending: true,
-    });
+    addCorrectionAction(newActionDict, actionDict, checkedOptions);
+    const corrections = policyOf(checkedOptions, this[typePlural][name].corrections);
 
     this[typePlural][name] =
       type === 'operation'
-        ? new Operation(name, inheritedFormals, newActionDict)
-        : new Attribute(name, newActionDict);
+        ? new Operation(name, inheritedFormals, newActionDict, undefined, corrections)
+        : new Attribute(name, newActionDict, undefined, corrections);
 
     // The following check is not strictly necessary (it will happen later anyway) but it's better
     // to catch errors early.
@@ -483,17 +488,15 @@ export class Semantics {
 
 // ----------------- Correction policy -----------------
 
-// An operation reaches a `_correction` node only if it defines `_correction`; otherwise it throws
-// (see `Operation.execute`). The `corrections` option of `addOperation` and its siblings picks
-// what an operation does with recovered input without writing that action by hand:
-//   'throw'  the default. Reaching a correction node is an error.
-//   'skip'   a correction node yields `undefined`.
-//   fn       a zero-arity action, as if the dictionary defined `_correction`.
-// The option only fills in `_correction`, so an explicit `_correction` action always wins, and an
-// extended operation inherits the policy through its action dictionary like any other action.
-function skipCorrection() {
-  return undefined;
-}
+// A `_correction` node holds input that recovery skipped. An operation or attribute handles one
+// with its `_correction` action if it has one, and otherwise follows its `corrections` policy,
+// which the `corrections` option of `addOperation` and its siblings sets:
+//   'skip'   the default. A correction node yields `undefined`.
+//   'throw'  reaching a correction node is an error.
+//   fn       a zero-arity action, as if the action dictionary defined `_correction`.
+// So an explicit `_correction` action always wins. Extensions inherit the policy of the operation
+// they extend, and an option replaces it.
+// Recovery is opt-in, so without it there are no correction nodes and the policy never applies.
 
 function checkOptions(options, method) {
   if (options === undefined) {
@@ -527,23 +530,16 @@ function checkOptions(options, method) {
   return options;
 }
 
-// Fills in `_correction` in `actionDict` (an own property, so it overrides inherited actions)
-// from the `corrections` option. `explicit` is the dictionary the caller passed.
-function applyCorrectionPolicy(actionDict, explicit, {corrections}, {type, name, extending}) {
-  if (corrections === undefined || hasOwnProperty(explicit, '_correction')) {
-    return;
-  }
-  if (corrections === 'skip') {
-    actionDict._correction = skipCorrection;
-  } else if (typeof corrections === 'function') {
+// The policy that an `options.corrections` value sets, given the policy to keep when it sets none.
+function policyOf({corrections}, inherited) {
+  return corrections === 'throw' || corrections === 'skip' ? corrections : inherited;
+}
+
+// Adds the function form of the option to `actionDict` as its `_correction` action, unless the
+// caller supplied one. `explicit` is the dictionary the caller passed.
+function addCorrectionAction(actionDict, explicit, {corrections}) {
+  if (typeof corrections === 'function' && !hasOwnProperty(explicit, '_correction')) {
     actionDict._correction = corrections;
-  } else if (extending) {
-    // 'throw' on an extension would have to undo an inherited `_correction`. Silently keeping
-    // it would contradict the option, and a thrower cannot round trip through `toRecipe`.
-    throw new Error(
-      `Cannot extend ${type} '${name}' with corrections: 'throw'. ` +
-        'Define a `_correction` action that throws instead.'
-    );
   }
 }
 
@@ -706,11 +702,13 @@ Semantics.createSemantics = function (grammar, optSuperSemantics) {
 // `actionDict`. See `Operation.prototype.execute` for details of how a CST node's matching semantic
 // action is found.
 class Operation {
-  constructor(name, formals, actionDict, builtInDefault) {
+  constructor(name, formals, actionDict, builtInDefault, corrections = 'skip') {
     this.name = name;
     this.formals = formals;
     this.actionDict = actionDict;
     this.builtInDefault = builtInDefault;
+    // What to do at a `_correction` node that the action dictionary has no action for.
+    this.corrections = corrections;
   }
 
   checkActionDict(grammar) {
@@ -728,10 +726,13 @@ class Operation {
         return actionFn.apply(nodeWrapper, nodeWrapper._children());
       }
 
-      // `_nonterminal` and `_default` never receive a `_correction` node, so an operation
-      // must opt in to handling recovered input.
+      // `_nonterminal` and `_default` never receive a `_correction` node: it is handled by a
+      // `_correction` action above, or by the operation's `corrections` policy.
       if (nodeWrapper._node.isCorrection()) {
         globalActionStack.push([this, '_correction']);
+        if (this.corrections === 'skip') {
+          return undefined;
+        }
         throw errors.missingCorrectionAction(
           this.name,
           this.typeName,
@@ -763,8 +764,8 @@ Operation.prototype.typeName = 'operation';
 // Attributes are Operations whose results are memoized. This means that, for any given semantics,
 // the semantic action for a CST node will be invoked no more than once.
 class Attribute extends Operation {
-  constructor(name, actionDict, builtInDefault) {
-    super(name, [], actionDict, builtInDefault);
+  constructor(name, actionDict, builtInDefault, corrections) {
+    super(name, [], actionDict, builtInDefault, corrections);
   }
 
   execute(semantics, nodeWrapper) {
