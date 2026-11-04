@@ -31,13 +31,6 @@ export class Matcher {
     this._isMemoTableStale = false;
   }
 
-  // A recovering match always starts from an empty memo table: a fresh RecoveryContext has no
-  // attempts for previously memoized entries, so none of them could be reused. That makes it
-  // independent of earlier matches and of edits to the input, so a matcher may recover at any time.
-  _prepareForRecovery() {
-    this._resetMemoTable();
-  }
-
   _invalidateMemoEntries(invalidatedIdx, endPos) {
     this._memo.invalidate(invalidatedIdx, endPos);
   }

@@ -63,7 +63,9 @@ function runPass(matcher, startExpr, ctx, tracing) {
   a pass cap.
 */
 export function matchRecovering(matcher, startExpr, opts) {
-  matcher._prepareForRecovery();
+  // A fresh RecoveryContext has no attempts for previously memoized entries, so a recovering match
+  // starts from an empty memo table. That makes it independent of earlier matches and of edits.
+  matcher._resetMemoTable();
 
   // Nothing is reused within a single pass, and valid input needs only one. A "probe" is a first
   // pass without the reuse cache; if it fails, the match restarts with the cache enabled, which
