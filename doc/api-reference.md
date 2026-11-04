@@ -114,7 +114,7 @@ Edit the current input string, replacing the characters between `startIdx` and `
 
 Like [Grammar's `match` method](#Grammar.match), but operates incrementally.
 
-Recovery requires a Matcher that has not matched without recovery and whose input has not changed after an earlier match. Calling match with recovery on a matcher with stale recovery data will throw. Use a fresh Matcher or `g.match` for recovery after edits.
+A Matcher may match with recovery at any time, after any edit and after matches without recovery. A recovering match always starts from an empty memo table, so it takes as long as one on a fresh Matcher and gives the same result. Only matches without recovery reuse earlier work after an edit.
 
 <b><pre class="api">m.trace(optStartRule?: string, options?: object) &rarr; Trace</pre></b>
 

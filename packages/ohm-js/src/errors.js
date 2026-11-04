@@ -259,15 +259,6 @@ export function invalidFirstPass(value) {
   );
 }
 
-export function matcherCannotRecover(reason) {
-  return createError(
-    `This matcher cannot recover: ${reason}. ` +
-      'Recovery needs a matcher whose memo table comes from recovering matches on ' +
-      'the current input; use grammar.match(input, startRule, {recover: true}) ' +
-      'or a new matcher.'
-  );
-}
-
 // ----------------- Kleene operators -----------------
 
 export function kleeneExprHasNullableOperand(kleeneExpr, applicationStack) {

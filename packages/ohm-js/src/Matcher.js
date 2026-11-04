@@ -1,8 +1,4 @@
-import {
-  grammarDoesNotSupportIncrementalParsing,
-  invalidFirstPass,
-  matcherCannotRecover,
-} from './errors.js';
+import {grammarDoesNotSupportIncrementalParsing, invalidFirstPass} from './errors.js';
 import {MatchState} from './MatchState.js';
 import {MemoTable} from './MemoTable.js';
 import {memoTableView} from './MemoTableView.js';
@@ -22,9 +18,6 @@ export class Matcher {
     this._memo = new MemoTable();
     this._input = '';
     this._isMemoTableStale = false;
-    // 'plain' or 'recover'. Plain matches memoize without recording recovery
-    // attempts, so their entries are unusable for recovery.
-    this._memoMode = undefined;
   }
 
   // The memo table as a read-only array of PosInfo-shaped snapshots, one per input position, for
@@ -38,16 +31,11 @@ export class Matcher {
     this._isMemoTableStale = false;
   }
 
+  // A recovering match always starts from an empty memo table: a fresh RecoveryContext has no
+  // attempts for previously memoized entries, so none of them could be reused. That makes it
+  // independent of earlier matches and of edits to the input, so a matcher may recover at any time.
   _prepareForRecovery() {
-    if (this._isMemoTableStale) {
-      throw matcherCannotRecover('its input changed after an earlier match');
-    }
-    if (this._memoMode === 'plain') {
-      throw matcherCannotRecover('its memo table comes from a match without recovery');
-    }
-    // A fresh RecoveryContext has no attempts for previously memoized entries.
     this._resetMemoTable();
-    this._memoMode = 'recover';
   }
 
   _invalidateMemoEntries(invalidatedIdx, endPos) {
@@ -138,9 +126,6 @@ export class Matcher {
       throw grammarDoesNotSupportIncrementalParsing(this.grammar);
     }
 
-    if (!opts.recovery) {
-      this._memoMode = 'plain';
-    }
     const state = new MatchState(
       this,
       startExpr,
