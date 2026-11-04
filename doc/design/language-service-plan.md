@@ -1,18 +1,14 @@
-# Language service plan
+# Language service: plan and evidence
 
-Status: proposal, revised after prototyping on four languages (section 5). Branch base: `feat/fallible`.
+Status: proposal, revised after prototyping on four languages and a reference engine (section 5). Branch base: `feat/fallible`.
+
+The design (the role model, behavior on incomplete input, the API, and worked examples on the Ohm docs' arithmetic language and on HDL) is in [language-service.md](./language-service.md). This document is the plan to build it: the prerequisite in `ohm-js`, the deliverables of the two tracks, future work, the evidence behind the design, and the open decisions.
 
 ## Goal
 
-A language author supplies an Ohm grammar and semantic actions. A language service comes from those. A language that already has actions gets one without editing them; a new grammar, or one whose author chooses to migrate, gets a clean-sheet API that is the better place to live:
+A language author supplies an Ohm grammar, roles (which positions define and refer to names, and where scopes begin), and optionally semantic actions. An editor-neutral language service comes from those, with offsets in and plain data out: syntax diagnostics with recovery, completion, outline, go to definition, references, rename, and generic undefined and duplicate-name diagnostics. A Monaco adapter runs it in the page; an LSP adapter serves it to other editors. A language that already has actions gets a service without editing them; a new grammar gets the clean-sheet declaration.
 
-1. **From the grammar alone:** syntax diagnostics with recovery, keyword and punctuation completion, tokens, folding, selection ranges, and generated TextMate, Monarch and `language-configuration.json` files.
-2. **From roles** (`def`, `ref`, `scope`, ...), written either in a table kept beside the actions (nothing in the actions is edited) or in the action block itself through the clean-sheet API; both forms normalise to the same model: outline, go to definition, references, rename, symbol completion, hover, and generic undefined and duplicate-name diagnostics.
-3. **Everything else** (types, formatting, language-specific rules) stays optional author code.
-
-The service is an editor-neutral library: offsets in, plain data out. A Monaco adapter runs it in the page; an LSP adapter serves it to other editors.
-
-This plan covers the work needed to get there, in four parts: one small prerequisite in `ohm-js`, the language-service track in this repository, the downstream web-ide track, and future work.
+This plan has four parts: one small prerequisite in `ohm-js`, the language-service track in this repository, the downstream web-ide track, and future work.
 
 ## 1. Prerequisite in `ohm-js`
 
@@ -67,13 +63,13 @@ New packages follow `packages/semantics` (ESM TypeScript, `tsc`, `ava`) in this 
 |---|---|---|---|
 | A0 | Scaffolding for the three packages, CI wiring, a docs page | none | The packages build and test empty |
 | A1 | `introspect(grammar)`: keywords, punctuation, token rules by naming convention (overridable), bracket pairs, foldable rules. Built in the package by walking `grammar.rules`; a stable `grammar.describe()` in `ohm-js` only if the walk proves brittle | none | The model for a real grammar (web-ide HDL) matches a hand-written expectation |
-| A2 | Document analysis: one `Matcher` per document, always recovering, token list, `pathAt` queries, syntax diagnostics, and the last good analysis kept when a parse yields no tree (truncated or unclosed input gives zero facts in every prototype) | the cursor | An edit sequence equals a fresh analysis (property test); a truncated file keeps the previous outline |
+| A2 | Document analysis: one `Matcher` per document, always recovering, token list, `pathAt` queries, syntax diagnostics, and the last good analysis kept (marked `stale`) when a parse yields no tree (truncated or unclosed input gives no symbols in every prototype) | the cursor | An edit sequence equals a fresh analysis (property test); a truncated file keeps the previous outline |
 | A3 | Completion part A: expected string terminals at the cursor from a prefix parse, partial-token filtering, replace range | A2 | Reproduces the verified cases below |
-| A4 | The role model and its engine: the vocabulary in section 5, an engine that walks the concrete syntax tree for table-form roles (it runs none of the author's operations), a `SymbolTable` with scope chains and a workspace layer, `uncertain` marking from damage analysis, and a validator that checks roles against an oracle (the language's own checker or compiler where one exists) | A2 | Tables for HDL, Jack, the Ohm grammar language and ES5 pass the checks in section 5 on one shared engine (today there are four prototype copies) |
-| A4b | Table proposer: probe the language's existing checker (rename a token, watch which diagnostics move) to draft a table for review | A4 | Drafts about two thirds of Jack's rows; says plainly where there is no checker to probe (ES5: one of 20 entries) |
-| A4c | The clean-sheet API: `defineLanguage(grammar, actions)` with tagged and function-form role actions normalising to the same model, a codemod from a table to inline roles, definition-time checks against the grammar, containment of failing function-form actions, and documentation that leads with it | A4 | Jack round-trips table to inline and back to an identical table (shown in the prototype); HDL, the Ohm grammar language and ES5 do the same; the function form handles one ES5 case the declarative vocabulary does not |
+| A4 | The role model and its engine: the role model of the [design](./language-service.md#3-the-role-model) with its [vocabulary tail](./language-service.md#appendix-the-vocabulary-tail), an engine that walks the concrete syntax tree (it runs none of the author's operations), a symbol table with scope chains and a workspace layer, `uncertain` marking from damage analysis, and a validator that checks roles against an oracle (the language's own checker or compiler where one exists) | A2 | Roles for HDL, Jack, the Ohm grammar language and ES5 pass the checks in section 5 on one shared engine (today the reference engine runs the toy language and HDL, and separate prototypes run the rest) |
+| A4b | Role proposer: probe the language's existing checker (rename a token, watch which diagnostics move) to draft roles for review | A4 | Drafts about two thirds of Jack's rows; says plainly where there is no checker to probe (ES5: one of 20 entries) |
+| A4c | The clean-sheet API: `defineLanguage(grammar, spec)` (the reference engine's `roles:` spec) and roles written in the action block, normalising to the same table, a codemod from a table to inline roles, definition-time checks against the grammar, containment of failing function-form actions, and documentation that leads with it | A4 | Jack round-trips table to inline and back to an identical table (shown in the prototype); HDL, the Ohm grammar language and ES5 do the same; the function form handles one ES5 case the declarative vocabulary does not |
 | A4d | A post-resolution `check` hook: author code that receives resolved definitions and references, for checks roles cannot express (call arity and static-versus-instance calls in Jack) | A4 | Jack's call-arity and call-kind checks run through it and agree with the existing compiler's |
-| A5 | Features on facts: definition, references, document highlight, rename, outline, hover, quick fixes from diagnostic suggestions, folding, selection ranges, semantic tokens | A3, A4 | Golden-file tests with a cursor marker |
+| A5 | Features on the symbol table: definition, references, document highlight, rename, outline, hover, quick fixes from diagnostic suggestions, folding, selection ranges, semantic tokens | A3, A4 | Golden-file tests with a cursor marker |
 | A6 | Completion part B (symbols): record the rule stack at the cursor failure (`Failure.context`, enabled by a `completionAt` match option); memo bypass in that mode | A4 | A spike shows the stack survives memoization |
 | A7 | Emitters: TextMate, Monarch, `language-configuration.json` | A1 | Generated Monarch matches the web-ide's hand-written highlighting for its six languages |
 | A8 | Adapters: `monaco` (providers in the page) and `lsp` (stdio, `vscode-languageserver`; offset to UTF-16 position conversion that handles `\r`, which Ohm's column does not count) | A5 | One `Language` served over both with identical results |
@@ -113,11 +109,11 @@ Not scheduled; revisit after A5.
 | Item | Why later |
 |---|---|
 | True incremental recovery: keep recovery work (cache records, attempts, selected corrections) across edits and re-run only the affected region | Only large files need it. Fresh recovering parses cost about 1.1-1.5x a plain parse (70 ms for 5 KB, 415 ms for 27 KB, 1.4 s for 112 KB), while plain incremental edits are 30-50x cheaper, so the prize is real. The work needs re-keying position-dependent cache state and is uncertain. Start with a spike; stop if one week does not reach 5x on the 27 KB case with no mismatches against a fresh match |
-| A v18 (wasm) adapter | The facts vocabulary is runtime-independent; only the adapter differs. A faster base engine also changes the previous item's calculus, since base parse cost dominates |
+| A v18 (wasm) adapter | The role vocabulary is runtime-independent; only the adapter differs. A faster base engine also changes the previous item's calculus, since base parse cost dominates |
 | Formatting as an optional operation | Needs a pretty-printer per language |
 | Types, signature help, inlay hints on top of the symbol table | Author-written analysis; no shared mechanism yet |
-| Generic recovery placeholders | Languages hand-write "null objects" for recovered slots today; the facts layer could replace most of it |
-| One action block for both facts and AST building | Two operations over one grammar is simpler for a first version |
+| Generic recovery placeholders | Languages hand-write "null objects" for recovered slots today; the role layer could replace most of it |
+| One action block for both roles and AST building | Two operations over one grammar is simpler for a first version |
 | Grammar-level role annotations | Needs a meta-grammar change; tagged actions give most of the value without it |
 | Cross-language navigation (for example Jack to generated VM) | Needs a source map between compilation stages |
 | Incremental text sync, semantic-token deltas, a partial tree on failed recovery | Optimizations once the basics work |
@@ -132,7 +128,7 @@ Existing action code edited: **0 lines in all four languages.** That is not the 
 
 | Language | Table | Engine | Validation |
 |---|---|---|---|
-| HDL | 7 entries | 218 lines | Outline, definition, references, rename and unresolved-name diagnostics on valid files and files with errors |
+| HDL | 7 entries (8 in the reference engine) | 218 lines | Outline, definition, references, rename and unresolved-name diagnostics on valid files and files with errors |
 | Jack | 18 entries, 3 namespaces, a declared identifier rule, one export-from-filename flag | 345 lines | Renamed each of 150 definitions and recompiled with the existing compiler: 150 of 150 identical output; 0 false diagnostics on 11 valid files |
 | Ohm grammar language | 11 entries (plus 1 in the recovery copy), 16 lines | n/a | 0 false positives on 19 real grammar groups; 40 of 40 and 17 of 17 renaming mutations caught; renames verified by recompiling with Ohm |
 | ES5 | 20 entries (8 scope, 12 def/ref; ES6 adds 8) | 221 lines | `underscore` (24 KB, 105 scopes): 270 of 270 occurrence groups identical to ESLint's scope analysis |
@@ -145,10 +141,10 @@ What the author still has to supply:
 
 ### Two ways in: an on-ramp and a destination
 
-The same role model can be written in two places, and the plan proposes to **encourage authors to move from the first to the second**.
+The same role model can be written in two places (the [design](./language-service.md#4-two-notations-one-model) describes both), and the plan proposes to **encourage authors to move from the first to the second**.
 
 - **On-ramp: a table beside the actions.** For a language that already has actions, or whose grammar the author does not own (the ES5 example, the Ohm meta-grammar), a table gives a service with 0 edits to the actions. Three notations (an object of builders, a line-oriented file, `//@` comments in the grammar) normalised to the identical table in the prototype, which asserted it.
-- **Destination: the clean-sheet API.** `defineLanguage(grammar, actions)` (the prototype's name; the name is open), where role actions sit in the action block: `ChipHead: def('chip', {child: 1})`, `Chip_closed: scope()`, and a function form carrying a static `role` tag for the cases that need logic. For HDL the whole symbol-level block was about fifteen lines, and the roles could be read without parsing a file, so capabilities and symbol-completion context are known statically.
+- **Destination: the clean-sheet API.** `defineLanguage` (the prototype's name; the name is open) with roles in the action block, where they sit beside the author's operations: `ChipHead: def('chip', {child: 1})`, `Chip_closed: scope()`, and a function form carrying a static `role` tag for the cases that need logic. For HDL the whole symbol-level block was about fifteen lines, and the roles could be read without parsing a file, so capabilities and symbol-completion context are known statically.
 
 Why the second is worth encouraging, and how far Jack bore each argument out:
 
@@ -157,43 +153,34 @@ Why the second is worth encouraging, and how far Jack bore each argument out:
 3. **Recovery designed in.** It holds for Jack because its grammar already guards `B ! C` and the roles key on the guarded part. A rule written with `!` has an extra correction child (arity 3 for `VarDec`, 4 for `SubroutineDec`), so roles sit on the inner guarded rules. A new grammar designs both together.
 4. **Newcomers start there.** Documentation and generated scaffolds lead with the clean-sheet API; the table is described as the way to bring an existing language along.
 
-What keeps the migration cheap: both forms are the same model, and the table-to-inline step is mechanical. A codemod turned Jack's table into 20 lines of source; evaluating them reproduced the identical table, and 25 random shuffles of entry order and option key order did too. The validator and the table proposer work on the model, not the notation. The inline `facts` block sits beside the author's existing attributes in one semantics with no name clash, so adopting it does not touch them. Moving a rule's roles *into* an existing attribute action is not mechanical, and the plan does not propose it.
+What keeps the migration cheap: both forms are the same model, and the table-to-inline step is mechanical. A codemod turned Jack's table into 20 lines of source; evaluating them reproduced the identical table, and 25 random shuffles of entry order and option key order did too. The validator and the table proposer work on the model, not the notation. The inline roles block sits beside the author's existing attributes in one semantics with no name clash, so adopting it does not touch them. Moving a rule's roles *into* an existing attribute action is not mechanical, and the plan does not propose it.
 
-What has and has not been shown. The inline form has been exercised on HDL (first prototype) and on Jack (in full): Jack's inline declaration gave identical results to its table on 33 inputs (66 of 66 analyses, for tagged and function form), a rename check of 150 of 150 definitions recompiled with the existing compiler, 0 false diagnostics on 11 valid files, and byte-identical output on the corruption scenarios. The `facts` operation also ran on the real Jack semantics with `corrections: 'throw'`, leaving the existing AST and compiler output unchanged on valid and recovered input. The Ohm grammar language and ES5 have only been run in table form.
+What has and has not been shown. The inline form has been exercised on HDL (first prototype) and on Jack (in full): Jack's inline declaration gave identical results to its table on 33 inputs (66 of 66 analyses, for tagged and function form), a rename check of 150 of 150 definitions recompiled with the existing compiler, 0 false diagnostics on 11 valid files, and byte-identical output on the corruption scenarios. The roles operation also ran on the real Jack semantics with `corrections: 'throw'`, leaving the existing AST and compiler output unchanged on valid and recovered input. The Ohm grammar language and ES5 have only been run in table form.
 
 Costs the Jack run found:
 
 - **The inline form is not shorter.** Jack's table is 21 non-blank lines; the inline declaration is 33 formatted (20 as generated). Authors have to know the child index of each name and that identifiers are declared; the arity adjustment Ohm requires is invisible to them.
-- **Function-form actions run, so recovery has to be handled by the framework.** Its own `_correction` handling takes precedence over the `corrections` policy, so `'skip'` and `'throw'` behave the same for the facts operation. A careless function-form action on a skipped header threw and lost the whole file, so the framework now contains such failures: it keeps the subtree's facts and reports `facts.actionFailed`, at the cost of that rule's own scope fact.
+- **Function-form actions run, so recovery has to be handled by the framework.** Its own `_correction` handling takes precedence over the `corrections` policy, so `'skip'` and `'throw'` behave the same for the roles operation. A careless function-form action on a skipped header threw and lost the whole file, so the framework now contains such failures: it keeps the subtree's symbols and reports `roles.actionFailed`, at the cost of that rule's own scope.
 
 ### The approaches
 
-- **A is the mechanism.** It kept the most facts near errors and held up on all four languages.
+- **A is the mechanism.** It kept the most symbols near errors and held up on all four languages.
 - **B is a proposer, not a mechanism.** On HDL it found definition versus reference for pins with no declaration (173 of 173 rename sets correct) and reused the existing builder's diagnostics. On Jack, 902 probes in 64 s proposed about two thirds of the table; on ES5, which has no checker, 1 of 20 entries. It is silently wrong when an action is refactored (interning a name dropped rename correctness to 0 of 46) and it patches private Ohm internals.
 - **C is dropped.** The AST rarely carries spans (HDL declarations and all of Jack's have none), it loses more near errors, and it cannot apply to the Ohm grammar language, since `ohm.grammar()` throws on a broken file and so yields no object.
 
-### The vocabulary the table needs
+### The vocabulary and behavior on recovered input
 
-HDL alone would have suggested `def`, `ref`, `scope`, member lookup and implicit definitions. The other three languages required, each shown necessary by removing it:
+The vocabulary the four languages required (each shown necessary by ablation) is the [appendix of the design](./language-service.md#appendix-the-vocabulary-tail); the behavior rules on recovered input are [section 5 of the design](./language-service.md#5-behavior-on-incomplete-input). Evidence for them:
 
-- scope chain with shadowing (rename correctness fell to 72 of 150 on Jack without it);
-- owner hoisting: a scope's own name (subroutine, class, function, rule) binds in the enclosing scope; and hoisting of `var` to the function;
-- definition kind taken from a keyword (`static` or `field`; `constructor`, `function` or `method`), and a declared type carried on a definition;
-- typed member lookup: `a.b` resolves through the declared type of `a`, or through the class when `a` names one (name-only lookup got 11 of 33 Jack method renames wrong);
-- ordered kind groups and namespaces (variable before class; duplicates per namespace);
-- implicit definitions (HDL pins; ES5 globals), and external or built-in registries (chips, OS classes, ES5 globals, Ohm's built-in rules);
-- explicit identifier rules, a search mode for identifiers under a slot, and stopping at rules that carry their own entries so nested expressions are not counted twice;
-- override and extend resolution, names derived from other names (Ohm case names), arity on definitions and arguments on references;
-- ES5 specifics shown necessary by ablation: conditional entries (`=` versus `+=`), properties grouped by name, weak definitions, opaque namespaces (labels), dynamic scope (`with`), `arguments`; temporal dead zone was tested only on a scratch grammar;
-- file level: export from the file name, and a placeholder symbol for a file that failed or lost its header;
-- workspace level: cross-file namespaces and a family rename with a collision check.
+- A statement that fails to match contributes no symbols. When only its join is missing, `B ! C` keeps the guarded part, so references survive (Jack: 30-35 of 35 references resolved, and every missed rename site lay inside a flagged lost span).
+- Marking unresolved names beside skipped input `uncertain` instead of reporting an error: Jack's damage analysis, derived from the grammar and the roles, gave 0 certain false positives.
+- A truncated file or unclosed construct has no tree, so every language needs a cache of the last good analysis. On ES5, typing one statement a key at a time (30 prefixes) gave a null root on 16 without recovery points and on 0 with five; the outline was correct 30 of 30 against 14 of 30.
 
-### Behavior on recovered input
+### Reference engine
 
-- A statement that fails to match contributes no facts. When only its join is missing, `B ! C` keeps the guarded part, so references survive (Jack: 30-35 of 35 references resolved, and every missed rename site lay inside a flagged lost span).
-- A lost declaration disappears from the outline. The rule that worked: **never report an unresolved name beside skipped input as an error; mark it `uncertain`.** Jack's damage analysis, derived from the grammar and the table, gave 0 certain false positives.
-- A truncated file or unclosed construct makes the match fail, so there are no facts. Every language needs a cache of the last good analysis. On ES5, typing one statement a key at a time (30 prefixes) gave a null root on 16 without recovery points and on 0 with five; the outline was correct 30 of 30 against 14 of 30.
-- Rename near skipped input should warn or refuse.
+To check that the design can be stated and run end to end, a reference engine implements it (288 lines, no dependencies, 90 assertions passing, against this fork at `feat/fallible`). It adds no operation to the author's semantics. The design's worked examples are its output: the Ohm docs' arithmetic grammar and `eval` byte for byte (recovery added by inheritance in four lines, variables and two role lines on top), and the web-ide's real HDL grammar with 8 role entries. Oracles: toy rename against evaluation (335 pairs, 229 accepted all value-preserving, 106 refused), HDL metamorphic rename (319 renames, 183 accepted all identical).
+
+It departs from the API sketch in three ways, which the design now states: a `start` option (a subgrammar inherits its parent's default start rule), `in: "@N"` also searches the nearest enclosing rule that has a ref at N (HDL wires sit under `Wires`, not `PartBody`), and extra read-only fields (`doc.links`, `doc.skipped`, `doc.tree`, `doc.symbolsText`). It does not include sequential visibility, symbol completion, reserved words, or the post-resolution `check` hook (A4d).
 
 ### Existing checkers
 
@@ -205,7 +192,7 @@ A recovering match took 3.0 s of a 3.2 s analysis on 24 KB of ES5. Large files n
 
 ### Corrections to earlier drafts of this plan
 
-- For an existing language, roles cannot be edited into its actions without migrating it, so a table beside them (0 edits) is the way in. The engine walks the syntax tree for the table form and does not run the author's operations. Roles written in the action block (the clean-sheet API) normalise to the same model, and are the proposed destination.
+- For an existing language, roles cannot be edited into its actions without migrating it, so a table beside them (0 edits) is the way in. The engine walks the syntax tree for the tree and does not run the author's operations. Roles written in the action block (the clean-sheet API) normalise to the same model, and are the proposed destination.
 - A flat scope with one definition per symbol is not enough, and neither is inference from rule names.
 - Typed member lookup is expressible in the table, not an author hook.
 
@@ -216,3 +203,4 @@ A recovering match took 3.0 s of a 3.2 s analysis on 24 KB of ES5. Large files n
 3. How much of the vocabulary ships in the first version. The core is scope chain, owner hoisting, kind from keyword, declared type with typed member lookup, namespaces, implicit definitions, external registries, explicit identifier rules, `uncertain` marking and the last-good cache. The ES5-only items can follow.
 4. Consumption of track A by downstream projects: GitHub install (as today) or published packages.
 5. Whether `grammar.describe()` is added to `ohm-js` up front (A1) or only if walking `grammar.rules` proves brittle.
+6. The worked examples in the design are generated by the reference engine and re-run with it; if the engine is not kept in the repository, they become hand-maintained prose. Decide whether the reference engine lives in `packages/language` as its first implementation (A4) or is discarded after the design is accepted.
