@@ -1,13 +1,13 @@
 # Language service plan
 
-Status: proposal. Branch base: `feat/fallible`.
+Status: proposal, revised after prototyping on four languages (section 5). Branch base: `feat/fallible`.
 
 ## Goal
 
-A language author supplies an Ohm grammar and one semantic actions block. A language service comes from those two things:
+A language author supplies an Ohm grammar and semantic actions. A language service comes from those, without editing the actions:
 
 1. **From the grammar alone:** syntax diagnostics with recovery, keyword and punctuation completion, tokens, folding, selection ranges, and generated TextMate, Monarch and `language-configuration.json` files.
-2. **From role actions in the same block** (`def`, `ref`, `scope`, ...): outline, go to definition, references, rename, symbol completion, hover, and generic undefined and duplicate-name diagnostics.
+2. **From a role table kept beside the actions** (`def`, `ref`, `scope`, ...; the actions themselves are not edited): outline, go to definition, references, rename, symbol completion, hover, and generic undefined and duplicate-name diagnostics.
 3. **Everything else** (types, formatting, language-specific rules) stays optional author code.
 
 The service is an editor-neutral library: offsets in, plain data out. A Monaco adapter runs it in the page; an LSP adapter serves it to other editors.
@@ -19,6 +19,8 @@ This plan covers the work needed to get there, in four parts: three small prereq
 Three independent branches off `feat/fallible`. Each is useful on its own and none depends on another.
 
 ### P1. Recovering matchers accept edits
+
+**Status:** implemented as PR 29, with review feedback applied.
 
 **Today.** `Matcher._prepareForRecovery` (`packages/ohm-js/src/Matcher.js`) throws when the input changed after an earlier match, or when the memo table came from a plain match. It then resets the memo table anyway, because a fresh `RecoveryContext` has no attempts for previously memoized entries. The guards are covered by `test/test-fallible.js` ("a matcher with a stale or plain memo table refuses to recover"), `doc/api-reference.md` and the `recover` option comment in `index.d.ts`.
 
@@ -36,22 +38,26 @@ Three independent branches off `feat/fallible`. Each is useful on its own and no
 
 ### P2. A correction policy for operations
 
+**Status:** implemented as PR 30. The review set the default to `'skip'`; the text below reflects that.
+
 **Today.** `Operation.execute` (`packages/ohm-js/src/Semantics.js`) checks for a correction node after the node-name lookup and before `_nonterminal` and `_default`, so an operation with no `_correction` action throws `missingCorrectionAction`. `test/test-fallible-acceptance.js` ("an operation without a `_correction` action throws on a recovered node") pins that. `Wrapper` exposes `recoveredFailure` but not `isCorrection()`.
 
-**Change.** An opt-in policy on the operation:
+**Change.** A policy on the operation:
 
 ```js
-semantics.addOperation(signature, actions, {corrections: 'throw' | 'skip' | fn});
+semantics.addOperation(signature, actions, {corrections: 'skip' | 'throw' | fn});
 // also addAttribute, extendOperation, extendAttribute
 ```
 
-- `'throw'` is the default and is today's behavior.
-- `'skip'`: a correction node yields `undefined` and the operation continues. The author must tolerate `undefined` in child results, and can filter with `isCorrection()`.
+- `'skip'` is the default: a correction node yields `undefined` and the operation continues. The author must tolerate `undefined` in child results, and can filter with `isCorrection()`. Recovery is opt-in, so without it the policy never applies.
+- `'throw'` restores today's strict behavior.
 - A function is a zero-arity action, equivalent to defining `_correction`.
-- An explicit `_correction` action always wins. `extend*` inherits the policy unless given another. `toRecipe` serializes it.
+- An explicit `_correction` action always wins. The policy is a field on the operation: extensions inherit it, an option replaces it in either direction, and `toRecipe` writes it only when it differs from the inherited one.
 - `Wrapper#isCorrection()` becomes public so generic `_nonterminal(...children)` traversals can filter.
 
-**Tests.** Default still throws (the existing test, unchanged); `'skip'` through a recovered tree; function form; explicit action wins; `extendOperation` inheritance; recipe round trip; attributes memoize `undefined`.
+**Caveat from prototyping (section 5).** The default only helps an operation that tolerates `undefined`. In the ES5 example, `hoistDeclarations` throws on a recovered tree and `toES5` prints "undefined"; the role table below survives because it runs none of the author's actions.
+
+**Tests.** The default skips and `'throw'` throws (the two existing tests that pinned the throw now opt in); function form; explicit action wins; extension and inheritance in both directions; recipe round trip; attributes memoize `undefined`.
 
 **Size.** A day.
 
@@ -108,9 +114,10 @@ New packages follow `packages/semantics` (ESM TypeScript, `tsc`, `ava`) in this 
 |---|---|---|---|
 | A0 | Scaffolding for the three packages, CI wiring, a docs page | none | The packages build and test empty |
 | A1 | `introspect(grammar)`: keywords, punctuation, token rules by naming convention (overridable), bracket pairs, foldable rules. Built in the package by walking `grammar.rules`; a stable `grammar.describe()` in `ohm-js` only if the walk proves brittle | none | The model for a real grammar (web-ide HDL) matches a hand-written expectation |
-| A2 | Document analysis: one `Matcher` per document, always recovering, token list, `pathAt` queries, syntax diagnostics | P1a, P2, P3 | An edit sequence equals a fresh analysis (property test) |
+| A2 | Document analysis: one `Matcher` per document, always recovering, token list, `pathAt` queries, syntax diagnostics, and the last good analysis kept when a parse yields no tree (truncated or unclosed input gives zero facts in every prototype) | P1a, P2, P3 | An edit sequence equals a fresh analysis (property test); a truncated file keeps the previous outline |
 | A3 | Completion part A: expected string terminals at the cursor from a prefix parse, partial-token filtering, replace range | A2 | Reproduces the verified cases below |
-| A4 | Facts vocabulary (`def`, `ref`, `scope`, `doc`, `diag`, `token`, `fold`), static-tagged role actions, a `facts` operation with merge defaults, `SymbolTable`, generic undefined and duplicate diagnostics | P2, A2 | HDL and ASM facts give the same spans as the web-ide's hand-written diagnostics |
+| A4 | The role table and its engine: the vocabulary in section 5, an engine that walks the concrete syntax tree (it runs none of the author's actions), a `SymbolTable` with scope chains and a workspace layer, `uncertain` marking from damage analysis, and a table validator that checks a table against an oracle (the language's own checker or compiler where one exists) | P2, A2 | Tables for HDL, Jack, the Ohm grammar language and ES5 pass the checks in section 5 on one shared engine (today there are four prototype copies) |
+| A4b | Table proposer: probe the language's existing checker (rename a token, watch which diagnostics move) to draft a table for review | A4 | Drafts about two thirds of Jack's rows; says plainly where there is no checker to probe (ES5: one of 20 entries) |
 | A5 | Features on facts: definition, references, document highlight, rename, outline, hover, quick fixes from diagnostic suggestions, folding, selection ranges, semantic tokens | A3, A4, P3 | Golden-file tests with a cursor marker |
 | A6 | Completion part B (symbols): record the rule stack at the cursor failure (`Failure.context`, enabled by a `completionAt` match option); memo bypass in that mode | A4 | A spike shows the stack survives memoization |
 | A7 | Emitters: TextMate, Monarch, `language-configuration.json` | A1 | Generated Monarch matches the web-ide's hand-written highlighting for its six languages |
@@ -135,7 +142,7 @@ Written here so the dependency is visible; these are tracked in the web-ide repo
 | B0 | Land the `diagnostics/*` pull request stack in `nand2tetris/web-ide` (the chain from "Use Ohm fallible branch with recovery" through the CLI option, plus the custom chip completions PR). Everything below branches from its tip | review |
 | B1 | Consume the new packages the way the stack consumes this fork today (a GitHub install of this repository) | A0 |
 | B2 | HDL first: define the language with `defineLanguage`; replace the hand-written Monarch file by the generated one; keyword completion, folding, selection ranges. Diagnostic codes and arguments stay byte-identical (they are the API for message catalogs and the CLI) | A3, A7, B1 |
-| B3 | Facts for HDL, then ASM: outline, definition, references, rename; generic undefined and duplicate diagnostics replace the hand-written ones, with identical spans | A4, A5, B2 |
+| B3 | Role tables for HDL, then ASM: outline, definition, references, rename; generic undefined and duplicate diagnostics replace the hand-written ones, with identical spans | A4, A5, B2 |
 | B4 | Workspace resolution for cross-file references (chips using chips, Jack classes using classes) through the web-ide file system and the builtin chip registry | A5, B3 |
 | B5 | Symbol completion for HDL (part and pin names) | A6, B3 |
 | B6 | VS Code extension: generated TextMate and language configuration replace the hand-written files; diagnostics through the shared service | A7, A8 |
@@ -160,8 +167,74 @@ Not scheduled; revisit after A5.
 | Cross-language navigation (for example Jack to generated VM) | Needs a source map between compilation stages |
 | Incremental text sync, semantic-token deltas, a partial tree on failed recovery | Optimizations once the basics work |
 
-## 5. Decisions
+## 5. What prototyping showed
 
-1. Option name for P2: `corrections` as above, or `onCorrection`.
-2. Consumption of track A by downstream projects: GitHub install (as today) or published packages.
-3. Whether `grammar.describe()` is added to `ohm-js` up front (A1) or only if walking `grammar.rules` proves brittle.
+The design was prototyped on four languages, outside this repository: the web-ide's HDL and Jack (their real grammars and actions), the Ohm grammar language itself, and ES5 from `examples/ecmascript`. For HDL three approaches were compared: **A**, a role table beside the actions that is applied to the concrete syntax tree; **B**, observing the running actions; **C**, deriving symbols from the AST the actions already build. The Jack, Ohm and ES5 runs used A. All ran against this fork's source. The web-ide's own test suites were not run, because the stack needs a newer `jiffies` than was installed.
+
+### Migration cost
+
+Existing action code edited: **0 lines in all four languages.** That is not the same as zero migration:
+
+| Language | Table | Engine | Validation |
+|---|---|---|---|
+| HDL | 7 entries | 218 lines | Outline, definition, references, rename and unresolved-name diagnostics on valid files and files with errors |
+| Jack | 19 rows (17 def/ref, 2 scope), 3 namespaces, a declared identifier rule, one export-from-filename flag | 345 lines | Renamed each of 150 definitions and recompiled with the existing compiler: 150 of 150 identical output; 0 false diagnostics on 11 valid files |
+| Ohm grammar language | 11 entries (plus 1 in the recovery copy), 16 lines | n/a | 0 false positives on 19 real grammar groups; 40 of 40 and 17 of 17 renaming mutations caught; renames verified by recompiling with Ohm |
+| ES5 | 20 entries (8 scope, 12 def/ref; ES6 adds 8) | 221 lines | `underscore` (24 KB, 105 scopes): 270 of 270 occurrence groups identical to ESLint's scope analysis |
+
+What the author still has to supply:
+
+1. **The table.** It cannot be inferred. Grammar-only inference gave 15 false "undefined" diagnostics on a valid HDL chip, and on ES5 guessed 3 of 13 roles right, found 0 of 8 scopes, and produced 802 false "undefined" out of 1,126 references. Name heuristics mislabel `compoundIdentifier` (Jack) and `caseName` (Ohm).
+2. **Recovery points in the grammar.** They are a grammar change, constrained by the arities that existing positional actions fix (ES5 needed a wrapper rule for `Program`; adding them to the real Ohm meta-grammar breaks `buildGrammar`), and a join must guard the next construct's head or recovery swallows it.
+3. **Operations that must tolerate `undefined`** if they run on recovered trees (P2's caveat).
+
+### The approaches
+
+- **A is the mechanism.** It kept the most facts near errors and held up on all four languages.
+- **B is a proposer, not a mechanism.** On HDL it found definition versus reference for pins with no declaration (173 of 173 rename sets correct) and reused the existing builder's diagnostics. On Jack, 902 probes in 64 s proposed about two thirds of the table; on ES5, which has no checker, 1 of 20 entries. It is silently wrong when an action is refactored (interning a name dropped rename correctness to 0 of 46) and it patches private Ohm internals.
+- **C is dropped.** The AST rarely carries spans (HDL declarations and all of Jack's have none), it loses more near errors, and it cannot apply to the Ohm grammar language, since `ohm.grammar()` throws on a broken file and so yields no object.
+
+### The vocabulary the table needs
+
+HDL alone would have suggested `def`, `ref`, `scope`, member lookup and implicit definitions. The other three languages required, each shown necessary by removing it:
+
+- scope chain with shadowing (rename correctness fell to 72 of 150 on Jack without it);
+- owner hoisting: a scope's own name (subroutine, class, function, rule) binds in the enclosing scope; and hoisting of `var` to the function;
+- definition kind taken from a keyword (`static` or `field`; `constructor`, `function` or `method`), and a declared type carried on a definition;
+- typed member lookup: `a.b` resolves through the declared type of `a`, or through the class when `a` names one (name-only lookup got 11 of 33 Jack method renames wrong);
+- ordered kind groups and namespaces (variable before class; duplicates per namespace);
+- implicit definitions (HDL pins; ES5 globals), and external or built-in registries (chips, OS classes, ES5 globals, Ohm's built-in rules);
+- explicit identifier rules, a search mode for identifiers under a slot, and stopping at rules that carry their own entries so nested expressions are not counted twice;
+- override and extend resolution, names derived from other names (Ohm case names), arity on definitions and arguments on references;
+- ES5 specifics shown necessary by ablation: conditional entries (`=` versus `+=`), properties grouped by name, weak definitions, opaque namespaces (labels), dynamic scope (`with`), `arguments`; temporal dead zone was tested only on a scratch grammar;
+- file level: export from the file name, and a placeholder symbol for a file that failed or lost its header;
+- workspace level: cross-file namespaces and a family rename with a collision check.
+
+### Behavior on recovered input
+
+- A statement that fails to match contributes no facts. When only its join is missing, `B ! C` keeps the guarded part, so references survive (Jack: 30-35 of 35 references resolved, and every missed rename site lay inside a flagged lost span).
+- A lost declaration disappears from the outline. The rule that worked: **never report an unresolved name beside skipped input as an error; mark it `uncertain`.** Jack's damage analysis, derived from the grammar and the table, gave 0 certain false positives.
+- A truncated file or unclosed construct makes the match fail, so there are no facts. Every language needs a cache of the last good analysis. On ES5, typing one statement a key at a time (30 prefixes) gave a null root on 16 without recovery points and on 0 with five; the outline was correct 30 of 30 against 14 of 30.
+- Rename near skipped input should warn or refuse.
+
+### Existing checkers
+
+Reuse their diagnostics as they are, and let the table add only what they lack, to avoid double reporting. For Jack the existing checker's argument-count, call-kind, OS-interface, return-path and class-name checks are reusable; the reference layer would duplicate five codes (undeclared variable, unknown type, undefined class, missing subroutine, duplicate subroutine, which agreed by line on 6 mutants); and the table adds duplicate variables, parameters and fields (the compiler silently overwrites them), precise missing-member errors, and cross-file rename. `ohm.grammars()` throws one error with no code field, so it can supply only four checker-only kinds for `.ohm` files.
+
+### Performance
+
+A recovering match took 3.0 s of a 3.2 s analysis on 24 KB of ES5. Large files need debouncing or incremental recovering matchers (section 4).
+
+### Corrections to earlier drafts of this plan
+
+- Symbol facts are not written as actions in the author's block. A table owns them, and the engine owns the traversal.
+- A flat scope with one definition per symbol is not enough, and neither is inference from rule names.
+- "No `_correction` action needed" holds only for operations that tolerate `undefined`.
+- Typed member lookup is expressible in the table, not an author hook.
+
+## 6. Decisions
+
+1. Notation for the table. The prototype normalised three notations to the same table: an object of builders (about 9 lines for HDL), a line-oriented file (7 lines), and `//@` comments inside the `.ohm` file (6 lines, but it edits the grammar). Recommendation: the object of builders as the canonical form, since it is typed and composable; the others can compile to it.
+2. How much of the vocabulary ships in the first version. The core is scope chain, owner hoisting, kind from keyword, declared type with typed member lookup, namespaces, implicit definitions, external registries, explicit identifier rules, `uncertain` marking and the last-good cache. The ES5-only items can follow.
+3. Consumption of track A by downstream projects: GitHub install (as today) or published packages.
+4. Whether `grammar.describe()` is added to `ohm-js` up front (A1) or only if walking `grammar.rules` proves brittle.
