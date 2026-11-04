@@ -135,9 +135,6 @@ export interface MatchOptions {
    * When true, a match that fails is retried with recovery at `B ! C`
    * recovery points, and recovered input appears as `_correction` nodes. Default
    * false. Without it, `B ! C` matches exactly as the sequence `B C`.
-   * A Matcher may recover at any time, including after edits and after matches
-   * without recovery. A recovering match starts from an empty memo table, so it
-   * gives the same result as one on a fresh Matcher and reuses nothing.
    */
   recover?: boolean;
 
