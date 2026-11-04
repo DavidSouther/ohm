@@ -105,6 +105,12 @@ class Wrapper {
     return this.isNonterminal() && this._node.isLexical();
   }
 
+  // Returns `true` if the CST node associated with this wrapper is a `_correction` node,
+  // which holds input that recovery skipped. `false` otherwise.
+  isCorrection() {
+    return this._node.isCorrection();
+  }
+
   // Returns `true` if the CST node associated with this wrapper is an iterator node
   // having either one or no child (? operator), `false` otherwise.
   // Otherwise, throws an exception.
@@ -318,8 +324,10 @@ export class Semantics {
     return str;
   }
 
-  addOperationOrAttribute(type, signature, actionDict) {
+  addOperationOrAttribute(type, signature, actionDict, options) {
     const typePlural = type + 's';
+    const method = 'add' + type[0].toUpperCase() + type.slice(1);
+    const checkedOptions = checkOptions(options, method);
 
     const parsedNameAndFormalArgs = parseSignature(signature, type);
     const {name} = parsedNameAndFormalArgs;
@@ -338,6 +346,7 @@ export class Semantics {
     Object.keys(actionDict).forEach(name => {
       realActionDict[name] = actionDict[name];
     });
+    applyCorrectionPolicy(realActionDict, actionDict, checkedOptions, {type, name});
 
     const entry =
       type === 'operation'
@@ -401,8 +410,10 @@ export class Semantics {
     }
   }
 
-  extendOperationOrAttribute(type, name, actionDict) {
+  extendOperationOrAttribute(type, name, actionDict, options) {
     const typePlural = type + 's';
+    const method = 'extend' + type[0].toUpperCase() + type.slice(1);
+    const checkedOptions = checkOptions(options, method);
 
     // Make sure that `name` really is just a name, i.e., that it doesn't also contain formals.
     parseSignature(name, 'attribute');
@@ -429,6 +440,11 @@ export class Semantics {
     const newActionDict = Object.create(inheritedActionDict);
     Object.keys(actionDict).forEach(name => {
       newActionDict[name] = actionDict[name];
+    });
+    applyCorrectionPolicy(newActionDict, actionDict, checkedOptions, {
+      type,
+      name,
+      extending: true,
     });
 
     this[typePlural][name] =
@@ -462,6 +478,72 @@ export class Semantics {
   wrap(node, source, optBaseInterval) {
     const baseInterval = optBaseInterval || source;
     return node instanceof this.Wrapper ? node : new this.Wrapper(node, source, baseInterval);
+  }
+}
+
+// ----------------- Correction policy -----------------
+
+// An operation reaches a `_correction` node only if it defines `_correction`; otherwise it throws
+// (see `Operation.execute`). The `corrections` option of `addOperation` and its siblings picks
+// what an operation does with recovered input without writing that action by hand:
+//   'throw'  the default. Reaching a correction node is an error.
+//   'skip'   a correction node yields `undefined`.
+//   fn       a zero-arity action, as if the dictionary defined `_correction`.
+// The option only fills in `_correction`, so an explicit `_correction` action always wins, and an
+// extended operation inherits the policy through its action dictionary like any other action.
+function skipCorrection() {
+  return undefined;
+}
+
+function checkOptions(options, method) {
+  if (options === undefined) {
+    return {};
+  }
+  if (options === null || typeof options !== 'object') {
+    throw new TypeError(
+      `${method} expects an options object as its third argument, got ` +
+        common.unexpectedObjToString(options)
+    );
+  }
+  for (const key of Object.keys(options)) {
+    if (key !== 'corrections') {
+      throw new TypeError(
+        `${method}: unknown option '${key}' (the only option is 'corrections')`
+      );
+    }
+  }
+  const {corrections} = options;
+  if (
+    corrections !== undefined &&
+    corrections !== 'throw' &&
+    corrections !== 'skip' &&
+    typeof corrections !== 'function'
+  ) {
+    throw new TypeError(
+      `${method}: the 'corrections' option must be 'throw', 'skip' or a function, got ` +
+        common.unexpectedObjToString(corrections)
+    );
+  }
+  return options;
+}
+
+// Fills in `_correction` in `actionDict` (an own property, so it overrides inherited actions)
+// from the `corrections` option. `explicit` is the dictionary the caller passed.
+function applyCorrectionPolicy(actionDict, explicit, {corrections}, {type, name, extending}) {
+  if (corrections === undefined || hasOwnProperty(explicit, '_correction')) {
+    return;
+  }
+  if (corrections === 'skip') {
+    actionDict._correction = skipCorrection;
+  } else if (typeof corrections === 'function') {
+    actionDict._correction = corrections;
+  } else if (extending) {
+    // 'throw' on an extension would have to undo an inherited `_correction`. Silently keeping
+    // it would contradict the option, and a thrower cannot round trip through `toRecipe`.
+    throw new Error(
+      `Cannot extend ${type} '${name}' with corrections: 'throw'. ` +
+        'Define a `_correction` action that throws instead.'
+    );
   }
 }
 
@@ -549,20 +631,20 @@ Semantics.createSemantics = function (grammar, optSuperSemantics) {
   };
 
   // Forward public methods from the proxy to the semantics instance.
-  proxy.addOperation = function (signature, actionDict) {
-    s.addOperationOrAttribute('operation', signature, actionDict);
+  proxy.addOperation = function (signature, actionDict, options) {
+    s.addOperationOrAttribute('operation', signature, actionDict, options);
     return proxy;
   };
-  proxy.extendOperation = function (name, actionDict) {
-    s.extendOperationOrAttribute('operation', name, actionDict);
+  proxy.extendOperation = function (name, actionDict, options) {
+    s.extendOperationOrAttribute('operation', name, actionDict, options);
     return proxy;
   };
-  proxy.addAttribute = function (name, actionDict) {
-    s.addOperationOrAttribute('attribute', name, actionDict);
+  proxy.addAttribute = function (name, actionDict, options) {
+    s.addOperationOrAttribute('attribute', name, actionDict, options);
     return proxy;
   };
-  proxy.extendAttribute = function (name, actionDict) {
-    s.extendOperationOrAttribute('attribute', name, actionDict);
+  proxy.extendAttribute = function (name, actionDict, options) {
+    s.extendOperationOrAttribute('attribute', name, actionDict, options);
     return proxy;
   };
   proxy._getActionDict = function (operationOrAttributeName) {

@@ -331,6 +331,25 @@ export interface FailedMatchResult extends MatchResult {
  * (even in the same program) never have to worry about
  * operation/attribute name clashes.
  */
+/**
+ * Options for Semantics#addOperation, addAttribute, extendOperation and extendAttribute.
+ */
+export interface OperationOptions {
+  /**
+   * What the operation or attribute does at a `_correction` node, which holds input that recovery
+   * skipped. It only fills in `_correction`: an explicit `_correction` action always wins.
+   *
+   * - `'throw'` (the default): reaching a correction node is an error.
+   * - `'skip'`: a correction node yields `undefined`. The operation must tolerate `undefined` in
+   *   the results of its children; use Node#isCorrection to filter them.
+   * - a function: a zero-arity action, as if the action dictionary defined `_correction`.
+   *
+   * `'throw'` is refused by `extendOperation` and `extendAttribute`, which cannot undo an
+   * inherited policy; define a `_correction` action that throws instead.
+   */
+  corrections?: 'throw' | 'skip' | ((this: Node) => unknown);
+}
+
 export interface Semantics {
   /**
    * Returns a dictionary containing operations and attributes defined by
@@ -345,7 +364,11 @@ export interface Semantics {
    * is already an operation or attribute called name in this semantics.
    * Returns this Semantics.
    */
-  addOperation<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  addOperation<T>(
+    name: string,
+    actionDict: ActionDict<T>,
+    options?: OperationOptions
+  ): Semantics;
 
   /**
    * Add a new attribute named name to this Semantics, using the
@@ -353,7 +376,11 @@ export interface Semantics {
    * is already an operation or attribute called name in this semantics.
    * Returns this Semantics.
    */
-  addAttribute<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  addAttribute<T>(
+    name: string,
+    actionDict: ActionDict<T>,
+    options?: OperationOptions
+  ): Semantics;
 
   /**
    * Extend the operation named name with the semantic actions contained
@@ -361,7 +388,11 @@ export interface Semantics {
    * semantics.
    * Returns this Semantics.
    */
-  extendOperation<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  extendOperation<T>(
+    name: string,
+    actionDict: ActionDict<T>,
+    options?: OperationOptions
+  ): Semantics;
 
   /**
    * Extend the attribute named name with the semantic actions contained
@@ -369,7 +400,11 @@ export interface Semantics {
    * semantics.
    * Returns this Semantics.
    */
-  extendAttribute<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  extendAttribute<T>(
+    name: string,
+    actionDict: ActionDict<T>,
+    options?: OperationOptions
+  ): Semantics;
 }
 
 /**
@@ -455,6 +490,12 @@ export interface Node {
    * Returns the child at index idx.
    */
   child(idx: number): Node;
+
+  /**
+   * true if the node is a `_correction` node, which holds input that recovery
+   * skipped, otherwise false.
+   */
+  isCorrection(): boolean;
 
   /**
    * true if the node is a terminal node, otherwise false.

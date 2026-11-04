@@ -60,6 +60,36 @@ fragments(result).fragments(); // ['abc', 'def']
 
 This action deliberately keeps partial statements. An AST builder might instead mark or discard a statement when `correction.recoveredFailure` is present. The action reads nodes directly; operations that traverse correction nodes must provide a zero-argument `_correction` action. See [Fallible actions](./api-reference.md#fallible-actions).
 
+## Traverse recovered input without handling it
+
+A generic traversal, such as a pretty printer or a counter built from `_nonterminal`, `_iter` and `_terminal`, still reaches correction nodes and throws. When it has nothing useful to do with skipped input, set the `corrections` option to `'skip'`: a correction node then yields `undefined`.
+
+```js
+const retained = statements.createSemantics().addOperation('retained', {
+  _nonterminal(...children) {
+    return children.reduce((n, child) => n + (child.retained() ?? 0), 0);
+  },
+  _iter(...children) {
+    return children.reduce((n, child) => n + (child.retained() ?? 0), 0);
+  },
+  _terminal() {
+    return 1;
+  }
+}, {corrections: 'skip'});
+retained(result).retained(); // 8: `abc`, `;`, `def` and `;`, but not the skipped `12`
+```
+
+<!-- @markscript
+  assert.equal(retained(result).retained(), 8);
+  assert.throws(() => statements.createSemantics().addOperation('strict', {
+    _nonterminal(...children) { return children.map(child => child.strict()); },
+    _iter(...children) { return children.map(child => child.strict()); },
+    _terminal() { return 1; }
+  })(result).strict(), /_correction/);
+-->
+
+Use `child.isCorrection()` to tell the node apart instead, or pass a function for what the operation should produce there. An explicit `_correction` action always takes precedence. See the [`corrections` option](./api-reference.md#corrections-option).
+
 ## Choose a block boundary
 
 Putting `!` after a repetition retains its successfully matched prefix, then skips the damaged remainder up to the join. It does not restart that repetition after skipping. Use this for a block or file, while keeping statement-level recovery inside it.
