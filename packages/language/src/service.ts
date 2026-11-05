@@ -123,6 +123,9 @@ export function createLanguageService(
   const workspace = config.workspace;
   const vfs = createOverlayVfs(workspace?.vfs);
 
+  const sameGroup = (a: string, b: string) =>
+    !workspace?.group || workspace.group(a) === workspace.group(b);
+
   const exportable = (d: Definition) =>
     !!workspace && !d.implicit && !d.external && !d.aliasOf && workspace.exported(d);
 
@@ -146,7 +149,9 @@ export function createLanguageService(
       workspace.mode === 'ambient'
         ? exportIndex()
             .get(name)
-            ?.find(d => d.uri !== fromUri && kinds.includes(d.kind))
+            ?.find(
+              d => d.uri !== fromUri && sameGroup(d.uri, fromUri) && kinds.includes(d.kind)
+            )
         : undefined,
     resolveImport: (spec, fromUri) => workspace.resolveImport?.(spec, fromUri),
     exportsOf,
@@ -292,7 +297,7 @@ export function createLanguageService(
       // Read once: the next call has nothing new unless the exports change again.
       doc.exportsChanged = false;
       return [...docs.keys()].filter(other => {
-        if (other === uri) return false;
+        if (other === uri || !sameGroup(other, uri)) return false;
         return workspace.mode === 'ambient' || !!docs.get(other)?.good?.imports.includes(uri);
       });
     },
@@ -351,7 +356,7 @@ export function createLanguageService(
       }
       if (workspace?.mode === 'ambient') {
         for (const defs of exportIndex().values())
-          defs.filter(d => d.uri !== uri).forEach(offer);
+          defs.filter(d => d.uri !== uri && sameGroup(d.uri, uri)).forEach(offer);
       }
       return out;
     },

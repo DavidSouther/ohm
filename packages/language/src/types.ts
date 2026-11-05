@@ -76,6 +76,12 @@ export interface ReadonlyVfs {
 export interface WorkspaceConfig {
   mode: 'ambient' | 'explicit';
   exported(definition: Definition): boolean;
+  /**
+   * Names a file's group, such as its folder. Ambient lookup, completion and
+   * `affected` only cross files of one group, so two projects that each define
+   * a chip of the same name stay apart.
+   */
+  group?(uri: string): string;
   /** Files that are not open, read as a fallback behind open documents. */
   vfs?: ReadonlyVfs;
   /** Maps an import specifier, as written, to a document URI. Required in explicit mode. */

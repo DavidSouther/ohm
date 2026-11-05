@@ -323,3 +323,39 @@ test('while the workspace is loading an unresolved name is uncertain, then it se
     [['ref.undefined', 'error']]
   );
 });
+
+test('a group keeps same named classes of different folders apart', async t => {
+  const sem = ohm.grammar(MINI).createSemantics();
+  addRoles(sem, {
+    Item: (_c: Node, n: Node, _o: Node, _m: Node, _x: Node) => [
+      roles.scope(),
+      roles.declare(n, 'class'),
+    ],
+    Member: (_u: Node, n: Node, _s: Node) => roles.ref(n, 'class'),
+  });
+  const one = 'file:///one/Main.mini';
+  const oneB = 'file:///one/B.mini';
+  const twoB = 'file:///two/B.mini';
+  const svc = createLanguageService(sem, {
+    start: 'File',
+    workspace: {
+      mode: 'ambient',
+      exported: (d: Definition) => d.scope.parent === undefined,
+      group: uri => uri.slice(0, uri.lastIndexOf('/')),
+      vfs: createMemoryVfs({
+        [oneB]: 'class B { }',
+        [twoB]: 'class B { }',
+        [one]: 'class Main { }',
+      }),
+    },
+  });
+  await Array.fromAsync(svc.scan());
+
+  const main = svc.open(one, 1, 'class Main { uses B; uses Only; }');
+  const [def] = svc.definition(one, offset(main.text.indexOf('B;')));
+
+  t.is(def.uri, oneB);
+  t.deepEqual(svc.affected(twoB), []);
+  const names = svc.completion(one, offset(main.text.length)).map(d => `${d.name}@${d.uri}`);
+  t.false(names.includes(`B@${twoB}`));
+});
