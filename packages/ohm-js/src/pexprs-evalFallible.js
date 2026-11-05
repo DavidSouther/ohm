@@ -180,9 +180,10 @@ pexprs.Fallible.prototype.recover = function (
 ) {
   const {inputStream} = state;
   const attemptLog = state._recoveryLog.since(logMark);
+  // Matched guarded material is the last N bindings; the join is not pushed yet.
   const {owned, discarded: nested} = partitionRecoveries(
     attemptLog,
-    guardedMatched ? state._bindings.at(-1) : undefined
+    ...(guardedMatched ? state._bindings.slice(-this.guarded.getArity()) : [])
   );
   state._recoveryLog = logMark;
   // Scan steps are not traced; only the matching join expression's entry joins the

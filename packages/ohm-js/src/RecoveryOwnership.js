@@ -26,8 +26,11 @@ export function correctionOwns(node, recovered, nested = emptyEffects) {
   setRecoveries(node, effects);
 }
 
-export function partitionRecoveries(failures, retained) {
-  const owned = recoveriesOf(retained);
+// The retained nodes own the union of their recoveries, which is what a
+// wrapper node over them inherits. A single node's summary is used as is.
+export function partitionRecoveries(failures, ...retained) {
+  let owned = emptyEffects;
+  for (const node of retained) owned = owned.concat(recoveriesOf(node));
   if (owned === emptyEffects) return {owned: emptyEffects, discarded: failures};
   let identities = membership.get(owned);
   if (!identities) {

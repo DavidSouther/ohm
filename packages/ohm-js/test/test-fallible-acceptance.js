@@ -595,3 +595,53 @@ test('a guarded operand with several values recovers like one wrapped in a rule'
   });
   t.deepEqual(lines[2], {bar: '|', cells: ['e|'], correction: 'x', join: '\n'});
 });
+
+// A recovery inside retained guarded material belongs to that material in
+// every guarded slot, not only the last, as it does to a wrapper rule's node.
+const PAIRS_INLINE = String.raw`
+Pairs {
+  pairs = pair*
+  pair = (item item) ! ";"
+  item = letter ! ","
+}`;
+const PAIRS_WRAPPED = PAIRS_INLINE.replace(
+  'pair = (item item) ! ";"',
+  'pair = body ! ";"\n  body = item item'
+);
+
+test('a recovery inside any retained guarded slot stays with that slot', t => {
+  const inline = ohm.grammar(PAIRS_INLINE);
+  const wrapped = ohm.grammar(PAIRS_WRAPPED);
+  const spans = node => node.recoveredFailures.map(f => f.interval.contents);
+  const inlineOwners = inline.createSemantics().addOperation('owners', {
+    pairs(ps) {
+      return ps.children.map(p => p.owners());
+    },
+    pair(first, second, correction, join) {
+      return {retained: [...spans(first), ...spans(second)], correction: spans(correction)};
+    },
+  });
+  const wrappedOwners = wrapped.createSemantics().addOperation('owners', {
+    pairs(ps) {
+      return ps.children.map(p => p.owners());
+    },
+    pair(body, correction, join) {
+      return {retained: spans(body), correction: spans(correction)};
+    },
+  });
+
+  // The first slot, the last slot, both, and a failed guarded operand.
+  for (const input of ['a1,b,x;', 'a,b1,x;', 'a1,b1,x;', 'a1,?;']) {
+    const inlineMatch = inline.match(input, undefined, RECOVER);
+    const wrappedMatch = wrapped.match(input, undefined, RECOVER);
+    t.true(inlineMatch.succeeded(), input);
+    t.deepEqual(recoveries(inlineMatch), recoveries(wrappedMatch), input);
+    t.deepEqual(
+      inlineOwners(inlineMatch).owners(),
+      wrappedOwners(wrappedMatch).owners(),
+      input
+    );
+  }
+  const [pair] = inlineOwners(inline.match('a1,b,x;', undefined, RECOVER)).owners();
+  t.deepEqual(pair, {retained: ['1'], correction: ['x']});
+});
