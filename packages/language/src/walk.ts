@@ -58,7 +58,11 @@ function flatten(result: unknown, out: unknown[] = []): unknown[] {
  * entered.
  */
 export function collect(semantics: Semantics, match: MatchResult, uri = ''): Collected {
-  const root: Scope = {symbols: [], span: {start: offset(0), end: offset(match.input.length)}};
+  const root: Scope = {
+    children: [],
+    symbols: [],
+    span: {start: offset(0), end: offset(match.input.length)},
+  };
   const out: Collected = {root, symbols: [], refs: [], skipped: [], problems: []};
   const problem = (node: Node, code: string, message: string) =>
     out.problems.push({span: spanOf(node), severity: 'error', code, message});
@@ -94,8 +98,9 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
     }
     const rs = node.isTerminal() || node.isIteration() ? [] : rolesOf(node);
     const own: Scope | undefined = rs.some(r => r.role === 'scope')
-      ? {parent: scope, symbols: [], span: spanOf(node)}
+      ? {parent: scope, children: [], symbols: [], span: spanOf(node)}
       : undefined;
+    if (own) scope.children.push(own);
     for (const r of rs) {
       if (r.role === 'scope') continue;
       const id = nameOf(r.name);

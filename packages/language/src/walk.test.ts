@@ -106,6 +106,7 @@ test('a scope role opens a child scope for descendants', t => {
   t.is(a.scope, found.root);
   t.is(b.scope, found.root);
   t.is(c.scope.parent, found.root);
+  t.deepEqual(found.root.children, [c.scope]);
   t.deepEqual(c.scope.span, span(11, 19));
   t.deepEqual(found.root.span, span(0, 21));
 });

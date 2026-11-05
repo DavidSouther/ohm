@@ -44,6 +44,7 @@ export interface ServiceConfig {
 
 export interface Scope {
   parent?: Scope;
+  children: Scope[];
   symbols: Symbol[];
   span: Span;
 }
