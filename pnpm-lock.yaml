@@ -154,6 +154,37 @@ importers:
 
   packages/lang-python: {}
 
+  packages/language:
+    devDependencies:
+      '@ohm-js/lsp':
+        specifier: workspace:^
+        version: link:../lsp
+      ava:
+        specifier: ^6.0.0
+        version: 6.2.0(rollup@4.43.0)
+      ohm-js:
+        specifier: workspace:^
+        version: link:../ohm-js
+      vscode-jsonrpc:
+        specifier: ^8.2.1
+        version: 8.2.1
+
+  packages/lsp:
+    dependencies:
+      '@ohm-js/language':
+        specifier: workspace:^
+        version: link:../language
+      vscode-jsonrpc:
+        specifier: ^8.2.1
+        version: 8.2.1
+    devDependencies:
+      ava:
+        specifier: ^6.0.0
+        version: 6.2.0(rollup@4.43.0)
+      ohm-js:
+        specifier: workspace:^
+        version: link:../ohm-js
+
   packages/memoviz-demo:
     devDependencies:
       '@rollup/plugin-node-resolve':
@@ -2478,6 +2509,10 @@ packages:
       yaml:
         optional: true
 
+  vscode-jsonrpc@8.2.1:
+    resolution: {integrity: sha512-kdjOSJ2lLIn7r1rtrMbbNCHjyMPfRnowdKjBQ+mGq6NAW5QY2bEZC/khaC5OR8svbbjvLEaIXkOq45e2X9BIbQ==}
+    engines: {node: '>=14.0.0'}
+
   wabt@1.0.37-nightly.20250428:
     resolution: {integrity: sha512-vmMcBckRhwrucnOCLsxlJQjzIDEGYxuX+3Csxy/wDsgvdlkf3aYHOUyUAHugNMsQ5aNFhL2soBlgey/XFXLMOw==}
     hasBin: true
@@ -4690,6 +4725,8 @@ snapshots:
       fsevents: 2.3.3
       terser: 5.39.0
       tsx: 4.20.5
+
+  vscode-jsonrpc@8.2.1: {}
 
   wabt@1.0.37-nightly.20250428: {}
 
