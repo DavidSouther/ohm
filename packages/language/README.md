@@ -36,4 +36,6 @@ createLanguageService(semantics, {
 * `ambient`: every exported definition of every known file is visible, as for Jack classes or HDL chips.
 * `explicit`: only names an `roles.import(spec, {names})` role binds are visible, and `resolveImport(specifier, fromUri)` maps a specifier to a URI.
 * Which definitions a file exports is the language's decision; there is no default.
-* Open documents shadow the files behind them. `service.scan()` loads the rest, `service.affected(uri)` lists documents to `refresh` after an edit.
+* `vfs` is asynchronous: `list()` is an `AsyncIterable` of URIs and `read(uri)` a promise, so a slow disk or store never blocks the editor. `createMemoryVfs` wraps fixed contents.
+* Open documents shadow the files behind them. `for await (const uri of service.scan())` loads the rest as a stream; each yielded URI is already analyzed. Until a scan ends, an unresolved name is a hint, not an error.
+* `await service.refresh(uri)` re-reads a file, and `service.affected(uri)` lists documents to refresh after an edit.

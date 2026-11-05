@@ -56,10 +56,15 @@ export interface ExternalSymbol {
   members?: readonly string[];
 }
 
-/** A read-only file system: the disk, or any other source of files, by URI. */
+/**
+ * A read-only file system: the disk, or any other source of files, by URI.
+ * Both calls are asynchronous, and `list` streams its URIs as they are found,
+ * so a large tree or a slow store never blocks the editor.
+ */
 export interface ReadonlyVfs {
-  list(): string[];
-  read(uri: string): string | undefined;
+  list(): AsyncIterable<string>;
+  /** The text of `uri`, or undefined when there is no such file. */
+  read(uri: string): Promise<string | undefined>;
 }
 
 /**

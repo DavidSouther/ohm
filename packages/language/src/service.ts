@@ -20,14 +20,16 @@ export interface LanguageService {
   open(uri: string, version: number, text: string): Analysis;
   change(uri: string, version: number, text: string): Analysis;
   /** Drops an open document. A file the workspace can still read stays known, from its saved text. */
-  close(uri: string): void;
+  close(uri: string): Promise<void>;
   /**
    * Analyzes every workspace file that is not yet known, so names resolve
-   * across files regardless of which were opened. Returns the URIs it loaded.
+   * across files regardless of which were opened. It streams: each yielded URI
+   * has a current analysis, and a URI may come again when a second pass
+   * reanalyzes it against files that were found after it.
    */
-  scan(): string[];
+  scan(): AsyncGenerator<string, void>;
   /** Re-reads `uri` from the open documents or the workspace files and analyzes it again. */
-  refresh(uri: string): Analysis | undefined;
+  refresh(uri: string): Promise<Analysis | undefined>;
   /** Other documents whose analysis may differ now that `uri` last changed. */
   affected(uri: string): string[];
   /** The last analysis that had a tree; `stale` when the latest text had none. */
@@ -114,6 +116,10 @@ export function createLanguageService(
   config: ServiceConfig
 ): LanguageService {
   const docs = new Map<string, DocState>();
+  /** Scans in progress; while any runs, an unresolved name is only uncertain. */
+  let scanning = 0;
+  /** Set when a document was analyzed during a scan, so the scan reanalyzes it at the end. */
+  let analyzedUnsettled = false;
   const workspace = config.workspace;
   const vfs = createOverlayVfs(workspace?.vfs);
 
@@ -144,9 +150,11 @@ export function createLanguageService(
         : undefined,
     resolveImport: (spec, fromUri) => workspace.resolveImport?.(spec, fromUri),
     exportsOf,
+    settled: () => scanning === 0,
   };
 
   const update = (uri: string, version: number, text: string): Analysis => {
+    if (scanning > 0) analyzedUnsettled = true;
     const latest = safeAnalyze(semantics, config, uri, version, text, outer);
     const before = docs.get(uri);
     if (latest.hasTree) {
@@ -222,9 +230,11 @@ export function createLanguageService(
       vfs.set(uri, text);
       return update(uri, version, text);
     },
-    close(uri) {
+    async close(uri) {
       vfs.delete(uri);
-      const saved = vfs.read(uri);
+      const saved = await vfs.read(uri);
+      // Opened again while the file was being read: that open owns the state.
+      if (vfs.has(uri)) return;
       if (saved === undefined) {
         docs.delete(uri);
         index = undefined;
@@ -232,20 +242,48 @@ export function createLanguageService(
         update(uri, docs.get(uri)?.version ?? 0, saved);
       }
     },
-    scan() {
-      const loaded = vfs.list().filter(uri => !docs.has(uri));
-      for (const uri of loaded) update(uri, 0, vfs.read(uri) ?? '');
-      // A second pass, so a file loaded early sees the exports of one loaded after it.
-      for (const uri of loaded) update(uri, 0, vfs.read(uri) ?? '');
-      return loaded;
+    async *scan() {
+      if (scanning === 0) analyzedUnsettled = false;
+      scanning++;
+      try {
+        const texts = new Map<string, string>();
+        for await (const uri of vfs.list()) {
+          if (docs.has(uri)) continue;
+          const text = await vfs.read(uri);
+          // Gone since it was listed, or opened while it was being read.
+          if (text === undefined || docs.has(uri)) continue;
+          texts.set(uri, text);
+          update(uri, 0, text);
+          yield uri;
+        }
+        if (texts.size === 0 && !analyzedUnsettled) return;
+        // A second pass, so a file loaded early sees the exports of one loaded after it,
+        // and so do the documents that were analyzed before the files were known.
+        scanning--;
+        try {
+          for (const uri of [...docs.keys()]) {
+            const text = texts.get(uri) ?? (await vfs.read(uri));
+            if (text === undefined || !docs.has(uri)) continue;
+            update(uri, docs.get(uri)?.version ?? 0, text);
+            yield uri;
+          }
+        } finally {
+          scanning++;
+        }
+      } finally {
+        scanning--;
+      }
     },
-    refresh(uri) {
-      const text = vfs.read(uri);
+    async refresh(uri) {
+      const wasOpen = vfs.has(uri);
+      const text = await vfs.read(uri);
       if (text === undefined) {
         docs.delete(uri);
         index = undefined;
         return undefined;
       }
+      // Opened while the file was being read: the open document's analysis is newer.
+      if (!wasOpen && vfs.has(uri)) return docs.get(uri)?.good;
       return update(uri, docs.get(uri)?.version ?? 0, text);
     },
     affected(uri) {

@@ -7,11 +7,22 @@ export interface OverlayVfs extends ReadonlyVfs {
   /** Drops an open document; the base copy, if any, shows through again. */
   delete(uri: string): void;
   has(uri: string): boolean;
-  /** Whether the base has `uri`, so a closed document can fall back to it. */
-  inBase(uri: string): boolean;
 }
 
-export const emptyVfs: ReadonlyVfs = {list: () => [], read: () => undefined};
+export const emptyVfs: ReadonlyVfs = {
+  async *list() {},
+  read: async () => undefined,
+};
+
+/** A file system over fixed contents, for tests and for hosts that already hold their files. */
+export function createMemoryVfs(files: Readonly<Record<string, string>>): ReadonlyVfs {
+  return {
+    async *list() {
+      yield* Object.keys(files);
+    },
+    read: async uri => files[uri],
+  };
+}
 
 export function createOverlayVfs(base: ReadonlyVfs = emptyVfs): OverlayVfs {
   const open = new Map<string, string>();
@@ -19,8 +30,12 @@ export function createOverlayVfs(base: ReadonlyVfs = emptyVfs): OverlayVfs {
     set: (uri, text) => void open.set(uri, text),
     delete: uri => void open.delete(uri),
     has: uri => open.has(uri),
-    inBase: uri => base.read(uri) !== undefined,
-    read: uri => open.get(uri) ?? base.read(uri),
-    list: () => [...new Set([...base.list(), ...open.keys()])],
+    async read(uri) {
+      return open.has(uri) ? open.get(uri) : await base.read(uri);
+    },
+    async *list() {
+      yield* open.keys();
+      for await (const uri of base.list()) if (!open.has(uri)) yield uri;
+    },
   };
 }

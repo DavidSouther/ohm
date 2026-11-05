@@ -13,7 +13,7 @@ export type {
 } from './define.ts';
 export {createLanguageService} from './service.ts';
 export type {LanguageService} from './service.ts';
-export {createOverlayVfs, emptyVfs} from './vfs.ts';
+export {createMemoryVfs, createOverlayVfs, emptyVfs} from './vfs.ts';
 export type {OverlayVfs} from './vfs.ts';
 export {offset} from './types.ts';
 export type * from './types.ts';

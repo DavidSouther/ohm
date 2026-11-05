@@ -139,6 +139,15 @@ export function serve(
   const open = new Set<string>();
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
 
+  let disposed = false;
+
+  const refreshDependents = async (uri: string) => {
+    for (const other of service.affected(uri)) {
+      const a = await service.refresh(other);
+      if (!disposed && a && open.has(other)) publish(a);
+    }
+  };
+
   /** Reanalyzes documents that depend on `uri` once typing pauses, publishing the open ones. */
   const scheduleDependents = (uri: string) => {
     clearTimeout(timers.get(uri));
@@ -146,14 +155,7 @@ export function serve(
       uri,
       setTimeout(() => {
         timers.delete(uri);
-        try {
-          for (const other of service.affected(uri)) {
-            const a = service.refresh(other);
-            if (a && open.has(other)) publish(a);
-          }
-        } catch (e) {
-          failed('dependents', e);
-        }
+        refreshDependents(uri).catch(e => failed('dependents', e));
       }, debounceMs)
     );
   };
@@ -182,19 +184,31 @@ export function serve(
     completionProvider: {},
   };
   request('initialize', {capabilities}, () => ({capabilities}));
-  notification('initialized', () => void service.scan());
+  /** Loads the workspace's files, publishing each open document as it is reanalyzed. */
+  const scanWorkspace = async () => {
+    for await (const uri of service.scan()) {
+      if (disposed) return;
+      const found = service.analysis(uri);
+      if (found && open.has(uri)) publish(found.analysis);
+    }
+  };
+  notification('initialized', () => void scanWorkspace().catch(e => failed('scan', e)));
   notification('workspace/didChangeWatchedFiles', params => {
     const changes = record(params, 'params').changes;
     if (!Array.isArray(changes)) throw new TypeError("Expected 'changes' to be an array");
-    for (const change of changes) {
-      const uri = field<string>(record(change, 'change'), 'uri', 'string');
-      if (open.has(uri)) continue;
-      service.refresh(uri);
-      scheduleDependents(uri);
-    }
+    const uris = changes
+      .map(change => field<string>(record(change, 'change'), 'uri', 'string'))
+      .filter(uri => !open.has(uri));
+    void (async () => {
+      for (const uri of uris) {
+        await service.refresh(uri);
+        scheduleDependents(uri);
+      }
+    })().catch(e => failed('didChangeWatchedFiles', e));
   });
   request('shutdown', null, () => null);
   notification('exit', () => {
+    disposed = true;
     for (const timer of timers.values()) clearTimeout(timer);
     c.dispose();
   });
@@ -215,8 +229,10 @@ export function serve(
   notification('textDocument/didClose', params => {
     const uri = uriOf(params);
     open.delete(uri);
-    service.close(uri);
-    scheduleDependents(uri);
+    void service
+      .close(uri)
+      .then(() => scheduleDependents(uri))
+      .catch(e => failed('didClose', e));
     void c.sendNotification('textDocument/publishDiagnostics', {uri, diagnostics: []});
   });
 
@@ -301,6 +317,7 @@ export function serve(
   c.listen();
   return {
     dispose() {
+      disposed = true;
       for (const timer of timers.values()) clearTimeout(timer);
       c.dispose();
     },

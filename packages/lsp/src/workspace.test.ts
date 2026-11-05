@@ -72,18 +72,19 @@ async function connect(roots: string[]) {
   return {client, all, until, dispose: () => (client.dispose(), server.dispose())};
 }
 
-test('diskVfs lists and reads files with the given extensions', t => {
+test('diskVfs streams and reads files with the given extensions', async t => {
   const dir = mkdtempSync(join(tmpdir(), 'ohm-lsp-'));
   writeFileSync(join(dir, 'b.mini'), 'class B { }');
   writeFileSync(join(dir, 'notes.txt'), 'x');
 
   const vfs = diskVfs([dir], ['.mini']);
-  const [uri] = vfs.list();
+  const listed = await Array.fromAsync(vfs.list());
+  const [uri] = listed;
 
-  t.is(vfs.list().length, 1);
+  t.is(listed.length, 1);
   t.is(uri, pathToFileURL(join(dir, 'b.mini')).href);
-  t.is(vfs.read(uri), 'class B { }');
-  t.is(vfs.read('file:///does/not/exist.mini'), undefined);
+  t.is(await vfs.read(uri), 'class B { }');
+  t.is(await vfs.read('file:///does/not/exist.mini'), undefined);
 });
 
 test('an edit to one open file republishes the diagnostics of a file that uses it', async t => {
@@ -98,7 +99,8 @@ test('an edit to one open file republishes the diagnostics of a file that uses i
   });
 
   client.sendNotification('textDocument/didOpen', doc(aUri, 10, 'class A { uses B; }'));
-  await until(() => all.some(p => p.uri === aUri));
+  // The disk scan streams in behind the open, so `B` is first only uncertain; it settles clean.
+  await until(() => all.filter(p => p.uri === aUri).at(-1)?.diagnostics.length === 0);
   const first = all.filter(p => p.uri === aUri).at(-1);
   client.sendNotification('textDocument/didOpen', doc(bUri, 20, 'class B { }'));
   client.sendNotification('textDocument/didChange', {

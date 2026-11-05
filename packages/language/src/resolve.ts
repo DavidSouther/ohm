@@ -52,6 +52,8 @@ export interface Outer {
   resolveImport(specifier: string, fromUri: string): string | undefined;
   /** The exported definitions of a loaded document, or undefined when it is not loaded. */
   exportsOf(uri: string): Definition[] | undefined;
+  /** False while the workspace's files are still being loaded, so a missing name may yet appear. */
+  settled(): boolean;
 }
 
 export interface Resolution {
@@ -156,7 +158,9 @@ export function createResolver(
       symbols.push(target);
     }
     if (target) return {status: 'resolved', target};
-    return {status: hasSkippedInput ? 'uncertain' : 'undefined'};
+    return {
+      status: hasSkippedInput || (outer && !outer.settled()) ? 'uncertain' : 'undefined',
+    };
   };
 
   const memo = new Map<RefEntry, Resolution>();

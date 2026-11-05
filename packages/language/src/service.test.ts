@@ -122,11 +122,11 @@ test('an unknown uri returns empty results', t => {
   t.notThrows(() => svc.close('nope'));
 });
 
-test('close drops state', t => {
+test('close drops state', async t => {
   const svc = service();
   svc.open('u', 1, V1);
 
-  svc.close('u');
+  await svc.close('u');
 
   t.is(svc.analysis('u'), undefined);
   t.deepEqual(svc.documentSymbols('u'), []);

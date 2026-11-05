@@ -58,10 +58,10 @@ function fakeService(overrides: Partial<LanguageService> = {}) {
       texts.set(uri, a);
       return a;
     },
-    scan: () => [],
-    refresh: () => undefined,
+    async *scan() {},
+    refresh: async () => undefined,
     affected: () => [],
-    close(uri) {
+    async close(uri) {
       calls.push('close');
       texts.delete(uri);
     },
