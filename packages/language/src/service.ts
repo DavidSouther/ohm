@@ -68,10 +68,16 @@ export function createLanguageService(
     return doc && !doc.stale ? doc.good : undefined;
   };
 
-  const references = (uri: string, at: Offset, includeDeclaration: boolean): Span[] => {
+  const lookupAt = (uri: string, at: Offset) => {
     const a = current(uri);
     const target = a && targetAt(a, at);
-    if (!a || !target) return [];
+    return a && target ? {a, target} : undefined;
+  };
+
+  const references = (uri: string, at: Offset, includeDeclaration: boolean): Span[] => {
+    const found = lookupAt(uri, at);
+    if (!found) return [];
+    const {a, target} = found;
     const spans = usesOf(a, target)
       .map(r => r.nameSpan)
       .filter(s => !sameSpan(s, target.nameSpan));
@@ -93,15 +99,14 @@ export function createLanguageService(
       return docs.get(uri)?.good?.symbols ?? [];
     },
     definition(uri, at) {
-      const a = current(uri);
-      const target = a && targetAt(a, at);
-      return target ? [target] : [];
+      const found = lookupAt(uri, at);
+      return found ? [found.target] : [];
     },
     references,
     rename(uri, at, newName) {
-      const a = current(uri);
-      const target = a && targetAt(a, at);
-      if (!a || !target) return [];
+      const found = lookupAt(uri, at);
+      if (!found) return [];
+      const {a, target} = found;
       const kinds = namespaceOf(config, groupOf(config, target.kind));
       const scopes = [target.scope, ...usesOf(a, target).map(r => r.scope)];
       if (scopes.some(s => lookup(s, newName, kinds, Infinity))) return [];
