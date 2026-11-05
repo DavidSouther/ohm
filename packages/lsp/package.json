@@ -33,6 +33,7 @@
     "ohm-js": "workspace:^"
   },
   "ava": {
-    "extensions": ["ts"]
+    "extensions": ["ts"],
+    "files": ["src/**/*.test.ts", "test/**/*.test.ts"]
   }
 }

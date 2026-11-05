@@ -39,6 +39,7 @@
     }
   },
   "ava": {
-    "extensions": ["ts"]
+    "extensions": ["ts"],
+    "files": ["src/**/*.test.ts", "test/**/*.test.ts"]
   }
 }
