@@ -59,13 +59,17 @@ pexprs.Fallible.prototype.assertChoicesHaveUniformArity = function (ruleName) {
   if (this.guarded instanceof pexprs.Not || this.guarded instanceof pexprs.Lookahead) {
     throw errors.fallibleGuardIsPredicate(ruleName, this.guarded);
   }
-  const guardedArity = this.guarded.getArity();
-  if (guardedArity !== 1) {
-    throw errors.invalidFallibleOperand(ruleName, 'guarded', guardedArity, this.guarded);
+  if (this.guarded instanceof pexprs.Fallible) {
+    throw errors.fallibleGuardIsFallible(ruleName, this.guarded);
+  }
+  // The guarded operand may produce several values, like a sequence; the join
+  // produces exactly one.
+  if (this.guarded.getArity() === 0) {
+    throw errors.fallibleGuardProducesNoValue(ruleName, this.guarded);
   }
   const syncArity = this.join.getArity();
   if (syncArity !== 1) {
-    throw errors.invalidFallibleOperand(ruleName, 'synchronizer', syncArity, this.join);
+    throw errors.invalidFallibleOperand(ruleName, syncArity, this.join);
   }
 };
 

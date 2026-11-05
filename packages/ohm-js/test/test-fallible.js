@@ -388,13 +388,32 @@ test('recovery after an edit works in a grammar without incremental parsing', t 
 // Static checks
 // --------------------------------------------------------------------
 
-test('both operands must have arity 1', t => {
+test('the join must have arity 1 and the guarded operand must produce a value', t => {
   t.throws(() => ohm.grammar('G { S = "a" ! ("b" "c") }'), {message: /synchronizer.*arity/});
-  t.throws(() => ohm.grammar('G { S = ("a" ! "b") ! "c" }'), {message: /guarded.*arity/});
-  t.throws(() => ohm.grammar('G { S = ("a" "b") ! "c" }'), {message: /wrap it in a rule/});
+  t.throws(() => ohm.grammar('G { S = ("a" ! "b") ! "c" }'), {
+    message: /cannot be a '!' expression/,
+  });
+  t.throws(() => ohm.grammar('G { S = (~"a" ~"b") ! "c" }'), {message: /at least one value/});
+  t.throws(() => ohm.grammar('G { S = ("a" "b" | "c") ! "d" }'), {message: /inconsistent arity/});
   t.throws(() => ohm.grammar('G { S = ~"a" ! "c" }'), {message: /never consumes input/});
   t.throws(() => ohm.grammar('G { S = &"a" ! "c" }'), {message: /never consumes input/});
+  t.notThrows(() => ohm.grammar('G { S = "a" ! "b" }'));
+  t.notThrows(() => ohm.grammar('G { S = ("a" "b") ! "c" }'));
+  t.notThrows(() => ohm.grammar('G { S = ("a" "b" "c") ! "d" }'));
+  t.notThrows(() => ohm.grammar('G { S = ("a" "b" | "c" "d") ! "e" }'));
   t.notThrows(() => ohm.grammar('G { S = "a"* ! &"c" "c" }'));
+});
+
+test('without recovery, a multi-value guarded operand is a sequence', t => {
+  const g = ohm.grammar('G { S = ("a" "b") ! "c" }');
+  t.true(g.match('abc').succeeded());
+  t.true(g.match('abd').failed());
+  const args = g.createSemantics().addOperation('args', {
+    S(a, b, correction, c) {
+      return [a.sourceString, b.sourceString, correction.isOptional(), c.sourceString];
+    },
+  });
+  t.deepEqual(args(g.match('abc')).args(), ['a', 'b', true, 'c']);
 });
 
 test('a fallible is nullable only when `B C` is', t => {

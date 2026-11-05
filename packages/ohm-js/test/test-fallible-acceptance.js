@@ -146,7 +146,7 @@ test('syntax: `!` is looser than `*`, `&` and `~`, and tighter than sequence', t
 
   // Errors: no chains, no trailing `!`, and a left side that cannot recover.
   t.throws(() => bodyShape('A ! B ! C'));
-  t.throws(() => bodyShape('(A ! B) ! C'), {message: /arity/});
+  t.throws(() => bodyShape('(A ! B) ! C'), {message: /cannot be a '!' expression/});
   t.throws(() => bodyShape('A !'));
   t.throws(() => bodyShape('~A ! C'));
   t.throws(() => bodyShape('&A ! C'));
