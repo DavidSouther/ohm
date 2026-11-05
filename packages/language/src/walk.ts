@@ -2,7 +2,16 @@ import type {MatchResult, Node, Semantics} from 'ohm-js';
 
 import {isRole, ROLES_ATTRIBUTE} from './roles.ts';
 import {offset} from './types.ts';
-import type {Diagnostic, Offset, RefOpts, Role, RoleNode, Scope, Span, Symbol} from './types.ts';
+import type {
+  Diagnostic,
+  Offset,
+  RefOpts,
+  Role,
+  RoleNode,
+  Scope,
+  Span,
+  Symbol,
+} from './types.ts';
 
 export interface RefEntry {
   name: string;
@@ -59,13 +68,21 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
     try {
       result = node[ROLES_ATTRIBUTE];
     } catch (e) {
-      problem(node, 'roles.actionFailed', `Role action for '${node.ctorName}' failed: ${(e as Error).message}`);
+      problem(
+        node,
+        'roles.actionFailed',
+        `Role action for '${node.ctorName}' failed: ${(e as Error).message}`
+      );
       return [];
     }
     const found = flatten(result);
     const rs = found.filter(isRole);
     if (rs.length < found.length) {
-      problem(node, 'roles.actionFailed', `Role action for '${node.ctorName}' returned a value that is not a role`);
+      problem(
+        node,
+        'roles.actionFailed',
+        `Role action for '${node.ctorName}' returned a value that is not a role`
+      );
     }
     return rs;
   };
@@ -83,7 +100,11 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
       if (r.role === 'scope') continue;
       const id = nameOf(r.name);
       if (!id) {
-        problem(node, 'roles.badName', `Role action for '${node.ctorName}' gave a name with no text`);
+        problem(
+          node,
+          'roles.badName',
+          `Role action for '${node.ctorName}' gave a name with no text`
+        );
         continue;
       }
       if (r.role === 'declare') {
@@ -99,7 +120,13 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
         scope.symbols.push(symbol);
         out.symbols.push(symbol);
       } else {
-        out.refs.push({...id, kinds: r.kinds, scope: own ?? scope, opts: r.opts, ownerEnd: offset(node.source.endIdx)});
+        out.refs.push({
+          ...id,
+          kinds: r.kinds,
+          scope: own ?? scope,
+          opts: r.opts,
+          ownerEnd: offset(node.source.endIdx),
+        });
       }
     }
     for (const child of node.children) walk(child, own ?? scope);

@@ -44,5 +44,9 @@ export function addRoles(semantics: Semantics, actions: RoleActions): void {
 const ROLE_NAMES = new Set(['scope', 'declare', 'ref']);
 
 export function isRole(x: unknown): x is Role {
-  return typeof x === 'object' && x !== null && ROLE_NAMES.has((x as {role?: unknown}).role as string);
+  return (
+    typeof x === 'object' &&
+    x !== null &&
+    ROLE_NAMES.has((x as {role?: unknown}).role as string)
+  );
 }
