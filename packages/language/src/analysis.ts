@@ -1,17 +1,21 @@
 import type {Grammar, MatchResult, RecoveredFailure, Semantics} from 'ohm-js';
 
+import {isRole} from './roles.ts';
 import {offset} from './types.ts';
 import type {
   Analysis,
   RefStatus,
   Diagnostic,
+  ExternalSymbol,
   Reference,
+  Role,
+  RoleNode,
   Scope,
   ServiceConfig,
   Span,
   Symbol,
 } from './types.ts';
-import {collect} from './walk.ts';
+import {collect, nodeKey} from './walk.ts';
 import type {RefEntry} from './walk.ts';
 
 function grammarOf(semantics: Semantics): Grammar {
@@ -60,6 +64,9 @@ export function groupOf(config: ServiceConfig, kind: string): string {
   return entry ? entry[0] : kind;
 }
 
+const matches = (d: Symbol, name: string, kinds: readonly string[], at: number) =>
+  d.name === name && kinds.includes(d.kind) && at >= d.visibleFrom;
+
 export function lookup(
   scope: Scope | undefined,
   name: string,
@@ -67,12 +74,15 @@ export function lookup(
   at: number
 ): Symbol | undefined {
   for (let s = scope; s; s = s.parent) {
-    const hit = s.symbols.find(
-      d => d.name === name && kinds.includes(d.kind) && at >= d.visibleFrom
-    );
+    const hit = s.symbols.find(d => matches(d, name, kinds, at));
     if (hit) return hit;
   }
   return undefined;
+}
+
+/** A member of `container` reachable from outside it: never a private one. */
+function member(container: Symbol, name: string, kinds: readonly string[]) {
+  return container.members?.symbols.find(d => matches(d, name, kinds, Infinity) && !d.private);
 }
 
 function duplicates(config: ServiceConfig, symbols: Symbol[]): Diagnostic[] {
@@ -95,8 +105,19 @@ function duplicates(config: ServiceConfig, symbols: Symbol[]): Diagnostic[] {
   return out;
 }
 
-function unresolvedDiagnostic(r: RefEntry, status: RefStatus): Diagnostic | undefined {
+function unresolvedDiagnostic(
+  r: RefEntry,
+  {status, container}: Resolution
+): Diagnostic | undefined {
   const what = `${r.kinds.join(' or ')} '${r.name}'`;
+  if (status === 'undefinedMember' && container) {
+    return {
+      span: r.nameSpan,
+      severity: 'error',
+      code: 'ref.undefinedMember',
+      message: `No ${what} in ${container.kind} '${container.name}'`,
+    };
+  }
   if (status === 'undefined') {
     return {
       span: r.nameSpan,
@@ -114,6 +135,13 @@ function unresolvedDiagnostic(r: RefEntry, status: RefStatus): Diagnostic | unde
     };
   }
   return undefined;
+}
+
+interface Resolution {
+  status: RefStatus;
+  target?: Symbol;
+  /** For `undefinedMember`, the symbol that has no such member. */
+  container?: Symbol;
 }
 
 /**
@@ -137,9 +165,66 @@ export function analyze(
   const symbols = [...found.symbols];
   const diagnostics: Diagnostic[] = [...syntax, ...found.problems];
 
-  const resolve = (r: RefEntry): Reference => {
-    const kinds = r.kinds.flatMap(k => namespaceOf(config, k));
+  const byRole = new Map<Role, RefEntry>();
+  const byNode = new Map<string, RefEntry>();
+  for (const r of found.refs) {
+    byRole.set(r.role, r);
+    if (!byNode.has(r.ownerKey)) byNode.set(r.ownerKey, r);
+    if (!byNode.has(r.nameKey)) byNode.set(r.nameKey, r);
+  }
+  /** The ref that a node (by its producing node or its name node) or a role stands for. */
+  const refOf = (x: RoleNode | Role) => (isRole(x) ? byRole.get(x) : byNode.get(nodeKey(x)));
+
+  const externals = new Map<string, Symbol>();
+  const external = (kind: string, name: string, info: ExternalSymbol, owner = ''): Symbol => {
+    const key = `${owner}/${kind}/${name}`;
+    let symbol = externals.get(key);
+    if (!symbol) {
+      symbol = {
+        name,
+        kind,
+        nameSpan: {start: offset(0), end: offset(0)},
+        uri,
+        scope: found.root,
+        implicit: false,
+        private: false,
+        visibleFrom: offset(0),
+        external: info,
+      };
+      externals.set(key, symbol);
+    }
+    return symbol;
+  };
+
+  const viaMember = (r: RefEntry, kinds: string[], via: RoleNode | Role): Resolution => {
+    const viaRef = refOf(via);
+    const container = viaRef && resolve(viaRef).target;
+    if (!container) return {status: 'silent'};
+    const type = found.types.get(container);
+    const typeRef = type && refOf(type);
+    const typed = type ? typeRef && resolve(typeRef).target : container;
+    if (!typed) return {status: 'silent'};
+    const target = typed.external
+      ? typed.external.members?.includes(r.name)
+        ? external(kinds[0], r.name, {}, typed.name)
+        : undefined
+      : member(typed, r.name, kinds);
+    return target
+      ? {status: 'resolved', target}
+      : {status: 'undefinedMember', container: typed};
+  };
+
+  const lexical = (r: RefEntry, kinds: string[]): Resolution => {
     let target = lookup(r.scope, r.name, kinds, r.nameSpan.start);
+    if (!target && r.opts.external) {
+      for (const kind of r.kinds) {
+        const info = config.external?.[kind]?.(r.name);
+        if (info) {
+          target = external(kind, r.name, info);
+          break;
+        }
+      }
+    }
     if (!target && r.opts.orDeclare) {
       target = {
         name: r.name,
@@ -154,19 +239,35 @@ export function analyze(
       r.scope.symbols.push(target);
       symbols.push(target);
     }
-    const status = target ? 'resolved' : hasSkippedInput ? 'uncertain' : 'undefined';
-    const unresolved = unresolvedDiagnostic(r, status);
+    if (target) return {status: 'resolved', target};
+    return {status: hasSkippedInput ? 'uncertain' : 'undefined'};
+  };
+
+  const memo = new Map<RefEntry, Resolution>();
+  function resolve(r: RefEntry): Resolution {
+    const known = memo.get(r);
+    if (known) return known;
+    memo.set(r, {status: 'silent'});
+    const kinds = r.kinds.flatMap(k => namespaceOf(config, k));
+    const resolution = r.via ? viaMember(r, kinds, r.via) : lexical(r, kinds);
+    memo.set(r, resolution);
+    return resolution;
+  }
+
+  const reference = (r: RefEntry): Reference => {
+    const resolution = resolve(r);
+    const unresolved = unresolvedDiagnostic(r, resolution);
     if (unresolved) diagnostics.push(unresolved);
     return {
       name: r.name,
       kinds: r.kinds,
       nameSpan: r.nameSpan,
       scope: r.scope,
-      target,
-      status,
+      target: resolution.target,
+      status: resolution.status,
     };
   };
-  const references = found.refs.map(resolve);
+  const references = found.refs.map(reference);
 
   diagnostics.push(...duplicates(config, symbols));
   const byStart = (a: {start: number}, b: {start: number}) => a.start - b.start;

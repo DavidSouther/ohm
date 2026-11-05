@@ -7,6 +7,7 @@ import type {
   Offset,
   RefOpts,
   Role,
+  RoleContext,
   RoleNode,
   Scope,
   Span,
@@ -14,22 +15,37 @@ import type {
 } from './types.ts';
 
 export interface RefEntry {
+  role: Role;
   name: string;
   kinds: readonly string[];
   nameSpan: Span;
   scope: Scope;
   opts: RefOpts;
+  /** The `via` target, with a context function already applied. */
+  via?: RoleNode | Role;
   /** End of the node whose action produced this ref. */
   ownerEnd: Offset;
+  /** Node keys of the node that produced this ref and of its name node. */
+  ownerKey: string;
+  nameKey: string;
 }
 
 export interface Collected {
   root: Scope;
   symbols: Symbol[];
+  /** The `type` option of each declared symbol that has one. */
+  types: Map<Symbol, RoleNode | Role>;
   refs: RefEntry[];
   skipped: Span[];
   problems: Diagnostic[];
 }
+
+/**
+ * Identifies a node across wrappers, which Ohm creates afresh on each access.
+ * A rule name and a source interval pick one node of a tree.
+ */
+export const nodeKey = (node: Node): string =>
+  `${node.ctorName}@${node.source.startIdx}:${node.source.endIdx}`;
 
 const spanOf = (node: Node): Span => ({
   start: offset(node.source.startIdx),
@@ -63,7 +79,14 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
     symbols: [],
     span: {start: offset(0), end: offset(match.input.length)},
   };
-  const out: Collected = {root, symbols: [], refs: [], skipped: [], problems: []};
+  const out: Collected = {
+    root,
+    symbols: [],
+    types: new Map(),
+    refs: [],
+    skipped: [],
+    problems: [],
+  };
   const problem = (node: Node, code: string, message: string) =>
     out.problems.push({span: spanOf(node), severity: 'error', code, message});
 
@@ -91,7 +114,7 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
     return rs;
   };
 
-  const walk = (node: Node, scope: Scope) => {
+  const walk = (node: Node, scope: Scope, context: RoleContext) => {
     if (node.isCorrection()) {
       out.skipped.push(spanOf(node));
       return;
@@ -101,6 +124,7 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
       ? {parent: scope, children: [], symbols: [], span: spanOf(node)}
       : undefined;
     if (own) scope.children.push(own);
+    let ctx = context;
     for (const r of rs) {
       if (r.role === 'scope') continue;
       const id = nameOf(r.name);
@@ -113,30 +137,43 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
         continue;
       }
       if (r.role === 'declare') {
+        const {hoist, after, type, detail, doc, data} = r.opts;
+        const bindIn = hoist && !own ? (scope.parent ?? scope) : scope;
         const symbol: Symbol = {
           ...id,
           kind: r.kind,
           uri,
-          scope,
+          scope: bindIn,
           implicit: false,
           private: !!r.opts.private,
-          visibleFrom: offset(r.opts.after ? node.source.endIdx : 0),
+          visibleFrom: offset(after ? node.source.endIdx : 0),
+          members: hoist ? (own ?? scope) : own,
+          detail,
+          doc,
+          data,
         };
-        scope.symbols.push(symbol);
+        bindIn.symbols.push(symbol);
         out.symbols.push(symbol);
+        if (type) out.types.set(symbol, type);
       } else {
+        const {via} = r.opts;
         out.refs.push({
           ...id,
+          role: r,
           kinds: r.kinds,
           scope: own ?? scope,
           opts: r.opts,
+          via: typeof via === 'function' ? via(ctx) : via,
           ownerEnd: offset(node.source.endIdx),
+          ownerKey: nodeKey(node),
+          nameKey: nodeKey(r.name),
         });
+        if (r.opts.as) ctx = {...ctx, [r.opts.as]: r};
       }
     }
-    for (const child of node.children) walk(child, own ?? scope);
+    for (const child of node.children) walk(child, own ?? scope, ctx);
   };
 
-  walk(semantics(match) as Node, root);
+  walk(semantics(match) as Node, root, {});
   return out;
 }

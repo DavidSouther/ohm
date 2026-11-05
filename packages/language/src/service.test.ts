@@ -139,3 +139,18 @@ test('completion inside a block offers inner and outer names, inner first', t =>
 
   t.deepEqual(names, ['c', 'a']);
 });
+
+test('an external target has no location and cannot be renamed', t => {
+  const {sem} = calc();
+  addRoles(sem, {Var: (n: Node) => roles.ref(n, 'variable', {external: true})});
+  const svc = createLanguageService(sem, {
+    start: 'Program',
+    external: {variable: name => (name === 'pi' ? {} : undefined)},
+  });
+  svc.open('u', 1, 'pi;\npi;\n');
+
+  t.deepEqual(svc.analysis('u')?.analysis.diagnostics, []);
+  t.deepEqual(svc.definition('u', offset(0)), []);
+  t.deepEqual(svc.references('u', offset(0), true), [span(0, 2), span(4, 6)]);
+  t.deepEqual(svc.rename('u', offset(0), 'tau'), []);
+});

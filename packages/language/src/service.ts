@@ -81,7 +81,7 @@ export function createLanguageService(
     const spans = usesOf(a, target)
       .map(r => r.nameSpan)
       .filter(s => !sameSpan(s, target.nameSpan));
-    if (includeDeclaration) spans.push(target.nameSpan);
+    if (includeDeclaration && !target.external) spans.push(target.nameSpan);
     return spans.sort((x, y) => x.start - y.start);
   };
 
@@ -100,12 +100,12 @@ export function createLanguageService(
     },
     definition(uri, at) {
       const found = lookupAt(uri, at);
-      return found ? [found.target] : [];
+      return found && !found.target.external ? [found.target] : [];
     },
     references,
     rename(uri, at, newName) {
       const found = lookupAt(uri, at);
-      if (!found) return [];
+      if (!found || found.target.external) return [];
       const {a, target} = found;
       const kinds = namespaceOf(config, groupOf(config, target.kind));
       const scopes = [target.scope, ...usesOf(a, target).map(r => r.scope)];

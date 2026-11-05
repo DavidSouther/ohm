@@ -15,9 +15,11 @@ export interface Span {
 export type RoleNode = Node;
 
 export interface DeclareOpts {
+  /** Bind in the scope enclosing the nearest scope-opening node; members are that node's scope. */
   hoist?: boolean;
   after?: boolean;
-  type?: RoleNode;
+  /** A node or role whose reference gives this symbol's type, for member lookup. */
+  type?: RoleNode | Role;
   private?: boolean;
   detail?: string;
   doc?: string;
@@ -43,9 +45,16 @@ export type Role =
   | Readonly<{role: 'declare'; name: RoleNode; kind: string; opts: DeclareOpts}>
   | Readonly<{role: 'ref'; name: RoleNode; kinds: readonly string[]; opts: RefOpts}>;
 
+/** A symbol defined outside any document, such as a builtin chip or an OS class. */
+export interface ExternalSymbol {
+  members?: readonly string[];
+}
+
 export interface ServiceConfig {
   start: string;
   namespaces?: Record<string, string[]>;
+  /** Host resolvers by kind, asked when a ref with `external` finds nothing in the document. */
+  external?: Record<string, (name: string) => ExternalSymbol | undefined>;
 }
 
 export interface Scope {
@@ -65,9 +74,20 @@ export interface Symbol {
   private: boolean;
   /** The symbol is visible to references that start at or after this offset. */
   visibleFrom: Offset;
+  /** Declarations reachable through `via`, for a symbol whose node opens a scope. */
+  members?: Scope;
+  /** Set for a symbol supplied by a host resolver; it has no location. */
+  external?: ExternalSymbol;
+  detail?: string;
+  doc?: string;
+  data?: unknown;
 }
 
-export type RefStatus = 'resolved' | 'undefined' | 'uncertain';
+/**
+ * `silent` is a `via` ref whose target, or the target's type, did not resolve;
+ * it is not reported, so one error does not cascade.
+ */
+export type RefStatus = 'resolved' | 'undefined' | 'undefinedMember' | 'uncertain' | 'silent';
 
 export interface Reference {
   name: string;
