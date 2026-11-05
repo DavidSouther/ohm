@@ -7,7 +7,7 @@ import type {
   RoleNode,
   Scope,
   ServiceConfig,
-  Symbol,
+  Definition,
 } from './types.ts';
 import {nodeKey} from './walk.ts';
 import type {Collected, RefEntry} from './walk.ts';
@@ -24,7 +24,7 @@ export function groupOf(config: ServiceConfig, kind: string): string {
   return entry ? entry[0] : kind;
 }
 
-const matches = (d: Symbol, name: string, kinds: readonly string[], at: number) =>
+const matches = (d: Definition, name: string, kinds: readonly string[], at: number) =>
   d.name === name && kinds.includes(d.kind) && at >= d.visibleFrom;
 
 export function lookup(
@@ -32,7 +32,7 @@ export function lookup(
   name: string,
   kinds: readonly string[],
   at: number
-): Symbol | undefined {
+): Definition | undefined {
   for (let s = scope; s; s = s.parent) {
     const hit = s.symbols.find(d => matches(d, name, kinds, at));
     if (hit) return hit;
@@ -41,15 +41,15 @@ export function lookup(
 }
 
 /** A member of `container` reachable from outside it: never a private one. */
-function member(container: Symbol, name: string, kinds: readonly string[]) {
+function member(container: Definition, name: string, kinds: readonly string[]) {
   return container.members?.symbols.find(d => matches(d, name, kinds, Infinity) && !d.private);
 }
 
 export interface Resolution {
   status: RefStatus;
-  target?: Symbol;
+  target?: Definition;
   /** For `undefinedMember`, the symbol that has no such member. */
-  container?: Symbol;
+  container?: Definition;
 }
 
 /**
@@ -62,7 +62,7 @@ export function createResolver(
   found: Collected,
   config: ServiceConfig,
   hasSkippedInput: boolean,
-  symbols: Symbol[]
+  symbols: Definition[]
 ): (r: RefEntry) => Resolution {
   const byRole = new Map<Role, RefEntry>();
   const byNode = new Map<string, RefEntry>();
@@ -74,8 +74,8 @@ export function createResolver(
   /** The ref that a node (by its producing node or its name node) or a role stands for. */
   const refOf = (x: RoleNode | Role) => (isRole(x) ? byRole.get(x) : byNode.get(nodeKey(x)));
 
-  const externals = new Map<string, Symbol>();
-  const external = (kind: string, name: string, info: ExternalSymbol, owner = ''): Symbol => {
+  const externals = new Map<string, Definition>();
+  const external = (kind: string, name: string, info: ExternalSymbol, owner = ''): Definition => {
     const key = `${owner}/${kind}/${name}`;
     let symbol = externals.get(key);
     if (!symbol) {

@@ -3,7 +3,7 @@ import type {Grammar, MatchResult, RecoveredFailure, Semantics} from 'ohm-js';
 import {createResolver, groupOf} from './resolve.ts';
 import type {Resolution} from './resolve.ts';
 import {offset} from './types.ts';
-import type {Analysis, Diagnostic, Reference, ServiceConfig, Span, Symbol} from './types.ts';
+import type {Analysis, Diagnostic, Reference, ServiceConfig, Span, Definition} from './types.ts';
 import {collect} from './walk.ts';
 import type {RefEntry} from './walk.ts';
 
@@ -41,7 +41,7 @@ function noTree(uri: string, version: number, text: string, match: MatchResult):
   };
 }
 
-function duplicates(config: ServiceConfig, symbols: Symbol[]): Diagnostic[] {
+function duplicates(config: ServiceConfig, symbols: Definition[]): Diagnostic[] {
   const out: Diagnostic[] = [];
   for (const scope of new Set(symbols.map(s => s.scope))) {
     const seen = new Set<string>();

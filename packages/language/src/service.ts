@@ -9,7 +9,7 @@ import type {
   Scope,
   ServiceConfig,
   Span,
-  Symbol,
+  Definition,
   TextEdit,
 } from './types.ts';
 
@@ -19,11 +19,11 @@ export interface LanguageService {
   close(uri: string): void;
   /** The last analysis that had a tree; `stale` when the latest text had none. */
   analysis(uri: string): {analysis: Analysis; stale: boolean} | undefined;
-  documentSymbols(uri: string): Symbol[];
-  definition(uri: string, at: Offset): Symbol[];
+  documentSymbols(uri: string): Definition[];
+  definition(uri: string, at: Offset): Definition[];
   references(uri: string, at: Offset, includeDeclaration: boolean): Span[];
   rename(uri: string, at: Offset, newName: string): TextEdit[];
-  completion(uri: string, at: Offset): Symbol[];
+  completion(uri: string, at: Offset): Definition[];
 }
 
 interface DocState {
@@ -35,13 +35,13 @@ const contains = (span: Span, at: number) => span.start <= at && at <= span.end;
 const sameSpan = (a: Span, b: Span) => a.start === b.start && a.end === b.end;
 
 /** The symbol that the name at `at` declares or refers to. */
-function targetAt(a: Analysis, at: Offset): Symbol | undefined {
+function targetAt(a: Analysis, at: Offset): Definition | undefined {
   const ref = a.references.find(r => contains(r.nameSpan, at));
   if (ref) return ref.target;
   return a.symbols.find(s => contains(s.nameSpan, at));
 }
 
-function usesOf(a: Analysis, target: Symbol): Reference[] {
+function usesOf(a: Analysis, target: Definition): Reference[] {
   return a.references.filter(r => r.target === target);
 }
 
@@ -117,7 +117,7 @@ export function createLanguageService(
       const a = current(uri);
       if (!a) return [];
       const seen = new Set<string>();
-      const out: Symbol[] = [];
+      const out: Definition[] = [];
       for (let s: Scope | undefined = innermostScope(a.root, at); s; s = s.parent) {
         for (const sym of s.symbols) {
           if (sym.visibleFrom <= at && !seen.has(sym.name)) {

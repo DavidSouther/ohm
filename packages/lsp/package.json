@@ -1,6 +1,6 @@
 {
   "name": "@ohm-js/lsp",
-  "version": "18.0.0-alpha.0",
+  "version": "17.6.0-alpha.0",
   "description": "Language Server Protocol adapter for @ohm-js/language",
   "keywords": ["parser", "parsing", "ohm", "ohm-js", "lsp", "language-server"],
   "homepage": "https://github.com/ohmjs/ohm#readme",

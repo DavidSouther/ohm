@@ -60,11 +60,11 @@ export interface ServiceConfig {
 export interface Scope {
   parent?: Scope;
   children: Scope[];
-  symbols: Symbol[];
+  symbols: Definition[];
   span: Span;
 }
 
-export interface Symbol {
+export interface Definition {
   name: string;
   kind: string;
   nameSpan: Span;
@@ -94,7 +94,7 @@ export interface Reference {
   kinds: readonly string[];
   nameSpan: Span;
   scope: Scope;
-  target?: Symbol;
+  target?: Definition;
   status: RefStatus;
 }
 
@@ -114,7 +114,7 @@ export interface Analysis {
   /** False when the text produced no tree at all. */
   hasTree: boolean;
   root: Scope;
-  symbols: Symbol[];
+  symbols: Definition[];
   references: Reference[];
   diagnostics: Diagnostic[];
   hasSkippedInput: boolean;

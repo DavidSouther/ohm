@@ -11,7 +11,7 @@ import type {
   RoleNode,
   Scope,
   Span,
-  Symbol,
+  Definition,
 } from './types.ts';
 
 export interface RefEntry {
@@ -33,9 +33,9 @@ export interface RefEntry {
 export interface Collected {
   uri: string;
   root: Scope;
-  symbols: Symbol[];
+  symbols: Definition[];
   /** The `type` option of each declared symbol that has one. */
-  types: Map<Symbol, RoleNode | Role>;
+  types: Map<Definition, RoleNode | Role>;
   refs: RefEntry[];
   skipped: Span[];
   problems: Diagnostic[];
@@ -141,7 +141,7 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
       if (r.role === 'declare') {
         const {hoist, after, type, detail, doc, data} = r.opts;
         const bindIn = hoist && !own ? (scope.parent ?? scope) : scope;
-        const symbol: Symbol = {
+        const symbol: Definition = {
           ...id,
           kind: r.kind,
           uri,

@@ -1,6 +1,6 @@
 import test from 'ava';
 import {offset} from '@ohm-js/language';
-import type {Analysis, LanguageService, Span, Symbol} from '@ohm-js/language';
+import type {Analysis, LanguageService, Span, Definition} from '@ohm-js/language';
 import {PassThrough} from 'node:stream';
 import {
   createMessageConnection,
@@ -34,7 +34,7 @@ function analysis(uri: string, version: number, text: string, hasTree = true): A
 function fakeService(overrides: Partial<LanguageService> = {}) {
   const texts = new Map<string, Analysis>();
   const calls: string[] = [];
-  const sym = (name: string, at: number): Symbol => ({
+  const sym = (name: string, at: number): Definition => ({
     name,
     kind: 'variable',
     nameSpan: span(at, at + name.length),
