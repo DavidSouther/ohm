@@ -228,11 +228,26 @@ export function missingSynchronizer(bangInterval) {
   );
 }
 
-export function invalidFallibleOperand(ruleName, which, arity, expr) {
-  const name = which === 'guarded' ? 'guarded expression' : 'synchronizer';
+export function invalidFallibleOperand(ruleName, arity, expr) {
   return createError(
-    `In rule ${ruleName}, the ${name} of '!' must have arity 1 (got ${arity}); ` +
+    `In rule ${ruleName}, the synchronizer of '!' must have arity 1 (got ${arity}); ` +
       'wrap it in a rule',
+    expr.source
+  );
+}
+
+export function fallibleGuardIsFallible(ruleName, expr) {
+  return createError(
+    `In rule ${ruleName}, the guarded expression of '!' cannot be a '!' expression; ` +
+      'wrap it in a rule',
+    expr.source
+  );
+}
+
+export function fallibleGuardProducesNoValue(ruleName, expr) {
+  return createError(
+    `In rule ${ruleName}, the guarded expression of '!' must produce at least one value ` +
+      '(got 0)',
     expr.source
   );
 }

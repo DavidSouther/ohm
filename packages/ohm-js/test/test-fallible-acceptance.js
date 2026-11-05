@@ -146,7 +146,7 @@ test('syntax: `!` is looser than `*`, `&` and `~`, and tighter than sequence', t
 
   // Errors: no chains, no trailing `!`, and a left side that cannot recover.
   t.throws(() => bodyShape('A ! B ! C'));
-  t.throws(() => bodyShape('(A ! B) ! C'), {message: /arity/});
+  t.throws(() => bodyShape('(A ! B) ! C'), {message: /cannot be a '!' expression/});
   t.throws(() => bodyShape('A !'));
   t.throws(() => bodyShape('~A ! C'));
   t.throws(() => bodyShape('&A ! C'));
@@ -505,4 +505,169 @@ test('an operation without a `_correction` action skips a recovered node by defa
   t.throws(() => strict(g.match(BROKEN, undefined, RECOVER)).count(), {
     message: /_correction/,
   });
+});
+
+// A multi-value guarded operand: `(bar cell+) ! (nl | end)` behaves in recovery
+// exactly like the same expression wrapped in a rule, and its action receives
+// one argument per guarded value instead of one wrapper node.
+const ROWS_INLINE = String.raw`
+Rows {
+  rows = line*
+  line = (bar cell+) ! (nl | end)
+  cell = alnum+ bar
+  bar = "|"
+  nl = "\n"
+}`;
+const ROWS_WRAPPED = ROWS_INLINE.replace(
+  'line = (bar cell+) ! (nl | end)',
+  'line = lineBody ! (nl | end)\n  lineBody = bar cell+'
+);
+
+test('a guarded operand with several values recovers like one wrapped in a rule', t => {
+  // Line 2 breaks inside the guarded operand, line 3 between it and the join.
+  const clean = '|a|b|\n|c|';
+  const broken = '|a|b|\n|c?d|\n|e|x\n|f|';
+
+  const inline = ohm.grammar(ROWS_INLINE);
+  const wrapped = ohm.grammar(ROWS_WRAPPED);
+
+  const view = (bar, cells, correction, join) => ({
+    bar: bar.isIteration()
+      ? {empty: bar.numChildren === 0, optional: bar.isOptional()}
+      : bar.sourceString,
+    cells: cells.isOptional()
+      ? {empty: cells.numChildren === 0, optional: true}
+      : cells.children.map(c => c.sourceString),
+    correction: correction.isCorrection() ? correction.sourceString : null,
+    join: join.sourceString,
+  });
+  const inlineArgCounts = [];
+  const inlineLines = inline.createSemantics().addOperation('lines', {
+    rows(lines) {
+      return lines.children.map(l => l.lines());
+    },
+    line(bar, cells, correction, join) {
+      inlineArgCounts.push(arguments.length);
+      return view(bar, cells, correction, join);
+    },
+  });
+  const wrappedLines = wrapped.createSemantics().addOperation('lines', {
+    rows(lines) {
+      return lines.children.map(l => l.lines());
+    },
+    line(body, correction, join) {
+      // An empty optional stands in for a failed `lineBody`; spread it over both slots.
+      return body.isIteration()
+        ? view(body, body, correction, join)
+        : view(body.child(0), body.child(1), correction, join);
+    },
+  });
+
+  // Clean input: the action receives (bar, cells, correction, join), with no correction.
+  const cleanInline = inline.match(clean, undefined, RECOVER);
+  t.true(cleanInline.succeeded());
+  t.deepEqual(inlineLines(cleanInline).lines(), [
+    {bar: '|', cells: ['a|', 'b|'], correction: null, join: '\n'},
+    {bar: '|', cells: ['c|'], correction: null, join: ''},
+  ]);
+  t.deepEqual(inlineArgCounts, [4, 4]);
+  t.deepEqual(
+    inlineLines(cleanInline).lines(),
+    wrappedLines(wrapped.match(clean, undefined, RECOVER)).lines()
+  );
+
+  // Broken input: same recovered failures and the same values per line as the wrapped form.
+  inlineArgCounts.length = 0;
+  const brokenInline = inline.match(broken, undefined, RECOVER);
+  const brokenWrapped = wrapped.match(broken, undefined, RECOVER);
+  t.true(brokenWrapped.succeeded());
+  t.true(brokenInline.succeeded());
+  t.deepEqual(recoveries(brokenInline), recoveries(brokenWrapped));
+  t.is(recoveries(brokenInline).length, 2);
+  const lines = inlineLines(brokenInline).lines();
+  t.deepEqual(inlineArgCounts, [4, 4, 4, 4]);
+  t.deepEqual(lines, wrappedLines(brokenWrapped).lines());
+  t.deepEqual(lines[1], {
+    bar: {empty: true, optional: true},
+    cells: {empty: true, optional: true},
+    correction: '|c?d|',
+    join: '\n',
+  });
+  t.deepEqual(lines[2], {bar: '|', cells: ['e|'], correction: 'x', join: '\n'});
+});
+
+// A recovery inside retained guarded material belongs to that material in
+// every guarded slot, not only the last, as it does to a wrapper rule's node.
+const PAIRS_INLINE = String.raw`
+Pairs {
+  pairs = pair*
+  pair = (item item) ! ";"
+  item = letter ! ","
+}`;
+const PAIRS_WRAPPED = PAIRS_INLINE.replace(
+  'pair = (item item) ! ";"',
+  'pair = body ! ";"\n  body = item item'
+);
+
+test('a recovery inside any retained guarded slot stays with that slot', t => {
+  const inline = ohm.grammar(PAIRS_INLINE);
+  const wrapped = ohm.grammar(PAIRS_WRAPPED);
+  const spans = node => node.recoveredFailures.map(f => f.interval.contents);
+  const inlineOwners = inline.createSemantics().addOperation('owners', {
+    pairs(ps) {
+      return ps.children.map(p => p.owners());
+    },
+    pair(first, second, correction, join) {
+      return {retained: [...spans(first), ...spans(second)], correction: spans(correction)};
+    },
+  });
+  const wrappedOwners = wrapped.createSemantics().addOperation('owners', {
+    pairs(ps) {
+      return ps.children.map(p => p.owners());
+    },
+    pair(body, correction, join) {
+      return {retained: spans(body), correction: spans(correction)};
+    },
+  });
+
+  // The first slot, the last slot, both, and a failed guarded operand.
+  for (const input of ['a1,b,x;', 'a,b1,x;', 'a1,b1,x;', 'a1,?;']) {
+    const inlineMatch = inline.match(input, undefined, RECOVER);
+    const wrappedMatch = wrapped.match(input, undefined, RECOVER);
+    t.true(inlineMatch.succeeded(), input);
+    t.deepEqual(recoveries(inlineMatch), recoveries(wrappedMatch), input);
+    t.deepEqual(
+      inlineOwners(inlineMatch).owners(),
+      wrappedOwners(wrappedMatch).owners(),
+      input
+    );
+  }
+  const [pair] = inlineOwners(inline.match('a1,b,x;', undefined, RECOVER)).owners();
+  t.deepEqual(pair, {retained: ['1'], correction: ['x']});
+});
+
+test('a guarded sequence may contain a fallible', t => {
+  const source = String.raw`
+    Items {
+      items = item*
+      item = (key ! ":" letter) ! ";"
+      key = letter
+    }`;
+  const inline = ohm.grammar(source);
+  const wrapped = ohm.grammar(
+    source.replace(
+      'item = (key ! ":" letter) ! ";"',
+      'item = body ! ";"\n body = key ! ":" letter'
+    )
+  );
+  t.is(inline.rules.item.body.getArity(), 6);
+  for (const input of ['a:b;c:d;', 'a1:b;c:d;', 'a:bx;c:d;', 'a1:bx;c?;d:e;']) {
+    const inlineMatch = inline.match(input, undefined, RECOVER);
+    t.true(inlineMatch.succeeded(), input);
+    t.deepEqual(
+      recoveries(inlineMatch),
+      recoveries(wrapped.match(input, undefined, RECOVER)),
+      input
+    );
+  }
 });
