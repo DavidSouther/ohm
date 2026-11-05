@@ -49,11 +49,11 @@ function noTree(uri: string, version: number, text: string, match: MatchResult):
 }
 
 /** Kinds that share a lookup space and a duplicate group with `kind`. */
-function namespaceOf(config: ServiceConfig, kind: string): string[] {
+export function namespaceOf(config: ServiceConfig, kind: string): string[] {
   return config.namespaces?.[kind] ?? [kind];
 }
 
-function groupOf(config: ServiceConfig, kind: string): string {
+export function groupOf(config: ServiceConfig, kind: string): string {
   const entry = Object.entries(config.namespaces ?? {}).find(([, kinds]) =>
     kinds.includes(kind)
   );
