@@ -1,6 +1,7 @@
 import type {Semantics} from 'ohm-js';
 
-import {analyze, groupOf, lookup, namespaceOf} from './analysis.ts';
+import {analyze} from './analysis.ts';
+import {groupOf, lookup, namespaceOf} from './resolve.ts';
 import type {
   Analysis,
   Offset,

@@ -31,6 +31,7 @@ export interface RefEntry {
 }
 
 export interface Collected {
+  uri: string;
   root: Scope;
   symbols: Symbol[];
   /** The `type` option of each declared symbol that has one. */
@@ -80,6 +81,7 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
     span: {start: offset(0), end: offset(match.input.length)},
   };
   const out: Collected = {
+    uri,
     root,
     symbols: [],
     types: new Map(),
