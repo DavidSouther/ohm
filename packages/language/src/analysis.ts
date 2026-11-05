@@ -3,6 +3,7 @@ import type {Grammar, MatchResult, RecoveredFailure, Semantics} from 'ohm-js';
 import {offset} from './types.ts';
 import type {
   Analysis,
+  RefStatus,
   Diagnostic,
   Reference,
   Scope,
@@ -94,6 +95,27 @@ function duplicates(config: ServiceConfig, symbols: Symbol[]): Diagnostic[] {
   return out;
 }
 
+function unresolvedDiagnostic(r: RefEntry, status: RefStatus): Diagnostic | undefined {
+  const what = `${r.kinds.join(' or ')} '${r.name}'`;
+  if (status === 'undefined') {
+    return {
+      span: r.nameSpan,
+      severity: 'error',
+      code: 'ref.undefined',
+      message: `Undefined ${what}`,
+    };
+  }
+  if (status === 'uncertain') {
+    return {
+      span: r.nameSpan,
+      severity: 'hint',
+      code: 'ref.uncertain',
+      message: `Cannot find ${what}; part of the document could not be parsed`,
+    };
+  }
+  return undefined;
+}
+
 /**
  * Parses `text` with recovery and resolves its roles. Refs resolve in document
  * order, innermost scope first, so an `orDeclare` re-assignment finds the
@@ -133,22 +155,8 @@ export function analyze(
       symbols.push(target);
     }
     const status = target ? 'resolved' : hasSkippedInput ? 'uncertain' : 'undefined';
-    const what = `${r.kinds.join(' or ')} '${r.name}'`;
-    if (status === 'undefined') {
-      diagnostics.push({
-        span: r.nameSpan,
-        severity: 'error',
-        code: 'ref.undefined',
-        message: `Undefined ${what}`,
-      });
-    } else if (status === 'uncertain') {
-      diagnostics.push({
-        span: r.nameSpan,
-        severity: 'hint',
-        code: 'ref.uncertain',
-        message: `Cannot find ${what}; part of the document could not be parsed`,
-      });
-    }
+    const unresolved = unresolvedDiagnostic(r, status);
+    if (unresolved) diagnostics.push(unresolved);
     return {
       name: r.name,
       kinds: r.kinds,
