@@ -23,6 +23,8 @@ export interface LanguageService {
   documentSymbols(uri: string): Definition[];
   definition(uri: string, at: Offset): Definition[];
   references(uri: string, at: Offset, includeDeclaration: boolean): Span[];
+  /** The name at `at` that a rename would start from, or undefined when it cannot be renamed. */
+  prepareRename(uri: string, at: Offset): {span: Span; placeholder: string} | undefined;
   rename(uri: string, at: Offset, newName: string): TextEdit[];
   completion(uri: string, at: Offset): Definition[];
 }
@@ -47,7 +49,8 @@ function usesOf(a: Analysis, target: Definition): Reference[] {
 }
 
 function innermostScope(scope: Scope, at: Offset): Scope {
-  const child = scope.children.find(c => contains(c.span, at));
+  // Half open, so a position shared by two adjacent scopes belongs to the later one.
+  const child = scope.children.find(c => c.span.start <= at && at < c.span.end);
   return child ? innermostScope(child, at) : scope;
 }
 
@@ -142,7 +145,14 @@ export function createLanguageService(
       return found && !found.target.external ? [found.target] : [];
     },
     references,
+    prepareRename(uri, at) {
+      const found = lookupAt(uri, at);
+      if (!found || found.target.external) return undefined;
+      const here = found.a.references.find(r => contains(r.nameSpan, at));
+      return {span: here ? here.nameSpan : found.target.nameSpan, placeholder: found.target.name};
+    },
     rename(uri, at, newName) {
+      if (newName === '' || /\s/.test(newName)) return [];
       const found = lookupAt(uri, at);
       if (!found || found.target.external) return [];
       const {a, target} = found;
@@ -158,8 +168,9 @@ export function createLanguageService(
       const out: Definition[] = [];
       for (let s: Scope | undefined = innermostScope(a.root, at); s; s = s.parent) {
         for (const sym of s.symbols) {
-          if (sym.visibleFrom <= at && !seen.has(sym.name)) {
-            seen.add(sym.name);
+          const key = `${sym.kind}/${sym.name}`;
+          if (sym.visibleFrom <= at && !seen.has(key)) {
+            seen.add(key);
             out.push(sym);
           }
         }

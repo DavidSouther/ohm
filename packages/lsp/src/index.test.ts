@@ -68,6 +68,7 @@ function fakeService(overrides: Partial<LanguageService> = {}) {
     documentSymbols: () => [sym('a', 0), sym('bb', 4)],
     definition: (_uri, at) => (at === 10 ? [sym('a', 0)] : []),
     references: () => [span(0, 1), span(6, 7)],
+    prepareRename: (_uri, at) => (at === 0 ? {span: span(0, 1), placeholder: 'a'} : undefined),
     rename: (uri, _at, newText) => [{uri, span: span(6, 7), newText}],
     completion: () => [sym('a', 0)],
     ...overrides,
@@ -258,5 +259,75 @@ test('the outline is empty while the latest text has no tree', async t => {
   const symbols = await client.sendRequest('textDocument/documentSymbol', {textDocument});
 
   t.deepEqual(symbols, []);
+  dispose();
+});
+
+test('prepareRename answers a range and placeholder, or null', async t => {
+  const {client, publish, init, dispose} = await connect(fakeService().service);
+  client.sendNotification('textDocument/didOpen', open('a = 1\n'));
+  await publish(1);
+
+  const yes = await client.sendRequest('textDocument/prepareRename', {
+    textDocument,
+    position: {line: 0, character: 0},
+  });
+  const no = await client.sendRequest('textDocument/prepareRename', {
+    textDocument,
+    position: {line: 0, character: 3},
+  });
+
+  t.deepEqual(yes, {
+    range: {start: {line: 0, character: 0}, end: {line: 0, character: 1}},
+    placeholder: 'a',
+  });
+  t.is(no, null);
+  t.deepEqual(init.capabilities.renameProvider, {prepareProvider: true});
+  dispose();
+});
+
+test("the outline nests definitions that live in a definition's member scope", async t => {
+  const members = {children: [], symbols: [], span: span(0, 20)};
+  const make = (
+    name: string,
+    at: number,
+    scope: typeof members,
+    extra: Partial<Definition> = {}
+  ) =>
+    ({
+      name,
+      kind: 'method',
+      nameSpan: span(at, at + name.length),
+      uri,
+      scope,
+      implicit: false,
+      private: false,
+      visibleFrom: offset(0),
+      ...extra,
+    }) as Definition;
+  const top = {children: [], symbols: [], span: span(0, 20)};
+  const klass = make('K', 6, top, {kind: 'class', members, span: span(0, 20)});
+  const inner = make('m', 12, members, {span: span(10, 18)});
+  const {service} = fakeService({documentSymbols: () => [klass, inner]});
+  const {client, publish, dispose} = await connect(service);
+  client.sendNotification('textDocument/didOpen', open('class K { m() {} }\n'));
+  await publish(1);
+
+  const outline = (await client.sendRequest('textDocument/documentSymbol', {
+    textDocument,
+  })) as {
+    name: string;
+    range: unknown;
+    children: {name: string; range: {start: {character: number}}}[];
+  }[];
+
+  t.deepEqual(
+    outline.map(o => o.name),
+    ['K']
+  );
+  t.deepEqual(
+    outline[0].children.map(c => c.name),
+    ['m']
+  );
+  t.is(outline[0].children[0].range.start.character, 10);
   dispose();
 });

@@ -143,6 +143,7 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
         const bindIn = hoist && !own ? (scope.parent ?? scope) : scope;
         const symbol: Definition = {
           ...id,
+          span: spanOf(node),
           kind: r.kind,
           uri,
           scope: bindIn,

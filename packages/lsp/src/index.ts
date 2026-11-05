@@ -1,4 +1,4 @@
-import type {Analysis, LanguageService, Offset, Severity} from '@ohm-js/language';
+import type {Analysis, Definition, LanguageService, Offset, Severity} from '@ohm-js/language';
 import type {Readable, Writable} from 'node:stream';
 import {
   createMessageConnection,
@@ -27,6 +27,15 @@ const SYMBOL_KIND: Record<string, number> = {
   constant: 14,
 };
 const VARIABLE = 13;
+
+interface DocumentSymbolNode {
+  name: string;
+  detail: string;
+  kind: number;
+  range: Range;
+  selectionRange: Range;
+  children: DocumentSymbolNode[];
+}
 
 const TEXT_DOCUMENT_SYNC_FULL = 1;
 const LOG_ERROR = 1;
@@ -131,7 +140,7 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
     documentSymbolProvider: true,
     definitionProvider: true,
     referencesProvider: true,
-    renameProvider: true,
+    renameProvider: {prepareProvider: true},
     completionProvider: {},
   };
   request('initialize', {capabilities}, () => ({capabilities}));
@@ -170,16 +179,33 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
     if (!found || found.stale) return [];
     const a = found.analysis;
     const index = indexOf(a);
-    return service.documentSymbols(a.uri).map(s => {
-      const range = toRange(index, s.nameSpan);
+    const defs = service.documentSymbols(a.uri);
+    const outline = (d: Definition): DocumentSymbolNode => {
+      const selectionRange = toRange(index, d.nameSpan);
+      const children =
+        d.members && d.members !== d.scope ? defs.filter(c => c.scope === d.members) : [];
       return {
-        name: s.name,
-        detail: s.kind,
-        kind: SYMBOL_KIND[s.kind] ?? VARIABLE,
-        range,
-        selectionRange: range,
+        name: d.name,
+        detail: d.kind,
+        kind: SYMBOL_KIND[d.kind] ?? VARIABLE,
+        range: d.span ? toRange(index, d.span) : selectionRange,
+        selectionRange,
+        children: children.filter(c => c !== d).map(outline),
       };
-    });
+    };
+    const nested = new Set(
+      defs
+        .filter(d => d.members && d.members !== d.scope)
+        .flatMap(d => defs.filter(c => c.scope === d.members))
+    );
+    return defs.filter(d => !nested.has(d)).map(outline);
+  });
+  request('textDocument/prepareRename', null, params => {
+    const found = locate(params);
+    const prepared = found && service.prepareRename(found.a.uri, found.at);
+    return prepared
+      ? {range: toRange(found.index, prepared.span), placeholder: prepared.placeholder}
+      : null;
   });
   request('textDocument/definition', [], params => {
     const found = locate(params);

@@ -179,3 +179,37 @@ test('a host resolver that throws becomes a diagnostic, not an exception', t => 
   t.regex(a.diagnostics[0].message, /host exploded/);
   t.is(a.version, 1);
 });
+
+test('completion keeps one entry per name and kind', t => {
+  const {sem} = calc();
+  addRoles(sem, {
+    Assign: (n: Node, _e: Node, _r: Node) =>
+      roles.ref(n, 'variable', {orDeclare: 'variable', after: true}),
+    Var: (n: Node) => roles.ref(n, 'variable', {orDeclare: 'constant'}),
+  });
+  const svc = createLanguageService(sem, {start: 'Program'});
+  const text = 'x;\nx = 1;\n';
+  svc.open('u', 1, text);
+
+  const found = svc.completion('u', offset(text.length)).map(s => `${s.kind} ${s.name}`);
+
+  t.deepEqual(found.sort(), ['constant x', 'variable x']);
+});
+
+test('prepareRename answers the name under the cursor, and nothing elsewhere', t => {
+  const svc = service();
+  svc.open('u', 1, V1);
+
+  t.deepEqual(svc.prepareRename('u', offset(11)), {span: span(11, 12), placeholder: 'a'});
+  t.deepEqual(svc.prepareRename('u', offset(0)), {span: span(0, 1), placeholder: 'a'});
+  t.is(svc.prepareRename('u', offset(3)), undefined);
+  t.is(svc.prepareRename('nope', offset(0)), undefined);
+});
+
+test('rename refuses an empty name or one with whitespace', t => {
+  const svc = service();
+  svc.open('u', 1, V1);
+
+  t.deepEqual(svc.rename('u', offset(0), ''), []);
+  t.deepEqual(svc.rename('u', offset(0), 'a b'), []);
+});

@@ -68,6 +68,8 @@ export interface Definition {
   name: string;
   kind: string;
   nameSpan: Span;
+  /** The whole node that declares this definition, for outlines and folding. */
+  span?: Span;
   uri: string;
   scope: Scope;
   implicit: boolean;
