@@ -241,3 +241,22 @@ test('requests for an unopened document answer empty', async t => {
   t.deepEqual(definition, []);
   dispose();
 });
+
+test('the outline is empty while the latest text has no tree', async t => {
+  const {service} = fakeService();
+  const stale: LanguageService = {
+    ...service,
+    analysis: uri => {
+      const found = service.analysis(uri);
+      return found && {...found, stale: true};
+    },
+  };
+  const {client, publish, dispose} = await connect(stale);
+  client.sendNotification('textDocument/didOpen', open('a = 1\n'));
+  await publish(1);
+
+  const symbols = await client.sendRequest('textDocument/documentSymbol', {textDocument});
+
+  t.deepEqual(symbols, []);
+  dispose();
+});

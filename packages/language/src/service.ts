@@ -2,6 +2,7 @@ import type {Semantics} from 'ohm-js';
 
 import {analyze} from './analysis.ts';
 import {groupOf, lookup, namespaceOf} from './resolve.ts';
+import {offset} from './types.ts';
 import type {
   Analysis,
   Offset,
@@ -50,6 +51,43 @@ function innermostScope(scope: Scope, at: Offset): Scope {
   return child ? innermostScope(child, at) : scope;
 }
 
+/** An analysis that failed outright: no tree, and one diagnostic saying why. */
+function failedAnalysis(uri: string, version: number, text: string, e: unknown): Analysis {
+  const at = offset(0);
+  return {
+    uri,
+    version,
+    text,
+    hasTree: false,
+    root: {symbols: [], children: [], span: {start: at, end: offset(text.length)}},
+    symbols: [],
+    references: [],
+    diagnostics: [
+      {
+        span: {start: at, end: at},
+        severity: 'error',
+        code: 'roles.internal',
+        message: `Analysis failed: ${e instanceof Error ? e.message : String(e)}`,
+      },
+    ],
+    hasSkippedInput: true,
+  };
+}
+
+function safeAnalyze(
+  semantics: Semantics,
+  config: ServiceConfig,
+  uri: string,
+  version: number,
+  text: string
+): Analysis {
+  try {
+    return analyze(semantics, config, uri, version, text);
+  } catch (e) {
+    return failedAnalysis(uri, version, text, e);
+  }
+}
+
 export function createLanguageService(
   semantics: Semantics,
   config: ServiceConfig
@@ -57,7 +95,7 @@ export function createLanguageService(
   const docs = new Map<string, DocState>();
 
   const update = (uri: string, version: number, text: string): Analysis => {
-    const latest = analyze(semantics, config, uri, version, text);
+    const latest = safeAnalyze(semantics, config, uri, version, text);
     if (latest.hasTree) docs.set(uri, {good: latest, stale: false});
     else docs.set(uri, {good: docs.get(uri)?.good, stale: true});
     return latest;

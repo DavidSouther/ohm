@@ -166,8 +166,9 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
   });
 
   request('textDocument/documentSymbol', [], params => {
-    const a = service.analysis(uriOf(params))?.analysis;
-    if (!a) return [];
+    const found = service.analysis(uriOf(params));
+    if (!found || found.stale) return [];
+    const a = found.analysis;
     const index = indexOf(a);
     return service.documentSymbols(a.uri).map(s => {
       const range = toRange(index, s.nameSpan);

@@ -154,3 +154,28 @@ test('an external target has no location and cannot be renamed', t => {
   t.deepEqual(svc.references('u', offset(0), true), [span(0, 2), span(4, 6)]);
   t.deepEqual(svc.rename('u', offset(0), 'tau'), []);
 });
+
+test('a host resolver that throws becomes a diagnostic, not an exception', t => {
+  const {sem} = calc();
+  addRoles(sem, {
+    Assign: (n: Node, _e: Node, _r: Node) =>
+      roles.ref(n, 'variable', {orDeclare: 'variable', after: true}),
+    Var: (n: Node) => roles.ref(n, 'variable', {external: true}),
+  });
+  const svc = createLanguageService(sem, {
+    start: 'Program',
+    external: {
+      variable: () => {
+        throw new Error('host exploded');
+      },
+    },
+  });
+
+  const a = svc.change('u', 1, 'a = 1;\nb = a + c;\n');
+
+  t.false(a.hasTree);
+  t.is(a.diagnostics.length, 1);
+  t.is(a.diagnostics[0].code, 'roles.internal');
+  t.regex(a.diagnostics[0].message, /host exploded/);
+  t.is(a.version, 1);
+});
