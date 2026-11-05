@@ -645,3 +645,29 @@ test('a recovery inside any retained guarded slot stays with that slot', t => {
   const [pair] = inlineOwners(inline.match('a1,b,x;', undefined, RECOVER)).owners();
   t.deepEqual(pair, {retained: ['1'], correction: ['x']});
 });
+
+test('a guarded sequence may contain a fallible', t => {
+  const source = String.raw`
+    Items {
+      items = item*
+      item = (key ! ":" letter) ! ";"
+      key = letter
+    }`;
+  const inline = ohm.grammar(source);
+  const wrapped = ohm.grammar(
+    source.replace(
+      'item = (key ! ":" letter) ! ";"',
+      'item = body ! ";"\n body = key ! ":" letter'
+    )
+  );
+  t.is(inline.rules.item.body.getArity(), 6);
+  for (const input of ['a:b;c:d;', 'a1:b;c:d;', 'a:bx;c:d;', 'a1:bx;c?;d:e;']) {
+    const inlineMatch = inline.match(input, undefined, RECOVER);
+    t.true(inlineMatch.succeeded(), input);
+    t.deepEqual(
+      recoveries(inlineMatch),
+      recoveries(wrapped.match(input, undefined, RECOVER)),
+      input
+    );
+  }
+});

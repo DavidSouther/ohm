@@ -123,13 +123,17 @@ test('a guarded alternation of two values recovers the same way in each branch',
   const g = ohm.grammar('G { S = ("a" "b" | "c" "d") ! ";" }');
   for (const input of ['ax;', 'cx;']) {
     const r = g.match(input, undefined, RECOVER);
-    t.true(r.succeeded(), input);
-    t.deepEqual(kinds(r._cst), ['_iter', '_iter', '_correction', '_terminal'], input);
+    t.true(r.succeeded(), `${input}`);
+    t.deepEqual(kinds(r._cst), ['_iter', '_iter', '_correction', '_terminal'], `${input}`);
   }
   for (const input of ['abx;', 'cdx;']) {
     const r = g.match(input, undefined, RECOVER);
-    t.true(r.succeeded(), input);
-    t.deepEqual(kinds(r._cst), ['_terminal', '_terminal', '_correction', '_terminal'], input);
+    t.true(r.succeeded(), `${input}`);
+    t.deepEqual(
+      kinds(r._cst),
+      ['_terminal', '_terminal', '_correction', '_terminal'],
+      `${input}`
+    );
   }
 });
 
@@ -447,7 +451,9 @@ test('the join must have arity 1 and the guarded operand must produce a value', 
     message: /cannot be a '!' expression/,
   });
   t.throws(() => ohm.grammar('G { S = (~"a" ~"b") ! "c" }'), {message: /at least one value/});
-  t.throws(() => ohm.grammar('G { S = ("a" "b" | "c") ! "d" }'), {message: /inconsistent arity/});
+  t.throws(() => ohm.grammar('G { S = ("a" "b" | "c") ! "d" }'), {
+    message: /inconsistent arity/,
+  });
   t.throws(() => ohm.grammar('G { S = ~"a" ! "c" }'), {message: /never consumes input/});
   t.throws(() => ohm.grammar('G { S = &"a" ! "c" }'), {message: /never consumes input/});
   t.notThrows(() => ohm.grammar('G { S = "a" ! "b" }'));
