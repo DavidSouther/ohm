@@ -24,12 +24,18 @@ export interface DeclareOpts {
   data?: unknown;
 }
 
+/** Roles bound with `as` by an ancestor or an earlier role on the same node. */
+export type RoleContext = Readonly<Record<string, Role>>;
+
 export interface RefOpts {
-  via?: RoleNode | Role;
+  /** Resolve this first, then look the name up among its members. */
+  via?: RoleNode | Role | ((ctx: RoleContext) => RoleNode | Role | undefined);
   orDeclare?: string;
   after?: boolean;
   external?: boolean;
   private?: boolean;
+  /** Binds this role into the context of later roles on the node and of descendants. */
+  as?: string;
 }
 
 export type Role =
