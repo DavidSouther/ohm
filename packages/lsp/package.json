@@ -2,7 +2,14 @@
   "name": "@ohm-js/lsp",
   "version": "17.6.0-alpha.0",
   "description": "Language Server Protocol adapter for @ohm-js/language",
-  "keywords": ["parser", "parsing", "ohm", "ohm-js", "lsp", "language-server"],
+  "keywords": [
+    "parser",
+    "parsing",
+    "ohm",
+    "ohm-js",
+    "lsp",
+    "language-server"
+  ],
   "homepage": "https://github.com/ohmjs/ohm#readme",
   "bugs": {
     "url": "https://github.com/ohmjs/ohm/issues"
@@ -14,6 +21,11 @@
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -33,7 +45,21 @@
     "ohm-js": "workspace:^"
   },
   "ava": {
-    "extensions": ["ts"],
-    "files": ["src/**/*.test.ts", "test/**/*.test.ts"]
+    "extensions": [
+      "ts"
+    ],
+    "files": [
+      "src/**/*.test.ts",
+      "test/**/*.test.ts"
+    ]
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
   }
 }

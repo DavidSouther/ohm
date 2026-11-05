@@ -2,7 +2,13 @@
   "name": "@ohm-js/language",
   "version": "17.6.0-alpha.0",
   "description": "Editor data (diagnostics, symbols, references) from Ohm semantic actions",
-  "keywords": ["parser", "parsing", "ohm", "ohm-js", "language-service"],
+  "keywords": [
+    "parser",
+    "parsing",
+    "ohm",
+    "ohm-js",
+    "language-service"
+  ],
   "homepage": "https://github.com/ohmjs/ohm#readme",
   "bugs": {
     "url": "https://github.com/ohmjs/ohm/issues"
@@ -14,6 +20,11 @@
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "exports": {
     ".": {
       "types": "./src/index.ts",
@@ -39,7 +50,21 @@
     }
   },
   "ava": {
-    "extensions": ["ts"],
-    "files": ["src/**/*.test.ts", "test/**/*.test.ts"]
+    "extensions": [
+      "ts"
+    ],
+    "files": [
+      "src/**/*.test.ts",
+      "test/**/*.test.ts"
+    ]
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
   }
 }
