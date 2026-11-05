@@ -135,7 +135,7 @@ pexprs.Fallible.prototype.eval = function (state) {
   const correction = ok ? undefined : ctx.cache.readCorrection(key);
   if (correction) {
     state._recoveryTaint++;
-    state.truncateBindings(origNumBindings + (guardedMatched ? 1 : 0));
+    state.truncateBindings(origNumBindings + (guardedMatched ? this.guarded.getArity() : 0));
     // A recovery discards the attempt's failures; the enclosing record is
     // already restored.
     if (
@@ -194,7 +194,12 @@ pexprs.Fallible.prototype.recover = function (
   state.pushFailuresInfo();
 
   inputStream.pos = guardedMatched ? guardedEnd : origPos;
-  if (!guardedMatched) state.pushBinding(emptyOptional(state), origPos);
+  if (!guardedMatched) {
+    // A failed guarded operand keeps nothing: each of its slots is empty.
+    for (let i = this.guarded.getArity(); i > 0; i--) {
+      state.pushBinding(emptyOptional(state), origPos);
+    }
+  }
   const scanStart = state.skipSpacesIfInSyntacticContext();
   const found = this.scan(state, scanStart, Math.max(scanStart, tokenEnd));
   state.popFailuresInfo();

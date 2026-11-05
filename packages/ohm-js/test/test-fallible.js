@@ -80,6 +80,59 @@ test('a guarded `?` keeps nothing', t => {
   t.deepEqual(messages(r), ['Line 1, col 7: expected "b"']);
 });
 
+// A multi-value guarded operand fills its slots as one unit: on a guarded
+// failure every slot is an empty optional, like the node of a failed rule.
+function emptySlot(node) {
+  return node.isOptional() && node.numChildren === 0;
+}
+
+test('a guarded failure leaves every guarded slot empty', t => {
+  const g = ohm.grammar('G { S = (a b) ! ";"\n a = "a"\n b = "b" }');
+  const slots = g.createSemantics().addOperation('slots', {
+    S(a, b, correction, join) {
+      return [emptySlot(a), emptySlot(b), correction.sourceString, join.sourceString];
+    },
+  });
+  const r = g.match('ax;', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(slots(r).slots(), [true, true, 'ax', ';']);
+});
+
+test('a guarded operand with three values contributes five bindings', t => {
+  const g = ohm.grammar('G { S = ("a" "b" "c") ! ";" }');
+  t.is(g.rules.S.body.getArity(), 5);
+  const r = g.match('abx;', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(kinds(r._cst), ['_iter', '_iter', '_iter', '_correction', '_terminal']);
+  t.true(r._cst.children.slice(0, 3).every(c => c.matchLength === 0));
+  t.is(r._cst.children[3].matchLength, 3, 'the scan starts at the guarded start');
+});
+
+test('a matched multi-value guarded operand keeps every slot when the join fails', t => {
+  const g = ohm.grammar('G { S = ("a" "b") ! ";" }');
+  const r = g.match('abx;', undefined, RECOVER);
+  t.true(r.succeeded());
+  t.deepEqual(kinds(r._cst), ['_terminal', '_terminal', '_correction', '_terminal']);
+  t.is(r._cst.children[2].matchLength, 1);
+
+  const clean = g.match('ab;', undefined, RECOVER);
+  t.deepEqual(kinds(clean._cst), ['_terminal', '_terminal', '_iter', '_terminal']);
+});
+
+test('a guarded alternation of two values recovers the same way in each branch', t => {
+  const g = ohm.grammar('G { S = ("a" "b" | "c" "d") ! ";" }');
+  for (const input of ['ax;', 'cx;']) {
+    const r = g.match(input, undefined, RECOVER);
+    t.true(r.succeeded(), input);
+    t.deepEqual(kinds(r._cst), ['_iter', '_iter', '_correction', '_terminal'], input);
+  }
+  for (const input of ['abx;', 'cdx;']) {
+    const r = g.match(input, undefined, RECOVER);
+    t.true(r.succeeded(), input);
+    t.deepEqual(kinds(r._cst), ['_terminal', '_terminal', '_correction', '_terminal'], input);
+  }
+});
+
 // --------------------------------------------------------------------
 // Failure scope and messages
 // --------------------------------------------------------------------

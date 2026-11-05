@@ -506,3 +506,92 @@ test('an operation without a `_correction` action skips a recovered node by defa
     message: /_correction/,
   });
 });
+
+// A multi-value guarded operand: `(bar cell+) ! (nl | end)` behaves in recovery
+// exactly like the same expression wrapped in a rule, and its action receives
+// one argument per guarded value instead of one wrapper node.
+const ROWS_INLINE = String.raw`
+Rows {
+  rows = line*
+  line = (bar cell+) ! (nl | end)
+  cell = alnum+ bar
+  bar = "|"
+  nl = "\n"
+}`;
+const ROWS_WRAPPED = ROWS_INLINE.replace(
+  'line = (bar cell+) ! (nl | end)',
+  'line = lineBody ! (nl | end)\n  lineBody = bar cell+'
+);
+
+test('a guarded operand with several values recovers like one wrapped in a rule', t => {
+  // Line 2 breaks inside the guarded operand, line 3 between it and the join.
+  const clean = '|a|b|\n|c|';
+  const broken = '|a|b|\n|c?d|\n|e|x\n|f|';
+
+  const inline = ohm.grammar(ROWS_INLINE);
+  const wrapped = ohm.grammar(ROWS_WRAPPED);
+
+  const view = (bar, cells, correction, join) => ({
+    bar: bar.isIteration()
+      ? {empty: bar.numChildren === 0, optional: bar.isOptional()}
+      : bar.sourceString,
+    cells: cells.isOptional()
+      ? {empty: cells.numChildren === 0, optional: true}
+      : cells.children.map(c => c.sourceString),
+    correction: correction.isCorrection() ? correction.sourceString : null,
+    join: join.sourceString,
+  });
+  const inlineArgCounts = [];
+  const inlineLines = inline.createSemantics().addOperation('lines', {
+    rows(lines) {
+      return lines.children.map(l => l.lines());
+    },
+    line(bar, cells, correction, join) {
+      inlineArgCounts.push(arguments.length);
+      return view(bar, cells, correction, join);
+    },
+  });
+  const wrappedLines = wrapped.createSemantics().addOperation('lines', {
+    rows(lines) {
+      return lines.children.map(l => l.lines());
+    },
+    line(body, correction, join) {
+      // An empty optional stands in for a failed `lineBody`; spread it over both slots.
+      return body.isIteration()
+        ? view(body, body, correction, join)
+        : view(body.child(0), body.child(1), correction, join);
+    },
+  });
+
+  // Clean input: the action receives (bar, cells, correction, join), with no correction.
+  const cleanInline = inline.match(clean, undefined, RECOVER);
+  t.true(cleanInline.succeeded());
+  t.deepEqual(inlineLines(cleanInline).lines(), [
+    {bar: '|', cells: ['a|', 'b|'], correction: null, join: '\n'},
+    {bar: '|', cells: ['c|'], correction: null, join: ''},
+  ]);
+  t.deepEqual(inlineArgCounts, [4, 4]);
+  t.deepEqual(
+    inlineLines(cleanInline).lines(),
+    wrappedLines(wrapped.match(clean, undefined, RECOVER)).lines()
+  );
+
+  // Broken input: same recovered failures and the same values per line as the wrapped form.
+  inlineArgCounts.length = 0;
+  const brokenInline = inline.match(broken, undefined, RECOVER);
+  const brokenWrapped = wrapped.match(broken, undefined, RECOVER);
+  t.true(brokenWrapped.succeeded());
+  t.true(brokenInline.succeeded());
+  t.deepEqual(recoveries(brokenInline), recoveries(brokenWrapped));
+  t.is(recoveries(brokenInline).length, 2);
+  const lines = inlineLines(brokenInline).lines();
+  t.deepEqual(inlineArgCounts, [4, 4, 4, 4]);
+  t.deepEqual(lines, wrappedLines(brokenWrapped).lines());
+  t.deepEqual(lines[1], {
+    bar: {empty: true, optional: true},
+    cells: {empty: true, optional: true},
+    correction: '|c?d|',
+    join: '\n',
+  });
+  t.deepEqual(lines[2], {bar: '|', cells: ['e|'], correction: 'x', join: '\n'});
+});
