@@ -7,7 +7,7 @@ import {
 } from 'vscode-jsonrpc/node.js';
 
 import {lineIndex, toOffset, toRange} from './positions.ts';
-import type {LineIndex, Position} from './positions.ts';
+import type {LineIndex, Position, Range} from './positions.ts';
 
 export interface ServeIo {
   input: Readable;
@@ -42,8 +42,10 @@ function field<T>(o: Record<string, unknown>, key: string, type: string): T {
   return o[key] as T;
 }
 
-const uriOf = (params: unknown): string =>
-  field(record(record(params, 'params').textDocument, 'textDocument'), 'uri', 'string');
+const textDocumentOf = (params: unknown) =>
+  record(record(params, 'params').textDocument, 'textDocument');
+
+const uriOf = (params: unknown): string => field(textDocumentOf(params), 'uri', 'string');
 
 function positionOf(params: unknown): Position {
   const p = record(record(params, 'params').position, 'position');
@@ -138,7 +140,7 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
   notification('exit', () => c.dispose());
 
   notification('textDocument/didOpen', params => {
-    const doc = record(record(params, 'params').textDocument, 'textDocument');
+    const doc = textDocumentOf(params);
     publish(
       service.open(
         field(doc, 'uri', 'string'),
@@ -148,7 +150,7 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
     );
   });
   notification('textDocument/didChange', params => {
-    const doc = record(record(params, 'params').textDocument, 'textDocument');
+    const doc = textDocumentOf(params);
     publish(
       service.change(
         field(doc, 'uri', 'string'),
@@ -205,7 +207,7 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
       field(record(params, 'params'), 'newName', 'string')
     );
     if (edits.length === 0) return null;
-    const changes: Record<string, {range: ReturnType<typeof toRange>; newText: string}[]> = {};
+    const changes: Record<string, {range: Range; newText: string}[]> = {};
     for (const e of edits) {
       (changes[e.uri] ??= []).push({range: toRange(index, e.span), newText: e.newText});
     }
