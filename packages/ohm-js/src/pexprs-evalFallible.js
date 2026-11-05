@@ -86,6 +86,12 @@ function matchPlain(fallible, state) {
   return state.eval(fallible.join);
 }
 
+// The number of values the guarded operand produces, computed on first use.
+pexprs.Fallible.prototype.guardedArity = function () {
+  if (this._guardedArity === undefined) this._guardedArity = this.guarded.getArity();
+  return this._guardedArity;
+};
+
 pexprs.Fallible.prototype.eval = function (state) {
   const ctx = state.recovery;
   if (!ctx) {
@@ -135,7 +141,7 @@ pexprs.Fallible.prototype.eval = function (state) {
   const correction = ok ? undefined : ctx.cache.readCorrection(key);
   if (correction) {
     state._recoveryTaint++;
-    state.truncateBindings(origNumBindings + (guardedMatched ? this.guarded.getArity() : 0));
+    state.truncateBindings(origNumBindings + (guardedMatched ? this.guardedArity() : 0));
     // A recovery discards the attempt's failures; the enclosing record is
     // already restored.
     if (
@@ -181,10 +187,13 @@ pexprs.Fallible.prototype.recover = function (
   const {inputStream} = state;
   const attemptLog = state._recoveryLog.since(logMark);
   // Matched guarded material is the last N bindings; the join is not pushed yet.
-  const {owned, discarded: nested} = partitionRecoveries(
-    attemptLog,
-    ...(guardedMatched ? state._bindings.slice(-this.guarded.getArity()) : [])
-  );
+  const guardedArity = this.guardedArity();
+  const retained = !guardedMatched
+    ? []
+    : guardedArity === 1
+      ? [state._bindings.at(-1)]
+      : state._bindings.slice(-guardedArity);
+  const {owned, discarded: nested} = partitionRecoveries(attemptLog, ...retained);
   state._recoveryLog = logMark;
   // Scan steps are not traced; only the matching join expression's entry joins the
   // Fallible's children.
@@ -197,7 +206,7 @@ pexprs.Fallible.prototype.recover = function (
   inputStream.pos = guardedMatched ? guardedEnd : origPos;
   if (!guardedMatched) {
     // A failed guarded operand keeps nothing: each of its slots is empty.
-    for (let i = this.guarded.getArity(); i > 0; i--) {
+    for (let i = guardedArity; i > 0; i--) {
       state.pushBinding(emptyOptional(state), origPos);
     }
   }
