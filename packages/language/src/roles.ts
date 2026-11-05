@@ -1,6 +1,6 @@
 import type {Semantics} from 'ohm-js';
 
-import type {DeclareOpts, RefOpts, Role, RoleNode} from './types.ts';
+import type {DeclareOpts, ImportOpts, RefOpts, Role, RoleNode} from './types.ts';
 
 /** The attribute that `addRoles` registers; the walker reads it on every nonterminal. */
 export const ROLES_ATTRIBUTE = 'roles';
@@ -11,6 +11,9 @@ export const roles = {
   },
   declare(name: RoleNode, kind: string, opts: DeclareOpts = {}): Role {
     return Object.freeze({role: 'declare', name, kind, opts: Object.freeze({...opts})});
+  },
+  import(spec: RoleNode, opts: ImportOpts = {}): Role {
+    return Object.freeze({role: 'import', spec, opts: Object.freeze({...opts})});
   },
   ref(name: RoleNode, kinds: string | string[], opts: RefOpts = {}): Role {
     return Object.freeze({
@@ -41,7 +44,7 @@ export function addRoles(semantics: Semantics, actions: RoleActions): void {
   });
 }
 
-const ROLE_NAMES = new Set(['scope', 'declare', 'ref']);
+const ROLE_NAMES = new Set(['scope', 'declare', 'ref', 'import']);
 
 export function isRole(x: unknown): x is Role {
   return (

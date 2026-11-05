@@ -30,6 +30,13 @@ export interface RefEntry {
   nameKey: string;
 }
 
+export interface ImportEntry {
+  /** The module specifier as written. */
+  spec: string;
+  specSpan: Span;
+  names: {name: string; nameSpan: Span}[];
+}
+
 export interface Collected {
   uri: string;
   root: Scope;
@@ -37,6 +44,7 @@ export interface Collected {
   /** The `type` option of each declared symbol that has one. */
   types: Map<Definition, RoleNode | Role>;
   refs: RefEntry[];
+  imports: ImportEntry[];
   skipped: Span[];
   problems: Diagnostic[];
 }
@@ -86,6 +94,7 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
     symbols: [],
     types: new Map(),
     refs: [],
+    imports: [],
     skipped: [],
     problems: [],
   };
@@ -129,6 +138,24 @@ export function collect(semantics: Semantics, match: MatchResult, uri = ''): Col
     let ctx = context;
     for (const r of rs) {
       if (r.role === 'scope') continue;
+      if (r.role === 'import') {
+        const spec = nameOf(r.spec);
+        const names = (r.opts.names ?? []).map(nameOf);
+        if (!spec || names.some(n => !n)) {
+          problem(
+            node,
+            'roles.badName',
+            `Role action for '${node.ctorName}' gave a name with no text`
+          );
+          continue;
+        }
+        out.imports.push({
+          spec: spec.name,
+          specSpan: spec.nameSpan,
+          names: names as {name: string; nameSpan: Span}[],
+        });
+        continue;
+      }
       const id = nameOf(r.name);
       if (!id) {
         problem(

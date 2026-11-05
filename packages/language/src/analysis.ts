@@ -1,11 +1,18 @@
 import type {Grammar, MatchResult, RecoveredFailure, Semantics} from 'ohm-js';
 
 import {createResolver, groupOf} from './resolve.ts';
-import type {Resolution} from './resolve.ts';
+import type {Outer, Resolution} from './resolve.ts';
 import {offset} from './types.ts';
-import type {Analysis, Diagnostic, Reference, ServiceConfig, Span, Definition} from './types.ts';
+import type {
+  Analysis,
+  Diagnostic,
+  Reference,
+  ServiceConfig,
+  Span,
+  Definition,
+} from './types.ts';
 import {collect} from './walk.ts';
-import type {RefEntry} from './walk.ts';
+import type {Collected, RefEntry} from './walk.ts';
 
 function grammarOf(semantics: Semantics): Grammar {
   const {getGrammar} = semantics as Semantics & {getGrammar?: () => Grammar};
@@ -38,6 +45,7 @@ function noTree(uri: string, version: number, text: string, match: MatchResult):
     references: [],
     diagnostics: match.getRecoveredFailures().map(syntaxDiagnostic),
     hasSkippedInput: true,
+    imports: [],
   };
 }
 
@@ -94,6 +102,67 @@ function unresolvedDiagnostic(
 }
 
 /**
+ * Binds each import: a reference per imported name that targets the other
+ * module's export, and an alias in the root scope so uses resolve through it.
+ */
+function bindImports(
+  found: Collected,
+  outer: Outer | undefined,
+  hasSkippedInput: boolean
+): {references: Reference[]; diagnostics: Diagnostic[]; imports: string[]} {
+  const references: Reference[] = [];
+  const diagnostics: Diagnostic[] = [];
+  const imports: string[] = [];
+  const severity = hasSkippedInput ? 'hint' : 'error';
+  for (const imp of found.imports) {
+    const target = outer?.resolveImport(imp.spec, found.uri);
+    if (!target) {
+      diagnostics.push({
+        span: imp.specSpan,
+        severity,
+        code: 'import.unresolved',
+        message: `Cannot resolve module ${imp.spec}`,
+      });
+      continue;
+    }
+    imports.push(target);
+    const exported = outer?.exportsOf(target);
+    for (const n of imp.names) {
+      const def = exported?.find(d => d.name === n.name);
+      references.push({
+        name: n.name,
+        kinds: def ? [def.kind] : [],
+        nameSpan: n.nameSpan,
+        scope: found.root,
+        target: def,
+        status: def ? 'resolved' : exported ? 'undefined' : 'uncertain',
+      });
+      if (def) {
+        found.root.symbols.push({
+          name: n.name,
+          kind: def.kind,
+          nameSpan: n.nameSpan,
+          uri: found.uri,
+          scope: found.root,
+          implicit: false,
+          private: false,
+          visibleFrom: offset(0),
+          aliasOf: def,
+        });
+      } else if (exported) {
+        diagnostics.push({
+          span: n.nameSpan,
+          severity,
+          code: 'import.missing',
+          message: `Module ${imp.spec} has no export '${n.name}'`,
+        });
+      }
+    }
+  }
+  return {references, diagnostics, imports};
+}
+
+/**
  * Parses `text` with recovery and resolves its roles. Refs resolve in document
  * order, innermost scope first, so an `orDeclare` re-assignment finds the
  * symbol its first occurrence declared.
@@ -103,7 +172,8 @@ export function analyze(
   config: ServiceConfig,
   uri: string,
   version: number,
-  text: string
+  text: string,
+  outer?: Outer
 ): Analysis {
   const match = grammarOf(semantics).match(text, config.start, {recover: true});
   if (match.failed()) return noTree(uri, version, text, match);
@@ -112,9 +182,10 @@ export function analyze(
   const syntax = match.getRecoveredFailures().map(syntaxDiagnostic);
   const hasSkippedInput = syntax.length > 0 || found.skipped.length > 0;
   const symbols = [...found.symbols];
-  const diagnostics: Diagnostic[] = [...syntax, ...found.problems];
+  const bound = bindImports(found, outer, hasSkippedInput);
+  const diagnostics: Diagnostic[] = [...syntax, ...found.problems, ...bound.diagnostics];
 
-  const resolve = createResolver(found, config, hasSkippedInput, symbols);
+  const resolve = createResolver(found, config, hasSkippedInput, symbols, outer);
 
   const reference = (r: RefEntry): Reference => {
     const resolution = resolve(r);
@@ -129,7 +200,7 @@ export function analyze(
       status: resolution.status,
     };
   };
-  const references = found.refs.map(reference);
+  const references = [...bound.references, ...found.refs.map(reference)];
 
   diagnostics.push(...duplicates(config, symbols));
   const byStart = (a: {start: number}, b: {start: number}) => a.start - b.start;
@@ -145,5 +216,6 @@ export function analyze(
     references,
     diagnostics,
     hasSkippedInput,
+    imports: bound.imports,
   };
 }

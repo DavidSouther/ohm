@@ -45,6 +45,15 @@ function member(container: Definition, name: string, kinds: readonly string[]) {
   return container.members?.symbols.find(d => matches(d, name, kinds, Infinity) && !d.private);
 }
 
+/** What a document can learn about the files around it. */
+export interface Outer {
+  /** An exported definition of another document, for ambient languages. */
+  ambient(name: string, kinds: readonly string[], fromUri: string): Definition | undefined;
+  resolveImport(specifier: string, fromUri: string): string | undefined;
+  /** The exported definitions of a loaded document, or undefined when it is not loaded. */
+  exportsOf(uri: string): Definition[] | undefined;
+}
+
 export interface Resolution {
   status: RefStatus;
   target?: Definition;
@@ -62,7 +71,8 @@ export function createResolver(
   found: Collected,
   config: ServiceConfig,
   hasSkippedInput: boolean,
-  symbols: Definition[]
+  symbols: Definition[],
+  outer?: Outer
 ): (r: RefEntry) => Resolution {
   const byRole = new Map<Role, RefEntry>();
   const byNode = new Map<string, RefEntry>();
@@ -75,7 +85,12 @@ export function createResolver(
   const refOf = (x: RoleNode | Role) => (isRole(x) ? byRole.get(x) : byNode.get(nodeKey(x)));
 
   const externals = new Map<string, Definition>();
-  const external = (kind: string, name: string, info: ExternalSymbol, owner = ''): Definition => {
+  const external = (
+    kind: string,
+    name: string,
+    info: ExternalSymbol,
+    owner = ''
+  ): Definition => {
     const key = `${owner}/${kind}/${name}`;
     let symbol = externals.get(key);
     if (!symbol) {
@@ -115,6 +130,8 @@ export function createResolver(
 
   const lexical = (r: RefEntry, kinds: string[]): Resolution => {
     let target = lookup(r.scope, r.name, kinds, r.nameSpan.start);
+    if (target?.aliasOf) target = target.aliasOf;
+    if (!target) target = outer?.ambient(r.name, kinds, found.uri);
     if (!target && r.opts.external) {
       for (const kind of r.kinds) {
         const info = config.external?.[kind]?.(r.name);

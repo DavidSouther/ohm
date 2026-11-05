@@ -27,6 +27,7 @@ function analysis(uri: string, version: number, text: string, hasTree = true): A
       ? [{span: span(2, 3), severity: 'hint', code: 'x', message: 'question'}]
       : [],
     hasSkippedInput: false,
+    imports: [],
   };
 }
 
@@ -57,6 +58,9 @@ function fakeService(overrides: Partial<LanguageService> = {}) {
       texts.set(uri, a);
       return a;
     },
+    scan: () => [],
+    refresh: () => undefined,
+    affected: () => [],
     close(uri) {
       calls.push('close');
       texts.delete(uri);
@@ -67,7 +71,10 @@ function fakeService(overrides: Partial<LanguageService> = {}) {
     },
     documentSymbols: () => [sym('a', 0), sym('bb', 4)],
     definition: (_uri, at) => (at === 10 ? [sym('a', 0)] : []),
-    references: () => [span(0, 1), span(6, 7)],
+    references: () => [
+      {uri, span: span(0, 1)},
+      {uri, span: span(6, 7)},
+    ],
     prepareRename: (_uri, at) => (at === 0 ? {span: span(0, 1), placeholder: 'a'} : undefined),
     rename: (uri, _at, newText) => [{uri, span: span(6, 7), newText}],
     completion: () => [sym('a', 0)],

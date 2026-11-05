@@ -40,8 +40,14 @@ export interface RefOpts {
   as?: string;
 }
 
+export interface ImportOpts {
+  /** Name nodes bound by the import; each must be exported by the target module. */
+  names?: readonly RoleNode[];
+}
+
 export type Role =
   | Readonly<{role: 'scope'}>
+  | Readonly<{role: 'import'; spec: RoleNode; opts: ImportOpts}>
   | Readonly<{role: 'declare'; name: RoleNode; kind: string; opts: DeclareOpts}>
   | Readonly<{role: 'ref'; name: RoleNode; kinds: readonly string[]; opts: RefOpts}>;
 
@@ -50,8 +56,30 @@ export interface ExternalSymbol {
   members?: readonly string[];
 }
 
+/** A read-only file system: the disk, or any other source of files, by URI. */
+export interface ReadonlyVfs {
+  list(): string[];
+  read(uri: string): string | undefined;
+}
+
+/**
+ * How files relate to each other. `ambient` languages (every class or chip in
+ * a project is visible) look names up across all files; `explicit` languages
+ * see only what an `import` role names. Which definitions a file exports is the
+ * language's decision, so `exported` has no default.
+ */
+export interface WorkspaceConfig {
+  mode: 'ambient' | 'explicit';
+  exported(definition: Definition): boolean;
+  /** Files that are not open, read as a fallback behind open documents. */
+  vfs?: ReadonlyVfs;
+  /** Maps an import specifier, as written, to a document URI. Required in explicit mode. */
+  resolveImport?(specifier: string, fromUri: string): string | undefined;
+}
+
 export interface ServiceConfig {
   start: string;
+  workspace?: WorkspaceConfig;
   namespaces?: Record<string, string[]>;
   /** Host resolvers by kind, asked when a ref with `external` finds nothing in the document. */
   external?: Record<string, (name: string) => ExternalSymbol | undefined>;
@@ -68,6 +96,8 @@ export interface Definition {
   name: string;
   kind: string;
   nameSpan: Span;
+  /** For an import binding, the exported definition it stands for. */
+  aliasOf?: Definition;
   /** The whole node that declares this definition, for outlines and folding. */
   span?: Span;
   uri: string;
@@ -120,6 +150,13 @@ export interface Analysis {
   references: Reference[];
   diagnostics: Diagnostic[];
   hasSkippedInput: boolean;
+  /** URIs of the modules this document imports and could resolve. */
+  imports: string[];
+}
+
+export interface Location {
+  uri: string;
+  span: Span;
 }
 
 export interface TextEdit {

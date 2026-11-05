@@ -17,6 +17,8 @@ function service() {
   return createLanguageService(sem, {start: 'Program'});
 }
 
+const loc = (a: number, b: number) => ({uri: 'u', span: span(a, b)});
+
 const V1 = 'a = 1;\nb = a + c;\n';
 
 test('queries over a calculator document', t => {
@@ -32,8 +34,8 @@ test('queries over a calculator document', t => {
     svc.definition('u', offset(11)).map(s => s.nameSpan),
     [span(0, 1)]
   );
-  t.deepEqual(svc.references('u', offset(0), true), [span(0, 1), span(11, 12)]);
-  t.deepEqual(svc.references('u', offset(11), false), [span(11, 12)]);
+  t.deepEqual(svc.references('u', offset(0), true), [loc(0, 1), loc(11, 12)]);
+  t.deepEqual(svc.references('u', offset(11), false), [loc(11, 12)]);
   t.deepEqual(svc.rename('u', offset(0), 'first'), [
     {uri: 'u', span: span(0, 1), newText: 'first'},
     {uri: 'u', span: span(11, 12), newText: 'first'},
@@ -151,7 +153,7 @@ test('an external target has no location and cannot be renamed', t => {
 
   t.deepEqual(svc.analysis('u')?.analysis.diagnostics, []);
   t.deepEqual(svc.definition('u', offset(0)), []);
-  t.deepEqual(svc.references('u', offset(0), true), [span(0, 2), span(4, 6)]);
+  t.deepEqual(svc.references('u', offset(0), true), [loc(0, 2), loc(4, 6)]);
   t.deepEqual(svc.rename('u', offset(0), 'tau'), []);
 });
 

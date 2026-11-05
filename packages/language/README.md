@@ -17,3 +17,23 @@ service.definition('file:///a.calc', offset);
 The service parses with `recover: true`, so it keeps answering while a file is being typed. A reference that cannot resolve in a file with skipped input is reported as a hint, not an error.
 
 Serve a service to an editor with [`@ohm-js/lsp`](../lsp).
+
+## Across files
+
+Give the service a `workspace` and it resolves names between files.
+
+```js
+createLanguageService(semantics, {
+  start: 'Program',
+  workspace: {
+    mode: 'ambient', // or 'explicit'
+    exported: definition => definition.scope.parent === undefined,
+    vfs, // optional: files that are not open, such as `diskVfs` from @ohm-js/lsp
+  },
+});
+```
+
+* `ambient`: every exported definition of every known file is visible, as for Jack classes or HDL chips.
+* `explicit`: only names an `roles.import(spec, {names})` role binds are visible, and `resolveImport(specifier, fromUri)` maps a specifier to a URI.
+* Which definitions a file exports is the language's decision; there is no default.
+* Open documents shadow the files behind them. `service.scan()` loads the rest, `service.affected(uri)` lists documents to `refresh` after an edit.

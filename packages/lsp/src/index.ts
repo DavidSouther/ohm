@@ -1,3 +1,4 @@
+export {diskVfs} from './disk.ts';
 import type {Analysis, Definition, LanguageService, Offset, Severity} from '@ohm-js/language';
 import type {Readable, Writable} from 'node:stream';
 import {
@@ -12,6 +13,11 @@ import type {LineIndex, Position, Range} from './positions.ts';
 export interface ServeIo {
   input: Readable;
   output: Writable;
+}
+
+export interface ServeOptions {
+  /** Quiet time before documents that depend on an edited one are reanalyzed. Default 100. */
+  debounceMs?: number;
 }
 
 const SEVERITY: Record<Severity, number> = {error: 1, warning: 2, information: 3, hint: 4};
@@ -75,7 +81,11 @@ function lastText(params: unknown): string {
  * are converted to and from offsets here, so LSP shapes never reach the
  * service. A request whose handler throws answers empty and is logged.
  */
-export function serve(service: LanguageService, {input, output}: ServeIo): {dispose(): void} {
+export function serve(
+  service: LanguageService,
+  {input, output}: ServeIo,
+  {debounceMs = 100}: ServeOptions = {}
+): {dispose(): void} {
   const c = createMessageConnection(
     new StreamMessageReader(input),
     new StreamMessageWriter(output)
@@ -110,6 +120,12 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
       }
     });
 
+  /** The line index of any known document, which a location in another file needs. */
+  const indexForUri = (uri: string): LineIndex | undefined => {
+    const a = service.analysis(uri)?.analysis;
+    return a && indexOf(a);
+  };
+
   /** The document's analysis, its line index, and the offset of the request's position. */
   const locate = (
     params: unknown
@@ -118,6 +134,28 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
     if (!a) return undefined;
     const index = indexOf(a);
     return {a, index, at: toOffset(index, positionOf(params))};
+  };
+
+  const open = new Set<string>();
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Reanalyzes documents that depend on `uri` once typing pauses, publishing the open ones. */
+  const scheduleDependents = (uri: string) => {
+    clearTimeout(timers.get(uri));
+    timers.set(
+      uri,
+      setTimeout(() => {
+        timers.delete(uri);
+        try {
+          for (const other of service.affected(uri)) {
+            const a = service.refresh(other);
+            if (a && open.has(other)) publish(a);
+          }
+        } catch (e) {
+          failed('dependents', e);
+        }
+      }, debounceMs)
+    );
   };
 
   const publish = (a: Analysis) => {
@@ -144,33 +182,41 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
     completionProvider: {},
   };
   request('initialize', {capabilities}, () => ({capabilities}));
-  notification('initialized', () => {});
+  notification('initialized', () => void service.scan());
+  notification('workspace/didChangeWatchedFiles', params => {
+    const changes = record(params, 'params').changes;
+    if (!Array.isArray(changes)) throw new TypeError("Expected 'changes' to be an array");
+    for (const change of changes) {
+      const uri = field<string>(record(change, 'change'), 'uri', 'string');
+      if (open.has(uri)) continue;
+      service.refresh(uri);
+      scheduleDependents(uri);
+    }
+  });
   request('shutdown', null, () => null);
-  notification('exit', () => c.dispose());
+  notification('exit', () => {
+    for (const timer of timers.values()) clearTimeout(timer);
+    c.dispose();
+  });
 
   notification('textDocument/didOpen', params => {
     const doc = textDocumentOf(params);
-    publish(
-      service.open(
-        field(doc, 'uri', 'string'),
-        field(doc, 'version', 'number'),
-        field(doc, 'text', 'string')
-      )
-    );
+    const uri = field<string>(doc, 'uri', 'string');
+    open.add(uri);
+    publish(service.open(uri, field(doc, 'version', 'number'), field(doc, 'text', 'string')));
+    scheduleDependents(uri);
   });
   notification('textDocument/didChange', params => {
     const doc = textDocumentOf(params);
-    publish(
-      service.change(
-        field(doc, 'uri', 'string'),
-        field(doc, 'version', 'number'),
-        lastText(params)
-      )
-    );
+    const uri = field<string>(doc, 'uri', 'string');
+    publish(service.change(uri, field(doc, 'version', 'number'), lastText(params)));
+    scheduleDependents(uri);
   });
   notification('textDocument/didClose', params => {
     const uri = uriOf(params);
+    open.delete(uri);
     service.close(uri);
+    scheduleDependents(uri);
     void c.sendNotification('textDocument/publishDiagnostics', {uri, diagnostics: []});
   });
 
@@ -210,24 +256,26 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
   request('textDocument/definition', [], params => {
     const found = locate(params);
     if (!found) return [];
-    const {a, index, at} = found;
-    return service
-      .definition(a.uri, at)
-      .map(s => ({uri: s.uri, range: toRange(index, s.nameSpan)}));
+    const {a, at} = found;
+    return service.definition(a.uri, at).flatMap(s => {
+      const index = indexForUri(s.uri);
+      return index ? [{uri: s.uri, range: toRange(index, s.nameSpan)}] : [];
+    });
   });
   request('textDocument/references', [], params => {
     const found = locate(params);
     if (!found) return [];
-    const {a, index, at} = found;
+    const {a, at} = found;
     const context = record(record(params, 'params').context ?? {}, 'context');
-    return service
-      .references(a.uri, at, context.includeDeclaration === true)
-      .map(span => ({uri: a.uri, range: toRange(index, span)}));
+    return service.references(a.uri, at, context.includeDeclaration === true).flatMap(l => {
+      const index = indexForUri(l.uri);
+      return index ? [{uri: l.uri, range: toRange(index, l.span)}] : [];
+    });
   });
   request('textDocument/rename', null, params => {
     const found = locate(params);
     if (!found) return null;
-    const {a, index, at} = found;
+    const {a, at} = found;
     const edits = service.rename(
       a.uri,
       at,
@@ -236,7 +284,9 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
     if (edits.length === 0) return null;
     const changes: Record<string, {range: Range; newText: string}[]> = {};
     for (const e of edits) {
-      (changes[e.uri] ??= []).push({range: toRange(index, e.span), newText: e.newText});
+      const index = indexForUri(e.uri);
+      if (index)
+        (changes[e.uri] ??= []).push({range: toRange(index, e.span), newText: e.newText});
     }
     return {changes};
   });
@@ -249,5 +299,10 @@ export function serve(service: LanguageService, {input, output}: ServeIo): {disp
   });
 
   c.listen();
-  return {dispose: () => c.dispose()};
+  return {
+    dispose() {
+      for (const timer of timers.values()) clearTimeout(timer);
+      c.dispose();
+    },
+  };
 }

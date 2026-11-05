@@ -2,27 +2,39 @@ import type {Semantics} from 'ohm-js';
 
 import {analyze} from './analysis.ts';
 import {groupOf, lookup, namespaceOf} from './resolve.ts';
+import type {Outer} from './resolve.ts';
 import {offset} from './types.ts';
 import type {
   Analysis,
+  Definition,
+  Location,
   Offset,
-  Reference,
   Scope,
   ServiceConfig,
   Span,
-  Definition,
   TextEdit,
 } from './types.ts';
+import {createOverlayVfs} from './vfs.ts';
 
 export interface LanguageService {
   open(uri: string, version: number, text: string): Analysis;
   change(uri: string, version: number, text: string): Analysis;
+  /** Drops an open document. A file the workspace can still read stays known, from its saved text. */
   close(uri: string): void;
+  /**
+   * Analyzes every workspace file that is not yet known, so names resolve
+   * across files regardless of which were opened. Returns the URIs it loaded.
+   */
+  scan(): string[];
+  /** Re-reads `uri` from the open documents or the workspace files and analyzes it again. */
+  refresh(uri: string): Analysis | undefined;
+  /** Other documents whose analysis may differ now that `uri` last changed. */
+  affected(uri: string): string[];
   /** The last analysis that had a tree; `stale` when the latest text had none. */
   analysis(uri: string): {analysis: Analysis; stale: boolean} | undefined;
   documentSymbols(uri: string): Definition[];
   definition(uri: string, at: Offset): Definition[];
-  references(uri: string, at: Offset, includeDeclaration: boolean): Span[];
+  references(uri: string, at: Offset, includeDeclaration: boolean): Location[];
   /** The name at `at` that a rename would start from, or undefined when it cannot be renamed. */
   prepareRename(uri: string, at: Offset): {span: Span; placeholder: string} | undefined;
   rename(uri: string, at: Offset, newName: string): TextEdit[];
@@ -32,20 +44,24 @@ export interface LanguageService {
 interface DocState {
   good?: Analysis;
   stale: boolean;
+  version: number;
+  /** Changes when the definitions other documents can see change. */
+  exportsKey: string;
+  /** Set by an update that changed the exports; cleared when `affected` reports it. */
+  exportsChanged: boolean;
 }
 
 const contains = (span: Span, at: number) => span.start <= at && at <= span.end;
 const sameSpan = (a: Span, b: Span) => a.start === b.start && a.end === b.end;
+
+/** Identifies a definition across analyses, which build fresh objects each time. */
+const keyOf = (d: Definition) => `${d.uri}#${d.nameSpan.start}/${d.kind}/${d.name}`;
 
 /** The symbol that the name at `at` declares or refers to. */
 function targetAt(a: Analysis, at: Offset): Definition | undefined {
   const ref = a.references.find(r => contains(r.nameSpan, at));
   if (ref) return ref.target;
   return a.symbols.find(s => contains(s.nameSpan, at));
-}
-
-function usesOf(a: Analysis, target: Definition): Reference[] {
-  return a.references.filter(r => r.target === target);
 }
 
 function innermostScope(scope: Scope, at: Offset): Scope {
@@ -74,6 +90,7 @@ function failedAnalysis(uri: string, version: number, text: string, e: unknown):
       },
     ],
     hasSkippedInput: true,
+    imports: [],
   };
 }
 
@@ -82,10 +99,11 @@ function safeAnalyze(
   config: ServiceConfig,
   uri: string,
   version: number,
-  text: string
+  text: string,
+  outer?: Outer
 ): Analysis {
   try {
-    return analyze(semantics, config, uri, version, text);
+    return analyze(semantics, config, uri, version, text, outer);
   } catch (e) {
     return failedAnalysis(uri, version, text, e);
   }
@@ -96,11 +114,61 @@ export function createLanguageService(
   config: ServiceConfig
 ): LanguageService {
   const docs = new Map<string, DocState>();
+  const workspace = config.workspace;
+  const vfs = createOverlayVfs(workspace?.vfs);
+
+  const exportable = (d: Definition) =>
+    !!workspace && !d.implicit && !d.external && !d.aliasOf && workspace.exported(d);
+
+  const exportsOf = (uri: string): Definition[] | undefined =>
+    docs.get(uri)?.good?.symbols.filter(exportable);
+
+  let index: Map<string, Definition[]> | undefined;
+  const exportIndex = () => {
+    if (!index) {
+      index = new Map();
+      for (const uri of docs.keys()) {
+        for (const d of exportsOf(uri) ?? [])
+          index.set(d.name, [...(index.get(d.name) ?? []), d]);
+      }
+    }
+    return index;
+  };
+
+  const outer: Outer | undefined = workspace && {
+    ambient: (name, kinds, fromUri) =>
+      workspace.mode === 'ambient'
+        ? exportIndex()
+            .get(name)
+            ?.find(d => d.uri !== fromUri && kinds.includes(d.kind))
+        : undefined,
+    resolveImport: (spec, fromUri) => workspace.resolveImport?.(spec, fromUri),
+    exportsOf,
+  };
 
   const update = (uri: string, version: number, text: string): Analysis => {
-    const latest = safeAnalyze(semantics, config, uri, version, text);
-    if (latest.hasTree) docs.set(uri, {good: latest, stale: false});
-    else docs.set(uri, {good: docs.get(uri)?.good, stale: true});
+    const latest = safeAnalyze(semantics, config, uri, version, text, outer);
+    const before = docs.get(uri);
+    if (latest.hasTree) {
+      const good = latest.symbols.filter(exportable);
+      const exportsKey = good.map(keyOf).join('\n');
+      docs.set(uri, {
+        good: latest,
+        stale: false,
+        version,
+        exportsKey,
+        exportsChanged: !!before?.exportsChanged || before?.exportsKey !== exportsKey,
+      });
+    } else {
+      docs.set(uri, {
+        good: before?.good,
+        stale: true,
+        version,
+        exportsKey: before?.exportsKey ?? '',
+        exportsChanged: !!before?.exportsChanged,
+      });
+    }
+    index = undefined;
     return latest;
   };
 
@@ -116,22 +184,79 @@ export function createLanguageService(
     return a && target ? {a, target} : undefined;
   };
 
-  const references = (uri: string, at: Offset, includeDeclaration: boolean): Span[] => {
+  /** Every use of `target` in any known document, found by definition key. */
+  const usesOf = (target: Definition) => {
+    const key = keyOf(target);
+    const out: {a: Analysis; span: Span; scope: Scope}[] = [];
+    for (const doc of docs.values()) {
+      for (const r of doc.good?.references ?? []) {
+        if (r.target && keyOf(r.target) === key) {
+          out.push({a: doc.good!, span: r.nameSpan, scope: r.scope});
+        }
+      }
+    }
+    return out;
+  };
+
+  const references = (uri: string, at: Offset, includeDeclaration: boolean): Location[] => {
     const found = lookupAt(uri, at);
     if (!found) return [];
-    const {a, target} = found;
-    const spans = usesOf(a, target)
-      .map(r => r.nameSpan)
-      .filter(s => !sameSpan(s, target.nameSpan));
-    if (includeDeclaration && !target.external) spans.push(target.nameSpan);
-    return spans.sort((x, y) => x.start - y.start);
+    const {target} = found;
+    const out: Location[] = usesOf(target)
+      .map(u => ({uri: u.a.uri, span: u.span}))
+      .filter(l => !(l.uri === target.uri && sameSpan(l.span, target.nameSpan)));
+    if (includeDeclaration && !target.external) {
+      out.push({uri: target.uri, span: target.nameSpan});
+    }
+    return out.sort((x, y) =>
+      x.uri < y.uri ? -1 : x.uri > y.uri ? 1 : x.span.start - y.span.start
+    );
   };
 
   return {
-    open: update,
-    change: update,
+    open(uri, version, text) {
+      vfs.set(uri, text);
+      return update(uri, version, text);
+    },
+    change(uri, version, text) {
+      vfs.set(uri, text);
+      return update(uri, version, text);
+    },
     close(uri) {
-      docs.delete(uri);
+      vfs.delete(uri);
+      const saved = vfs.read(uri);
+      if (saved === undefined) {
+        docs.delete(uri);
+        index = undefined;
+      } else {
+        update(uri, docs.get(uri)?.version ?? 0, saved);
+      }
+    },
+    scan() {
+      const loaded = vfs.list().filter(uri => !docs.has(uri));
+      for (const uri of loaded) update(uri, 0, vfs.read(uri) ?? '');
+      // A second pass, so a file loaded early sees the exports of one loaded after it.
+      for (const uri of loaded) update(uri, 0, vfs.read(uri) ?? '');
+      return loaded;
+    },
+    refresh(uri) {
+      const text = vfs.read(uri);
+      if (text === undefined) {
+        docs.delete(uri);
+        index = undefined;
+        return undefined;
+      }
+      return update(uri, docs.get(uri)?.version ?? 0, text);
+    },
+    affected(uri) {
+      const doc = docs.get(uri);
+      if (!workspace || !doc?.exportsChanged) return [];
+      // Read once: the next call has nothing new unless the exports change again.
+      doc.exportsChanged = false;
+      return [...docs.keys()].filter(other => {
+        if (other === uri) return false;
+        return workspace.mode === 'ambient' || !!docs.get(other)?.good?.imports.includes(uri);
+      });
     },
     analysis(uri) {
       const doc = docs.get(uri);
@@ -149,31 +274,46 @@ export function createLanguageService(
       const found = lookupAt(uri, at);
       if (!found || found.target.external) return undefined;
       const here = found.a.references.find(r => contains(r.nameSpan, at));
-      return {span: here ? here.nameSpan : found.target.nameSpan, placeholder: found.target.name};
+      return {
+        span: here ? here.nameSpan : found.target.nameSpan,
+        placeholder: found.target.name,
+      };
     },
     rename(uri, at, newName) {
       if (newName === '' || /\s/.test(newName)) return [];
       const found = lookupAt(uri, at);
       if (!found || found.target.external) return [];
-      const {a, target} = found;
+      const {target} = found;
+      // A document with no tree has references that cannot be seen, so a rename could miss one.
+      if ([...docs.values()].some(doc => doc.stale)) return [];
       const kinds = namespaceOf(config, groupOf(config, target.kind));
-      const scopes = [target.scope, ...usesOf(a, target).map(r => r.scope)];
+      const scopes = [target.scope, ...usesOf(target).map(u => u.scope)];
       if (scopes.some(s => lookup(s, newName, kinds, Infinity))) return [];
-      return references(uri, at, true).map(span => ({uri, span, newText: newName}));
+      if (outer?.ambient(newName, kinds, target.uri)) return [];
+      return references(uri, at, true).map(l => ({
+        uri: l.uri,
+        span: l.span,
+        newText: newName,
+      }));
     },
     completion(uri, at) {
       const a = current(uri);
       if (!a) return [];
       const seen = new Set<string>();
       const out: Definition[] = [];
-      for (let s: Scope | undefined = innermostScope(a.root, at); s; s = s.parent) {
-        for (const sym of s.symbols) {
-          const key = `${sym.kind}/${sym.name}`;
-          if (sym.visibleFrom <= at && !seen.has(key)) {
-            seen.add(key);
-            out.push(sym);
-          }
+      const offer = (sym: Definition) => {
+        const key = `${sym.kind}/${sym.name}`;
+        if (sym.visibleFrom <= at && !seen.has(key)) {
+          seen.add(key);
+          out.push(sym);
         }
+      };
+      for (let s: Scope | undefined = innermostScope(a.root, at); s; s = s.parent) {
+        s.symbols.forEach(offer);
+      }
+      if (workspace?.mode === 'ambient') {
+        for (const defs of exportIndex().values())
+          defs.filter(d => d.uri !== uri).forEach(offer);
       }
       return out;
     },

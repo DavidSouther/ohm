@@ -173,7 +173,10 @@ test('a grammar, an eval operation and two role actions give an editor a languag
     position: {line: 0, character: 0},
     context: {includeDeclaration: true},
   })) as {range: Range}[];
-  t.deepEqual(references.map(l => l.range), [at(0, 0, 1), at(1, 4, 5)]);
+  t.deepEqual(
+    references.map(l => l.range),
+    [at(0, 0, 1), at(1, 4, 5)]
+  );
 
   const rename = (await client.sendRequest('textDocument/rename', {
     textDocument,
