@@ -39,7 +39,7 @@ Here `letter+` matched `abc`, but the join failed at `12`. Recovery skips `12`, 
 
 ## Use the retained input
 
-Every Fallible contributes its guarded material, a correction slot, and the join as action arguments; here that is three arguments. The following operation returns retained fragments for an editor:
+Every Fallible contributes its guarded material, a correction slot, and the join as action arguments. The following operation returns retained fragments for an editor:
 
 ```js
 const fragments = statements.createSemantics().addOperation('fragments', {
