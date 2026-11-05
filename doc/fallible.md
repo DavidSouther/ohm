@@ -39,7 +39,7 @@ Here `letter+` matched `abc`, but the join failed at `12`. Recovery skips `12`, 
 
 ## Use the retained input
 
-Every Fallible contributes three action arguments: guarded material, a correction slot, and the join. The following operation returns retained fragments for an editor:
+Every Fallible contributes its guarded material, a correction slot, and the join as action arguments; here that is three arguments. The following operation returns retained fragments for an editor:
 
 ```js
 const fragments = statements.createSemantics().addOperation('fragments', {
@@ -59,6 +59,37 @@ fragments(result).fragments(); // ['abc', 'def']
 -->
 
 This action deliberately keeps partial statements. An AST builder might instead mark or discard a statement when `correction.recoveredFailure` is present. The action reads nodes directly; an operation that traverses correction nodes can provide a zero-argument `_correction` action, and otherwise gets `undefined` there. See [Fallible actions](./api-reference.md#fallible-actions).
+
+## Guard several values
+
+The guarded expression may produce several values, like a sequence. The action then receives one argument per guarded value, followed by the correction slot and the join:
+
+```js
+const assignments = ohm.grammar(String.raw`
+  Assignments {
+    Start = Assign*
+    Assign = (ident "=" digit+) ! ";"
+    ident = letter+
+  }
+`);
+const assigned = assignments.match('a = 1; b = ?; c = 3;', undefined, {recover: true});
+const pairs = assignments.createSemantics().addOperation('pairs', {
+  Start(items) {
+    return items.children.map(item => item.pairs());
+  },
+  Assign(name, equals, value, correction, semicolon) {
+    return correction.isCorrection() ? correction.sourceString : `${name.sourceString}:${value.sourceString}`;
+  }
+});
+pairs(assigned).pairs(); // ['a:1', 'b = ?', 'c:3']
+```
+
+<!-- @markscript
+  assert.deepEqual(pairs(assigned).pairs(), ['a:1', 'b = ?', 'c:3']);
+  assert.equal(assignments.rules.Assign.body.getArity(), 5);
+-->
+
+Recovery treats the guarded values as one unit, exactly as if they were wrapped in a rule. When the guarded expression fails, as in `b = ?`, none of its values is kept: every guarded argument is an empty optional node and the correction covers the whole damaged assignment.
 
 ## Traverse recovered input without handling it
 
