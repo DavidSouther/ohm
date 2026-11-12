@@ -1,0 +1,70 @@
+{
+  "name": "@ohm-js/language",
+  "version": "17.6.0-alpha.0",
+  "description": "Editor data (diagnostics, symbols, references) from Ohm semantic actions",
+  "keywords": [
+    "parser",
+    "parsing",
+    "ohm",
+    "ohm-js",
+    "language-service"
+  ],
+  "homepage": "https://github.com/ohmjs/ohm#readme",
+  "bugs": {
+    "url": "https://github.com/ohmjs/ohm/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ohmjs/ohm.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "ava"
+  },
+  "devDependencies": {
+    "@ohm-js/lsp": "workspace:^",
+    "ava": "^6.0.0",
+    "ohm-js": "workspace:^",
+    "vscode-jsonrpc": "^8.2.1"
+  },
+  "peerDependencies": {
+    "ohm-js": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "ohm-js": {
+      "optional": true
+    }
+  },
+  "ava": {
+    "extensions": [
+      "ts"
+    ],
+    "files": [
+      "src/**/*.test.ts",
+      "test/**/*.test.ts"
+    ]
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  }
+}
