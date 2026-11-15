@@ -39,7 +39,7 @@ export class MatchResult {
       common.defineLazyProperty(this, 'shortMessage', function () {
         const detail = 'expected ' + this.getExpectedText();
         const errorInfo = this._recovery?.positionIndex
-          ? this._recovery.positionIndex.getLineAndColumnNumbers(this.getRightmostFailurePosition())
+          ? this._recovery.positionIndex.getLineAndColumnNumbers(this.getDiagnosticPosition())
           : this._getLineAndColumn();
         return 'Line ' + errorInfo.lineNum + ', col ' + errorInfo.colNum + ': ' + detail;
       });
@@ -51,7 +51,7 @@ export class MatchResult {
   }
 
   _getLineAndColumn() {
-    const position = this.getRightmostFailurePosition();
+    const position = this.getDiagnosticPosition();
     return this._recovery?.positionIndex
       ? this._recovery.positionIndex.getLineAndColumn(position)
       : util.getLineAndColumn(this.input, position);
@@ -130,8 +130,22 @@ export class MatchResult {
     return sb.contents();
   }
 
+  // Keep the search position separate from the displayed insertion position.
+  // Missing punctuation belongs after the preceding lexical material; a missing
+  // word belongs at the next token. The raw position still drives recovery.
+  getDiagnosticPosition() {
+    const failures = this.getRightmostFailures().filter(f => !f.isFluffy());
+    let pos = this.getRightmostFailurePosition();
+    if (failures.length && failures.every(f =>
+      f.isStringTerminal() && /^[^\w\s]+$/u.test(f.getText())
+    )) {
+      while (pos > 0 && /\s/u.test(this.input[pos - 1])) pos--;
+    }
+    return pos;
+  }
+
   getInterval() {
-    const pos = this.getRightmostFailurePosition();
+    const pos = this.getDiagnosticPosition();
     return new Interval(this.input, pos, pos);
   }
 }

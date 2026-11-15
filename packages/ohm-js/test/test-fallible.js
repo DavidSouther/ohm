@@ -174,7 +174,7 @@ test('each recovered failure carries the message of the pass that selected it', 
 
   // The second equals the plain match's error once the first mistake is fixed.
   const second = plain.match('{ a; c d; e; }');
-  t.is(failures[1].shortMessage, second.shortMessage.replace('col 8', 'col 10'));
+  t.is(failures[1].shortMessage, second.shortMessage.replace('col 7', 'col 9'));
   t.is(failures[1].interval.contents, 'd');
   t.is(failures[0].interval.contents, 'b');
 });
@@ -545,8 +545,8 @@ test('`_correction` has arity 0 and reads its failure from the node', t => {
     },
   });
   t.deepEqual(s(g.match('{ a b; c }', undefined, RECOVER)).errs(), [
-    'Line 1, col 5: expected ";"',
-    'Line 1, col 10: expected ";"',
+    'Line 1, col 4: expected ";"',
+    'Line 1, col 9: expected ";"',
   ]);
 });
 
@@ -740,7 +740,7 @@ test('row based iteration: the kept prefix is a list and the slots are unchanged
   t.true(r.succeeded());
   t.deepEqual(kinds(r._cst), ['_terminal', '_list', '_correction', '_terminal', '_terminal']);
   t.deepEqual(kinds(r._cst.children[1]), ['Stmt', 'Stmt']);
-  t.deepEqual(messages(r), ['Line 1, col 11: expected ";"']);
+  t.deepEqual(messages(r), ['Line 1, col 10: expected ";"']);
 
   const plus = v18.grammar(STMTS.replace('Stmt* !', 'Stmt+ !'));
   const nothingKept = plus.match('{ c }', undefined, RECOVER);
@@ -760,7 +760,7 @@ test('row based iteration: the kept prefix is a list and the slots are unchanged
     ['_terminal', '_list', '_correction', '_terminal', '_terminal']
   );
   t.is(root.children[2].sourceString, 'c');
-  t.is(root.children[2].recoveredFailure.shortMessage, 'Line 1, col 11: expected ";"');
+  t.is(root.children[2].recoveredFailure.shortMessage, 'Line 1, col 10: expected ";"');
 });
 
 test('row based iteration: an iterated fallible gives one row per element', t => {

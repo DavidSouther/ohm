@@ -2,7 +2,7 @@
 
 Fallible expressions let a grammar recognize useful parts of an input containing syntax errors. In `guarded ! join`, the guarded expression is what may fail while parsing, and the join is a boundary where parsing should continue. Good joins are simple recognizable delimiters, such as a statement's semicolon or a block's closing brace.
 
-Without recovery, this expression recognizes the same input as `guarded join`. With `{recover: true}` as a match option, Ohm first tries to match both expressions normally. If either `guarded` or `join` fails, it can recover at Fallible expressions by keeping matched guarded material and skipping damaged input until a `join` matches. Recovery does not insert missing delimiters, and can still fail if `join` is never encountered.
+Without recovery, this expression recognizes the same input as `guarded join`. With `{recover: true}` as a match option, Ohm first tries to match both expressions normally. If either `guarded` or `join` fails, it can recover at Fallible expressions by keeping matched guarded material and skipping damaged input until a `join` matches. By default recovery does not insert missing delimiters, and can still fail if `join` is never encountered. A grammar may explicitly permit missing literal delimiters at known boundaries, as described below.
 
 Consult [syntax reference](./syntax-reference.md#fallible-) for grammar restrictions. The [API reference](./api-reference.md#match-options) describes options, diagnostics, and semantic actions. The recipes below build on one small grammar.
 
@@ -204,3 +204,39 @@ tokenUnits.match('unit a { abc "a;b"; def; }', undefined, {recover: true})
 -->
 
 This helper changes recovery scanning, not the statement syntax. Include token forms whose contents might resemble joins or stop markers. If the token rule fails or consumes nothing, scanning advances one code unit.
+
+## Recover a missing literal delimiter
+
+By default recovery requires a real join in the input. A grammar can explicitly
+permit insertion at a known boundary by defining both `recoveryInsertion` and
+`recoveryBoundary`:
+
+```js
+const insertions = ohm.grammar(`Insertions {
+  Start = Stmt*
+  Stmt = ("let" name "=" digit+) ! ";"
+  name = letter+
+  recoveryInsertion = ";"
+  recoveryBoundary = "let" ~alnum
+}`);
+const inserted = insertions.match('let a=1\nlet b=2;', undefined, {recover: true});
+inserted.getRecoveredFailures().map(f => f.missing); // [true]
+```
+
+Insertion is available only after a complete, nonempty guarded expression. The
+join must be literal punctuation, optionally wrapped in single-expression rules,
+and its text must match `recoveryInsertion`. The next input must match
+`recoveryBoundary`. Other joins still require actual matching input. The missing
+join's CST has the ordinary rule structure with zero-width source intervals; its
+correction has `missing === true` and consumes no input. The guarded expression
+provides progress, so repeated insertions cannot loop at the same input position.
+Choose boundaries that cannot occur inside a valid expression. A grammar should
+list exactly the delimiters it can safely infer, such as statement semicolons or
+an opening brace before a statement, rather than every punctuation character.
+
+`getRightmostFailurePosition()` and a recovered failure's `position` retain the
+raw match-search coordinate. `getInterval()` and `getDiagnosticPosition()` point
+before intervening whitespace when only literal punctuation is expected. Word
+mistakes remain at the offending token. This keeps displayed missing-delimiter
+errors with the preceding lexical material while recovery still searches from
+the actual failure.

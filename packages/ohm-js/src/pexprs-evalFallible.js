@@ -1,6 +1,6 @@
 import {Interval} from './Interval.js';
 import {RecoveredFailure} from './RecoveredFailure.js';
-import {CorrectionNode, IterationNode, ListNode} from './nodes.js';
+import {CorrectionNode, IterationNode, ListNode, NonterminalNode, TerminalNode} from './nodes.js';
 import * as pexprs from './pexprs-main.js';
 import {partitionRecoveries} from './RecoveryOwnership.js';
 import {mergeFailureSummaries} from './RecoveryCache.js';
@@ -58,6 +58,23 @@ function isBlock(fallible) {
 
 const recoveryStop = new pexprs.Apply('recoveryStop');
 const recoveryToken = new pexprs.Apply('recoveryToken');
+const recoveryBoundary = new pexprs.Apply('recoveryBoundary');
+
+// Only literal punctuation, or a chain of rules wrapping it, has a sound
+// zero-width representation. Do not invent identifiers, alternatives or values.
+function missingJoin(expr, grammar, seen = new Set()) {
+  if (expr instanceof pexprs.Terminal) {
+    return /^[^\w\s]+$/u.test(expr.obj) && grammar.rules.recoveryInsertion &&
+      grammar.match(expr.obj, 'recoveryInsertion').succeeded()
+      ? new TerminalNode(0) : undefined;
+  }
+  if (expr instanceof pexprs.Apply && !expr.args.length && !seen.has(expr.ruleName)) {
+    const next = new Set(seen).add(expr.ruleName);
+    const child = missingJoin(grammar.rules[expr.ruleName].body, grammar, next);
+    return child ? new NonterminalNode(expr.ruleName, [child], [0], 0) : undefined;
+  }
+  return undefined;
+}
 
 // Prefer whole-token progress, with a one-code-unit fallback.
 function nextCandidate(state, tokenStart, stepsByToken) {
@@ -173,7 +190,8 @@ pexprs.Fallible.prototype.eval = function (state) {
 
 /*
   Keep matched guarded material, put the skipped region in the correction slot,
-  and retain the actual join binding. Without a matching join recovery fails.
+  and retain the actual join binding, or an explicitly permitted zero-width
+  literal join at a grammar-defined boundary.
 */
 pexprs.Fallible.prototype.recover = function (
   state,
@@ -211,7 +229,21 @@ pexprs.Fallible.prototype.recover = function (
     }
   }
   const scanStart = state.skipSpacesIfInSyntacticContext();
-  const found = this.scan(state, scanStart, Math.max(scanStart, tokenEnd));
+  let found;
+  // An opted-in boundary may insert a missing literal join only after a
+  // complete, nonempty guarded expression. It never guesses how to repair B.
+  if (guardedMatched && guardedEnd > origPos && state.grammar.rules.recoveryBoundary) {
+    const suspended = state._suspendRecovery();
+    const joinNode = missingJoin(activeJoin(this, state), state.grammar);
+    if (joinNode && matchesAt(state, recoveryBoundary, scanStart)) {
+      found = {
+        skipEnd: scanStart, afterSync: scanStart, joinNode,
+        joinOffset: state.posToOffset(scanStart), missing: true,
+      };
+    }
+    state._resumeRecovery(suspended);
+  }
+  if (!found) found = this.scan(state, scanStart, Math.max(scanStart, tokenEnd));
   state.popFailuresInfo();
 
   const syncTrace = outerTrace && found ? state.trace[state.trace.length - 1] : undefined;
@@ -226,7 +258,8 @@ pexprs.Fallible.prototype.recover = function (
   const recovered = new RecoveredFailure(
     new Interval(inputStream.source, scanStart, found.skipEnd),
     correction.position,
-    correction.result
+    correction.result,
+    found.missing ?? false
   );
   // B may have logged discarded alternatives or a failed final iteration row.
   // Their diagnostics belong to the correction, rather than to retained B.
