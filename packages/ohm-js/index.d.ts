@@ -135,6 +135,9 @@ export interface MatchOptions {
    * When true, a match that fails is retried with recovery at `B ! C`
    * recovery points, and recovered input appears as `_correction` nodes. Default
    * false. Without it, `B ! C` matches exactly as the sequence `B C`.
+   * A Matcher throws if recovery is requested after a match without recovery,
+   * or after its input changes following an earlier match. Use a fresh Matcher,
+   * Grammar#match, or Grammar#trace for recovery in those cases.
    */
   recover?: boolean;
 
@@ -201,6 +204,10 @@ export interface RecoveredFailure {
    * without `recover` would report for this mistake.
    */
   readonly position: number;
+  /** Position of the diagnostic, before intervening whitespace for missing punctuation. */
+  getDiagnosticPosition(): number;
+  /** True when an opted-in recovery boundary supplied a missing literal delimiter. */
+  readonly missing: boolean;
   /**
    * The error message that a match without `recover` gives for this mistake,
    * in the format of `MatchResult#shortMessage`.
@@ -299,6 +306,8 @@ export interface FailedMatchResult extends MatchResult {
    * to construct `message` and `shortMessage`.
    */
   getRightmostFailurePosition(): number;
+  /** Position used in diagnostics; the raw failure position still drives recovery. */
+  getDiagnosticPosition(): number;
 
   /**
    * Return a string summarizing the expected contents of the input stream
@@ -425,7 +434,8 @@ export interface BaseActionDict<T> {
    * absence), a correction slot, and the actual matched C. On a clean match
    * the correction slot is ordinary optional absence; after recovery it is
    * a `_correction` node whose sourceString is the skipped input and whose
-   * recoveredFailure describes the error. Recovery requires C to match.
+   * recoveredFailure describes the error. Unless explicitly opted into literal
+   * delimiter insertion, recovery requires C to match.
    */
   _correction?: (this: Node) => T;
 
@@ -489,8 +499,9 @@ export interface Node {
   child(idx: number): Node;
 
   /**
-   * true if the node is a `_correction` node, which holds input that recovery
-   * skipped, otherwise false.
+   * true if the node is a recovery correction node, otherwise false.
+   * Corrections represent skipped input or an opted-in missing delimiter;
+   * a missing-delimiter correction has an empty source interval.
    */
   isCorrection(): boolean;
 

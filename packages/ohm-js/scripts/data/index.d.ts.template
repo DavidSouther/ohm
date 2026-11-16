@@ -203,6 +203,10 @@ export interface RecoveredFailure {
    * without `recover` would report for this mistake.
    */
   readonly position: number;
+  /** Position of the diagnostic, before intervening whitespace for missing punctuation. */
+  getDiagnosticPosition(): number;
+  /** True when an opted-in recovery boundary supplied a missing literal delimiter. */
+  readonly missing: boolean;
   /**
    * The error message that a match without `recover` gives for this mistake,
    * in the format of `MatchResult#shortMessage`.
@@ -303,6 +307,8 @@ export interface FailedMatchResult extends MatchResult {
    * to construct `message` and `shortMessage`.
    */
   getRightmostFailurePosition(): number;
+  /** Position used in diagnostics; the raw failure position still drives recovery. */
+  getDiagnosticPosition(): number;
 
   /**
    * Return a string summarizing the expected contents of the input stream
@@ -332,6 +338,25 @@ export interface FailedMatchResult extends MatchResult {
   * (even in the same program) never have to worry about
   * operation/attribute name clashes.
   */
+/**
+ * Options for Semantics#addOperation, addAttribute, extendOperation and extendAttribute.
+ */
+export interface OperationOptions {
+  /**
+   * What the operation or attribute does at a `_correction` node, which holds input that recovery
+   * skipped. A `_correction` action, if the action dictionary defines one, always wins.
+   *
+   * - `'skip'` (the default): a correction node yields `undefined`. The operation must tolerate
+   *   `undefined` in the results of its children; use Node#isCorrection to filter them.
+   * - `'throw'`: reaching a correction node is an error.
+   * - a function: a zero-arity action, as if the action dictionary defined `_correction`.
+   *
+   * An extension inherits the policy of the operation it extends, and this option replaces it.
+   * Without recovery there are no correction nodes, so the policy never applies.
+   */
+  corrections?: 'throw' | 'skip' | ((this: Node) => unknown);
+}
+
 export interface Semantics {
   /**
     * Returns a dictionary containing operations and attributes defined by
@@ -346,7 +371,7 @@ export interface Semantics {
     * is already an operation or attribute called name in this semantics.
     * Returns this Semantics.
     */
-  addOperation<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  addOperation<T>(name: string, actionDict: ActionDict<T>, options?: OperationOptions): Semantics;
 
   /**
     * Add a new attribute named name to this Semantics, using the
@@ -354,7 +379,7 @@ export interface Semantics {
     * is already an operation or attribute called name in this semantics.
     * Returns this Semantics.
     */
-  addAttribute<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  addAttribute<T>(name: string, actionDict: ActionDict<T>, options?: OperationOptions): Semantics;
 
   /**
     * Extend the operation named name with the semantic actions contained
@@ -362,7 +387,7 @@ export interface Semantics {
     * semantics.
     * Returns this Semantics.
     */
-  extendOperation<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  extendOperation<T>(name: string, actionDict: ActionDict<T>, options?: OperationOptions): Semantics;
 
   /**
     * Extend the attribute named name with the semantic actions contained
@@ -370,7 +395,7 @@ export interface Semantics {
     * semantics.
     * Returns this Semantics.
     */
-  extendAttribute<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  extendAttribute<T>(name: string, actionDict: ActionDict<T>, options?: OperationOptions): Semantics;
 }
 
 /**
@@ -394,7 +419,8 @@ export interface BaseActionDict<T> {
    * absence), a correction slot, and the actual matched C. On a clean match
    * the correction slot is ordinary optional absence; after recovery it is
    * a `_correction` node whose sourceString is the skipped input and whose
-   * recoveredFailure describes the error. Recovery requires C to match.
+   * recoveredFailure describes the error. Unless explicitly opted into literal
+   * delimiter insertion, recovery requires C to match.
    */
   _correction?: (this: Node) => T;
 
@@ -435,6 +461,13 @@ export interface Node {
     * Returns the child at index idx.
     */
   child(idx: number): Node;
+
+  /**
+    * true if the node is a recovery correction node, otherwise false.
+    * Corrections represent skipped input or an opted-in missing delimiter;
+    * a missing-delimiter correction has an empty source interval.
+    */
+  isCorrection(): boolean;
 
   /**
     * true if the node is a terminal node, otherwise false.
