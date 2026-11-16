@@ -1,7 +1,7 @@
 import test from 'ava';
 import * as ohm from '../index.mjs';
 
-test('punctuation diagnostics point before whitespace but word mistakes keep their token', t => {
+test('delimiter errors precede whitespace; word errors point to tokens', t => {
   const g = ohm.grammar('G { Start = "name" ";" "done" }');
   const r = g.match('name\n  done');
   t.is(r.getInterval().startIdx, 4);
@@ -10,7 +10,7 @@ test('punctuation diagnostics point before whitespace but word mistakes keep the
   t.is(words.getInterval().startIdx, 7);
 });
 
-test('an explicit boundary inserts a delimiter without consuming the next item', t => {
+test('boundary insertion preserves later statements', t => {
   const g = ohm.grammar(`G {
     Start = Stmt*
     Stmt = ("let" ident "=" digit+) ! ";"

@@ -499,10 +499,15 @@ export interface Node {
   child(idx: number): Node;
 
   /**
-   * true if the node is a terminal node, otherwise false.
+   * true if the node is a recovery correction node, otherwise false.
+   * Corrections represent skipped input or an opted-in missing delimiter;
+   * a missing-delimiter correction has an empty source interval.
    */
   isCorrection(): boolean;
 
+  /**
+   * true if the node is a terminal node, otherwise false.
+   */
   isTerminal(): boolean;
 
   /**

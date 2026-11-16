@@ -60,8 +60,9 @@ const recoveryStop = new pexprs.Apply('recoveryStop');
 const recoveryToken = new pexprs.Apply('recoveryToken');
 const recoveryBoundary = new pexprs.Apply('recoveryBoundary');
 
-// Only literal punctuation, or a chain of rules wrapping it, has a sound
-// zero-width representation. Do not invent identifiers, alternatives or values.
+// Synthesize only an opted-in Terminal and its direct Apply wrappers:
+// their CST shape is fixed without choosing a derivation for a more
+// complex expression. Preserve the rule wrappers for semantic actions.
 function missingJoin(expr, grammar, seen = new Set()) {
   if (expr instanceof pexprs.Terminal) {
     return /^[^\w\s]+$/u.test(expr.obj) && grammar.rules.recoveryInsertion &&
@@ -189,9 +190,10 @@ pexprs.Fallible.prototype.eval = function (state) {
 };
 
 /*
-  Keep matched guarded material, put the skipped region in the correction slot,
-  and retain the actual join binding, or an explicitly permitted zero-width
-  literal join at a grammar-defined boundary.
+  Preserve the Fallible binding layout: guarded bindings, correction, join.
+  Retain a successful guarded match; otherwise leave each guarded slot empty.
+  The correction covers skipped input and the join comes from the scan,
+  or both have zero width when inserting a permitted missing join.
 */
 pexprs.Fallible.prototype.recover = function (
   state,
