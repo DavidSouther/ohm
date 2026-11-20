@@ -5,7 +5,6 @@
 // rejects insertion at that position and the scan continues with skip recovery.
 
 import {InputStream} from './InputStream.js';
-import {MatchState} from './MatchState.js';
 import {NonterminalNode, TerminalNode} from './nodes.js';
 import * as p from './pexprs-main.js';
 
@@ -271,13 +270,26 @@ function starts(expr, grammar, source, pos, active = new Set()) {
   return true;
 }
 
-function probe(state, candidates, pos) {
-  class ProbeState extends MatchState {
-    eval(expr) {
-      if (--this.fuel < 0) throw exhausted;
-      return super.eval(expr);
-    }
+// One sandbox subclass per MatchState class. Deriving it from the running
+// state's class avoids importing MatchState, which imports this module.
+const probeStateClasses = new WeakMap();
+
+function probeStateClass(Base) {
+  let ProbeState = probeStateClasses.get(Base);
+  if (!ProbeState) {
+    ProbeState = class ProbeState extends Base {
+      eval(expr) {
+        if (--this.fuel < 0) throw exhausted;
+        return super.eval(expr);
+      }
+    };
+    probeStateClasses.set(Base, ProbeState);
   }
+  return ProbeState;
+}
+
+function probe(state, candidates, pos) {
+  const ProbeState = probeStateClass(state.constructor);
 
   const {source} = state.inputStream;
   let end = Math.min(source.length, pos + WINDOW);
