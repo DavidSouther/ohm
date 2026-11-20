@@ -1,3 +1,4 @@
+import {createJoinTerminalProofCache} from './JoinTerminalRetention.js';
 import {Matcher} from './Matcher.js';
 import {Semantics} from './Semantics.js';
 import * as common from './common.js';
@@ -45,6 +46,9 @@ export class Grammar {
     }
     this._matchStateInitializer = undefined;
     this.supportsIncrementalParsing = true;
+    common.defineLazyProperty(this, '_joinTerminalProofCache', function () {
+      return createJoinTerminalProofCache(this);
+    });
   }
 
   matcher() {

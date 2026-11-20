@@ -141,14 +141,14 @@ test('a guarded alternation of two values recovers the same way in each branch',
 // Failure scope and messages
 // --------------------------------------------------------------------
 
-test('a fallible that does not recover reports what `B C` reports', t => {
+test('a fallible that does not recover retains recognition and raw failures', t => {
   const g = stmtsGrammar;
   const plain = plainStmtsGrammar;
   for (const input of ['{ a b', '{ a; b b', '{ a; ', '{ 1', '{ a b; c d; e']) {
     const r = g.match(input, undefined, RECOVER);
     const p = plain.match(input);
     t.true(r.failed(), `${input}`);
-    t.is(r.shortMessage, p.shortMessage, `${input}`);
+    t.is(r.shortMessage, g.match(input).shortMessage, `${input}`);
     t.is(r.getRightmostFailurePosition(), p.getRightmostFailurePosition(), `${input}`);
     t.is(r.getExpectedText(), p.getExpectedText(), `${input}`);
   }
@@ -156,14 +156,13 @@ test('a fallible that does not recover reports what `B C` reports', t => {
 
 test('each recovered failure carries the message of the pass that selected it', t => {
   const g = stmtsGrammar;
-  const plain = plainStmtsGrammar;
   const r = g.match('{ a b; c d; e; }', undefined, RECOVER);
   t.true(r.succeeded());
   const failures = r.getRecoveredFailures();
   t.is(failures.length, 2);
 
-  // The first entry equals the plain match's error.
-  const first = plain.match('{ a b; c d; e; }');
+  // The first entry equals the same grammar's strict match error.
+  const first = g.match('{ a b; c d; e; }');
   t.is(failures[0].shortMessage, first.shortMessage);
   t.is(failures[0].position, first.getRightmostFailurePosition());
   t.is(failures[0].getExpectedText(), first.getExpectedText());
@@ -172,9 +171,9 @@ test('each recovered failure carries the message of the pass that selected it', 
     first.getRightmostFailures().map(f => f.toString())
   );
 
-  // The second equals the plain match's error once the first mistake is fixed.
-  const second = plain.match('{ a; c d; e; }');
-  t.is(failures[1].shortMessage, second.shortMessage.replace('col 8', 'col 10'));
+  // The second equals the strict match's error once the first mistake is fixed.
+  const second = g.match('{ a; c d; e; }');
+  t.is(failures[1].shortMessage, second.shortMessage.replace('col 7', 'col 9'));
   t.is(failures[1].interval.contents, 'd');
   t.is(failures[0].interval.contents, 'b');
 });
@@ -545,8 +544,8 @@ test('`_correction` has arity 0 and reads its failure from the node', t => {
     },
   });
   t.deepEqual(s(g.match('{ a b; c }', undefined, RECOVER)).errs(), [
-    'Line 1, col 5: expected ";"',
-    'Line 1, col 10: expected ";"',
+    'Line 1, col 4: expected ";"',
+    'Line 1, col 9: expected ";"',
   ]);
 });
 
@@ -740,7 +739,7 @@ test('row based iteration: the kept prefix is a list and the slots are unchanged
   t.true(r.succeeded());
   t.deepEqual(kinds(r._cst), ['_terminal', '_list', '_correction', '_terminal', '_terminal']);
   t.deepEqual(kinds(r._cst.children[1]), ['Stmt', 'Stmt']);
-  t.deepEqual(messages(r), ['Line 1, col 11: expected ";"']);
+  t.deepEqual(messages(r), ['Line 1, col 10: expected ";"']);
 
   const plus = v18.grammar(STMTS.replace('Stmt* !', 'Stmt+ !'));
   const nothingKept = plus.match('{ c }', undefined, RECOVER);
@@ -760,7 +759,7 @@ test('row based iteration: the kept prefix is a list and the slots are unchanged
     ['_terminal', '_list', '_correction', '_terminal', '_terminal']
   );
   t.is(root.children[2].sourceString, 'c');
-  t.is(root.children[2].recoveredFailure.shortMessage, 'Line 1, col 11: expected ";"');
+  t.is(root.children[2].recoveredFailure.shortMessage, 'Line 1, col 10: expected ";"');
 });
 
 test('row based iteration: an iterated fallible gives one row per element', t => {

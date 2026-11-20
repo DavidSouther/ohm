@@ -1,9 +1,10 @@
 import {Interval} from './Interval.js';
+import FailureGroup from './FailureGroup.js';
 import {RecoveredFailure} from './RecoveredFailure.js';
 import {CorrectionNode, IterationNode, ListNode} from './nodes.js';
 import * as pexprs from './pexprs-main.js';
 import {partitionRecoveries} from './RecoveryOwnership.js';
-import {mergeFailureSummaries} from './RecoveryCache.js';
+import {mergeFailureSummaries, noFailures} from './RecoveryCache.js';
 
 // --------------------------------------------------------------------
 // Fallible: `B ! C`
@@ -81,9 +82,94 @@ function emptyOptional(state) {
 }
 
 function matchPlain(fallible, state) {
+  // A failure-only rematch gathers the same diagnostic evidence as a recovering pass.
+  if (state.terminalProgress) return matchOperands(fallible, state).ok;
   if (!state.eval(fallible.guarded)) return false;
   state.pushBinding(emptyOptional(state), state.inputStream.pos);
   return state.eval(fallible.join);
+}
+
+function withProposedDiagnosticPosition(summary, proposedDiagnosticPosition) {
+  return summary.hasStrongFailures && summary.proposedDiagnosticPosition === undefined
+    ? {...summary, proposedDiagnosticPosition}
+    : summary;
+}
+
+// Evaluates the operands and, when the join fails at its start, proposes the
+// end of the guard's last retained terminal as the diagnostic position. A
+// failure-only rematch records failures in a FailureGroup and a recovering
+// pass in its failure summary, so both receive the proposal.
+function matchOperands(fallible, state) {
+  const {guarded, join} = fallible;
+  const {inputStream, terminalProgress: progress, recordedFailures: previousFailures} = state;
+  const origPos = inputStream.pos;
+  const previousSummary = state._recoveryFailureSummary;
+  if (previousFailures) state.recordedFailures = new FailureGroup();
+  state._recoveryFailureSummary = noFailures;
+
+  const guardedMatched = state.eval(guarded);
+  const guardedEnd = inputStream.pos;
+  let ok = false;
+
+  if (guardedMatched) {
+    const guardFailures = state.recordedFailures;
+    let guardSummary = state._recoveryFailureSummary;
+    if (previousFailures) state.recordedFailures = new FailureGroup();
+    state._recoveryFailureSummary = noFailures;
+    const guardedTerminalEnd = progress.retainedEnd;
+    state.pushBinding(emptyOptional(state), guardedEnd);
+    const previousAttempted = progress.attemptedEnd;
+    progress.attemptedEnd = -1;
+    ok = state.eval(join);
+    const farthestCompletedJoinTerminalEnd = progress.attemptedEnd;
+    progress.attemptedEnd = Math.max(previousAttempted, farthestCompletedJoinTerminalEnd);
+
+    const joinFailures = state.recordedFailures;
+    let joinSummary = state._recoveryFailureSummary;
+    // The join's failure is proposed when (1) the guard retained a terminal past
+    // its start, (2) the join completed no terminal, (3) a strong join failure,
+    // less its preceding implicit space, lies at the guard's end, and (4) the
+    // join retains a terminal whenever it succeeds.
+    if (!ok && guardedTerminalEnd > origPos && farthestCompletedJoinTerminalEnd < 0) {
+      const failurePosition = state.positionToRecordFailures;
+      const recordedFailureAtJoinStart = joinFailures?.hasStrongFailures &&
+        failurePosition - joinFailures.minPrecedingImplicitSpaceLength === guardedEnd;
+      const summaryFailureAtJoinStart = joinSummary.hasStrongFailures &&
+        joinSummary.position - joinSummary.minPrecedingImplicitSpaceLength === guardedEnd;
+      if (
+        (recordedFailureAtJoinStart || summaryFailureAtJoinStart) &&
+        join.retainsTerminalOnSuccess(state.grammar, state.currentApplication())
+      ) {
+        if (recordedFailureAtJoinStart) {
+          joinFailures.proposeDiagnosticPosition(guardedTerminalEnd);
+          // A guard failure at or before the retained end shares the proposal.
+          const guardFailureWithoutImplicitSpace =
+            failurePosition - guardFailures.minPrecedingImplicitSpaceLength;
+          if (guardFailureWithoutImplicitSpace <= guardedTerminalEnd) {
+            guardFailures.proposeDiagnosticPosition(guardedTerminalEnd);
+          }
+        }
+        if (summaryFailureAtJoinStart) {
+          joinSummary = withProposedDiagnosticPosition(joinSummary, guardedTerminalEnd);
+          const guardFailureWithoutImplicitSpace =
+            guardSummary.position - guardSummary.minPrecedingImplicitSpaceLength;
+          if (guardSummary.position === joinSummary.position &&
+              guardFailureWithoutImplicitSpace <= guardedTerminalEnd) {
+            guardSummary = withProposedDiagnosticPosition(guardSummary, guardedTerminalEnd);
+          }
+        }
+      }
+    }
+
+    if (joinFailures) joinFailures.merge(guardFailures);
+    state._recoveryFailureSummary = mergeFailureSummaries(joinSummary, guardSummary);
+  }
+
+  if (previousFailures) state.recordedFailures.merge(previousFailures);
+  state._recoveryFailureSummary = mergeFailureSummaries(
+    state._recoveryFailureSummary, previousSummary
+  );
+  return {guardedMatched, guardedEnd, ok};
 }
 
 // The number of values the guarded operand produces, computed on first use.
@@ -124,10 +210,7 @@ pexprs.Fallible.prototype.eval = function (state) {
   state._blockDepth += blockDepth;
 
   // Try the guarded expression and its join before considering recovery.
-  const guardedMatched = state.eval(this.guarded);
-  const guardedEnd = inputStream.pos;
-  if (guardedMatched) state.pushBinding(emptyOptional(state), guardedEnd);
-  const ok = guardedMatched && state.eval(this.join);
+  const {guardedMatched, guardedEnd, ok} = matchOperands(this, state);
 
   state._blockDepth -= blockDepth;
   state._popRecoverySync();
@@ -270,7 +353,7 @@ pexprs.Fallible.prototype.recover = function (
   progress before a stop marker or the end of input.
 */
 pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
-  const {inputStream} = state;
+  const {inputStream, terminalProgress: progress} = state;
   const end = inputStream.source.length;
   const nested = state._blockDepth + (isBlock(this) ? 1 : 0) >= 2;
   const enclosing =
@@ -279,6 +362,8 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
       : state._syncStack;
   const stepsByToken = !!state.grammar.rules.recoveryToken;
   let found = null;
+  const previousRetained = progress.retainedEnd;
+  const previousAttempted = progress.attemptedEnd;
   const origTokenEnd = state._suspendRecovery();
   for (let p = scanStart; p <= end; ) {
     inputStream.pos = p;
@@ -289,6 +374,9 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
     }
     inputStream.pos = p;
     const numBindings = state._bindings.length;
+    // Stop and token probes discard their bindings. Only the selected join can
+    // contribute terminal progress to the recovered expression.
+    progress.retainedEnd = progress.attemptedEnd = -1;
     if (state.eval(this.join)) {
       const afterSync = inputStream.pos;
       const joinNode = state._bindings[numBindings];
@@ -304,5 +392,9 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom) {
     p = nextCandidate(state, next, stepsByToken);
   }
   state._resumeRecovery(origTokenEnd);
+  progress.retainedEnd = found ? Math.max(previousRetained, progress.retainedEnd)
+    : previousRetained;
+  progress.attemptedEnd = found ? Math.max(previousAttempted, progress.attemptedEnd)
+    : previousAttempted;
   return found;
 };

@@ -38,7 +38,9 @@ test('saved failure remains inspectable after restoring a non-incremental matche
 
   t.is(saved.getRightmostFailurePosition(), 2);
   t.is(saved.getExpectedText(), '";"');
-  t.is(saved.shortMessage, 'Line 1, col 3: expected ";"');
+  t.is(saved.getDiagnosticPosition(), 1);
+  t.is(saved.getInterval().startIdx, 1);
+  t.is(saved.shortMessage, 'Line 1, col 2: expected ";"');
   t.is(matcher.getInput(), 'a ?');
   t.is(matcher._memo, memo);
   t.throws(() => matcher.match(), {message: /does not support incremental parsing/});
@@ -54,7 +56,9 @@ test('saved strict failure leaves a later recovery memo on the same input intact
 
   t.is(saved.getRightmostFailurePosition(), 2);
   t.is(saved.getExpectedText(), '";"');
-  t.is(saved.shortMessage, 'Line 1, col 3: expected ";"');
+  t.is(saved.getDiagnosticPosition(), 1);
+  t.is(saved.getInterval().startIdx, 1);
+  t.is(saved.shortMessage, 'Line 1, col 2: expected ";"');
   t.is(matcher._memo, memo);
   t.is(memo.count, memoCount);
 });

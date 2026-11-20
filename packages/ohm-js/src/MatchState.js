@@ -1,4 +1,6 @@
+import {CaseInsensitiveTerminal} from './CaseInsensitiveTerminal.js';
 import {InputStream} from './InputStream.js';
+import FailureGroup from './FailureGroup.js';
 import {MatchResult} from './MatchResult.js';
 import {Trace} from './Trace.js';
 import {mergeFailureSummaries, noFailures} from './RecoveryCache.js';
@@ -41,6 +43,7 @@ export class MatchState {
     this.inLexifiedContextStack = [false];
     this._tokenStart = -1;
     this._tokenStartStack = [];
+    this._implicitSpaceStart = this._implicitSpaceEnd = 0;
 
     this.rightmostFailurePosition = -1;
     this._rightmostFailurePositionStack = [];
@@ -74,9 +77,18 @@ export class MatchState {
     this._tokenEnd = -1;
     this._tokenEndStack = [];
 
+    this.terminalProgress = undefined;
+    if (optRecovery || optPositionToRecordFailures !== undefined) {
+      this.terminalProgress = {
+        retainedEnd: -1,
+        attemptedEnd: -1,
+        attemptedStack: [],
+        offsets: this.memoTable.enableTerminalTracking(),
+      };
+    }
     if (optPositionToRecordFailures !== undefined) {
       this.positionToRecordFailures = optPositionToRecordFailures;
-      this.recordedFailures = Object.create(null);
+      this.recordedFailures = new FailureGroup();
     }
   }
 
@@ -107,6 +119,11 @@ export class MatchState {
   }
 
   enterApplication(app, memoKeyId) {
+    const progress = this.terminalProgress;
+    if (progress) {
+      progress.attemptedStack.push(progress.attemptedEnd);
+      progress.attemptedEnd = -1;
+    }
     this._posStack.push(this.inputStream.pos);
     this._applicationStack.push(app);
     this.inLexifiedContextStack.push(false);
@@ -132,6 +149,10 @@ export class MatchState {
       this.rightmostFailurePosition,
       this._rightmostFailurePositionStack.pop()
     );
+    const progress = this.terminalProgress;
+    if (progress) {
+      progress.attemptedEnd = Math.max(progress.attemptedEnd, progress.attemptedStack.pop());
+    }
     if (this.recovery) {
       this._tokenEnd = Math.max(this._tokenEnd, this._tokenEndStack.pop());
     }
@@ -165,6 +186,10 @@ export class MatchState {
     const failure = expr.toFailure(this.grammar);
     failure.lexical = this._isLexicalFailureAt(pos);
     return failure;
+  }
+
+  _precedingImplicitSpaceLengthAt(pos) {
+    return pos === this._implicitSpaceEnd ? pos - this._implicitSpaceStart : 0;
   }
 
   currentApplication() {
@@ -240,7 +265,12 @@ export class MatchState {
         this.grammar,
         this._isLexicalFailureAt(pos)
       );
-      const summary = {position: pos, failures};
+      const summary = {
+        position: pos,
+        failures,
+        hasStrongFailures: true,
+        minPrecedingImplicitSpaceLength: this._precedingImplicitSpaceLengthAt(pos),
+      };
       this._recoveryFailureSummary = mergeFailureSummaries(
         summary,
         this._recoveryFailureSummary
@@ -260,37 +290,20 @@ export class MatchState {
         // parameters.
       }
 
-      this.recordFailure(this._failureOf(expr, pos), false);
+      this.recordedFailures.record(
+        this._failureOf(expr, pos), this._precedingImplicitSpaceLengthAt(pos)
+      );
     }
   }
 
-  recordFailure(failure, shouldCloneIfNew) {
-    const key = failure.toKey();
-    if (!this.recordedFailures[key]) {
-      this.recordedFailures[key] = shouldCloneIfNew ? failure.clone() : failure;
-    } else {
-      const prior = this.recordedFailures[key];
-      if (prior.isFluffy() && !failure.isFluffy()) prior.clearFluffy();
-      if (!failure.isLexical()) prior.lexical = false;
-    }
-  }
-
-  recordFailures(failures, shouldCloneIfNew) {
-    Object.keys(failures).forEach(key => {
-      this.recordFailure(failures[key], shouldCloneIfNew);
-    });
-  }
-
-  cloneRecordedFailures() {
-    if (!this.recordedFailures) {
-      return undefined;
-    }
-
-    const ans = Object.create(null);
-    Object.keys(this.recordedFailures).forEach(key => {
-      ans[key] = this.recordedFailures[key].clone();
-    });
-    return ans;
+  // A memo entry keeps its failures with the target offset they were recorded for.
+  recordedFailuresForMemo() {
+    if (!this.recordedFailures) return undefined;
+    const start = this._posStack.at(-1);
+    return {
+      group: this.recordedFailures.copyAtOffset(-start),
+      targetOffset: this.positionToRecordFailures - start,
+    };
   }
 
   getRightmostFailurePosition() {
@@ -336,6 +349,10 @@ export class MatchState {
 
   hasNecessaryInfo(entry, app) {
     const {memoTable} = this;
+    // While terminal progress is tracked, an entry memoized without it is re-evaluated.
+    if (this.terminalProgress && this.terminalProgress.offsets.attempted[entry] === undefined) {
+      return false;
+    }
     // Reevaluate across token boundaries: a lexical rule can itself enter a
     // syntactic rule, so its expectations cannot all be reclassified together.
     if (
@@ -353,7 +370,8 @@ export class MatchState {
       this.inputStream.pos + memoTable.rightmostFailureOffset[entry] ===
         this.positionToRecordFailures
     ) {
-      return !!memoTable.failures[entry];
+      // Failures recorded for another target position are not the ones needed here.
+      return memoTable.failures[entry]?.targetOffset === memoTable.rightmostFailureOffset[entry];
     }
 
     return true;
@@ -367,8 +385,22 @@ export class MatchState {
       const stored = memoTable.summaries[entry];
       if (stored) {
         const position = origPos + memoTable.rightmostFailureOffset[entry];
+        const {proposedDiagnosticPosition, minPrecedingImplicitSpaceLength} = stored;
         this._recoveryFailureSummary = mergeFailureSummaries(
-          {position, failures: stored.position === position ? stored.failures : []},
+          {
+            position,
+            failures: stored.position === position ? stored.failures : [],
+            hasStrongFailures: stored.hasStrongFailures,
+            proposedDiagnosticPosition: Number.isInteger(proposedDiagnosticPosition)
+              ? proposedDiagnosticPosition + position - stored.position
+              : proposedDiagnosticPosition,
+            // A failure at the entrance takes its implicit space from this invocation.
+            minPrecedingImplicitSpaceLength: minPrecedingImplicitSpaceLength === undefined
+              ? undefined
+              : position === origPos
+                ? this._precedingImplicitSpaceLengthAt(origPos)
+                : minPrecedingImplicitSpaceLength,
+          },
           this._recoveryFailureSummary
         );
       }
@@ -378,6 +410,17 @@ export class MatchState {
     }
 
     const tokenEndOffset = memoTable.tokenEndOffset[entry];
+    const progress = this.terminalProgress;
+    if (progress) {
+      // A left-recursion seed or a growing application has no attempted progress yet.
+      // Counting it as a completed join terminal suppresses a diagnostic proposal.
+      const attempted = progress.offsets.attempted[entry] ?? Infinity;
+      if (attempted >= 0) {
+        progress.attemptedEnd = Math.max(progress.attemptedEnd, origPos + attempted);
+      }
+      const retained = progress.offsets.retained[entry];
+      if (retained >= 0) progress.retainedEnd = Math.max(progress.retainedEnd, origPos + retained);
+    }
     if (this.recovery && tokenEndOffset >= 0) {
       this._tokenEnd = Math.max(this._tokenEnd, origPos + tokenEndOffset);
     }
@@ -390,10 +433,15 @@ export class MatchState {
     );
     if (
       this.recordedFailures &&
-      this.positionToRecordFailures === memoRecRightmostFailurePosition &&
-      memoTable.failures[entry]
+      this.positionToRecordFailures === memoRecRightmostFailurePosition
     ) {
-      this.recordFailures(memoTable.failures[entry], true);
+      // Replay only failures recorded for this target position.
+      const failures = memoTable.failures[entry];
+      if (failures?.targetOffset === memoTable.rightmostFailureOffset[entry]) {
+        const precedingImplicitSpaceLength = memoRecRightmostFailurePosition === origPos
+          ? this._precedingImplicitSpaceLengthAt(origPos) : undefined;
+        this.recordedFailures.merge(failures.group, origPos, precedingImplicitSpaceLength);
+      }
     }
 
     this.inputStream.examinedLength = Math.max(
@@ -414,8 +462,37 @@ export class MatchState {
   // will have `expr.getArity()` more elements than before, and the input stream's position may
   // have increased. On failure, `bindings` and position will be unchanged.
   eval(expr) {
-    if (this.recovery && !this.trace) return this.recovery.cache.evaluate(this, expr);
-    return this.evalUncached(expr);
+    const progress = this.terminalProgress;
+    if (!progress) return this.evalUncached(expr);
+    return this.evalWithTerminalProgress(expr, progress);
+  }
+
+  // Completed terminals in discarded alternatives count as attempted progress.
+  // Retained progress comes from terminals that survive successful evaluation.
+  // Predicates and implicit space contribute to neither.
+  evalWithTerminalProgress(expr, progress) {
+    const previousAttempt = progress.attemptedEnd;
+    const previousRetained = progress.retainedEnd;
+    progress.retainedEnd = -1;
+    const success = this.trace || !this.recovery
+      ? this.evalUncached(expr)
+      : this.recovery.cache.evaluate(this, expr);
+    if (success && (
+      (expr instanceof pexprs.Terminal && expr.obj.length > 0) ||
+      (expr instanceof CaseInsensitiveTerminal && expr._getString(this).length > 0) ||
+      expr instanceof pexprs.Range ||
+      expr instanceof pexprs.UnicodeChar ||
+      expr === pexprs.any
+    )) {
+      progress.retainedEnd = this.inputStream.pos;
+      progress.attemptedEnd = Math.max(progress.attemptedEnd, this.inputStream.pos);
+    }
+    const probe = expr === applySpaces ||
+      expr instanceof pexprs.Lookahead || expr instanceof pexprs.Not;
+    if (probe) progress.attemptedEnd = previousAttempt;
+    progress.retainedEnd = success && !probe
+      ? Math.max(previousRetained, progress.retainedEnd) : previousRetained;
+    return success;
   }
 
   evalUncached(expr) {
@@ -426,11 +503,22 @@ export class MatchState {
     let origRecordedFailures;
     if (this.recordedFailures) {
       origRecordedFailures = this.recordedFailures;
-      this.recordedFailures = Object.create(null);
+      this.recordedFailures = new FailureGroup();
     }
 
     const origPos = inputStream.pos;
+    const origSpaceStart = this._implicitSpaceStart;
+    const origSpaceEnd = this._implicitSpaceEnd;
     const memoPos = this.maybeSkipSpacesBefore(expr);
+    const trackSpaces = origRecordedFailures || this.recovery;
+    if (trackSpaces) {
+      if (memoPos > origPos) {
+        this._implicitSpaceStart = origPos;
+        this._implicitSpaceEnd = memoPos;
+      } else if (origPos !== this._implicitSpaceEnd) {
+        this._implicitSpaceStart = this._implicitSpaceEnd = origPos;
+      }
+    }
 
     let origTrace;
     if (this.trace) {
@@ -440,6 +528,10 @@ export class MatchState {
 
     // Do the actual evaluation.
     const ans = expr.eval(this);
+    if (trackSpaces) {
+      this._implicitSpaceStart = origSpaceStart;
+      this._implicitSpaceEnd = origSpaceEnd;
+    }
 
     if (this.trace) {
       const bindings = this._bindings.slice(origNumBindings);
@@ -459,9 +551,7 @@ export class MatchState {
         this._tokenEnd = inputStream.pos;
       }
       if (this.recordedFailures && inputStream.pos === this.positionToRecordFailures) {
-        Object.keys(this.recordedFailures).forEach(key => {
-          this.recordedFailures[key].makeFluffy();
-        });
+        this.recordedFailures.markFailuresIncidental();
       }
     } else {
       // Reset the position, bindings, and userData.
@@ -471,7 +561,7 @@ export class MatchState {
     }
 
     if (this.recordedFailures) {
-      this.recordFailures(origRecordedFailures, false);
+      this.recordedFailures.merge(origRecordedFailures);
     }
 
     // The built-in applySyntactic rule needs special handling: we want to skip
@@ -494,18 +584,16 @@ export class MatchState {
     this.eval(this.startExpr);
     let rightmostFailures;
     if (this.recordedFailures) {
-      rightmostFailures = Object.keys(this.recordedFailures).map(
-        key => this.recordedFailures[key]
-      );
+      rightmostFailures = this.recordedFailures.toArray();
     } else if (this.recovery && !this.trace) {
-      // Summaries share their failure lists, so hand the result its own array.
-      rightmostFailures = this._recoveryFailureSummary.failures.slice();
+      // The cached failures are shared across recovery passes.
+      rightmostFailures = this._recoveryFailureSummary.failures.map(failure => failure.clone());
     }
     const cst = this._bindings[0];
     if (cst) {
       cst.grammar = this.grammar;
     }
-    return new MatchResult(
+    const result = new MatchResult(
       this.matcher,
       this.input,
       this.startExpr,
@@ -514,6 +602,12 @@ export class MatchState {
       this.rightmostFailurePosition,
       rightmostFailures
     );
+    if (this.recordedFailures) {
+      result._proposedDiagnosticPosition = this.recordedFailures.proposedDiagnosticPosition;
+    } else if (this.recovery && !this.trace) {
+      result._proposedDiagnosticPosition = this._recoveryFailureSummary.proposedDiagnosticPosition;
+    }
+    return result;
   }
 
   getTrace() {

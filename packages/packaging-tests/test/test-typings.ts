@@ -125,4 +125,46 @@ test('Interval typings', () => {
   }
 });
 
+type Assert<T extends true> = T;
+// Node also has a string index for semantic actions, so check the explicit method signature.
+type IsCorrectionTakesNoArguments = Assert<
+  Parameters<ohm.Node['isCorrection']> extends [] ? true : false
+>;
+
+test('correction semantics from the public types', () => {
+  const grammar = ohm.grammar('G { Start = "a" ! ";" }');
+  const actions: ohm.ActionDict<boolean> = {
+    Start(_guard, correction, _join) {
+      return correction.isCorrection();
+    },
+  };
+  const options: ohm.OperationOptions = {corrections: 'skip'};
+  const base = grammar
+    .createSemantics()
+    .addOperation('hasCorrection', actions, options)
+    .addAttribute('corrected', actions, options);
+  const semantics = grammar
+    .extendSemantics(base)
+    .extendOperation('hasCorrection', {}, options)
+    .extendAttribute('corrected', {}, options);
+
+  const recovered = grammar.match('a x;', undefined, {recover: true});
+  assert.is(semantics(recovered).hasCorrection(), true);
+  assert.is(semantics(recovered).corrected, true);
+});
+
+test('diagnostic positions from the public types', () => {
+  const grammar = ohm.grammar('G { Start = "a" ! ";" }');
+  const input = 'a x;';
+  const strict = grammar.match(input);
+  if (strict.failed()) {
+    assert.is(strict.getDiagnosticPosition(), 1);
+    assert.is(strict.getRightmostFailurePosition(), 2);
+  } else {
+    assert.unreachable('Expected match failure');
+  }
+  const recovered = grammar.match(input, undefined, {recover: true});
+  assert.is(recovered.getRecoveredFailures()[0].getDiagnosticPosition(), 1);
+});
+
 test.run();

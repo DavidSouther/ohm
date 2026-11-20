@@ -351,10 +351,10 @@ test('recovery keeps valid prior work', t => {
       EXACT,
       '{\naaa;\nbbb;\nxxx\n}',
       'Block[Stmt(aaa) Stmt(bbb) | FAIL<xxx>]',
-      ['Line 5, col 1: expected ";"'],
+      ['Line 4, col 4: expected ";"'],
     ],
     // Error at the first statement: nothing to keep.
-    [EXACT, '{\nxxx\n}', 'Block[ | FAIL<xxx>]', ['Line 3, col 1: expected ";"']],
+    [EXACT, '{\nxxx\n}', 'Block[ | FAIL<xxx>]', ['Line 2, col 4: expected ";"']],
     // A first-token typo recovers at its own `;`; later statements are kept.
     [
       EXACT,
@@ -367,7 +367,7 @@ test('recovery keeps valid prior work', t => {
       EXACT,
       '{\naaa;\nb b;\nccc;\n}',
       'Block[Stmt(aaa) Stmt(b FAIL<b>) Stmt(ccc)]',
-      ['Line 3, col 3: expected ";"'],
+      ['Line 3, col 2: expected ";"'],
     ],
     // An empty block is valid.
     [EXACT, '{\n}', 'Block[]', []],
@@ -377,9 +377,9 @@ test('recovery keeps valid prior work', t => {
       '{\naaa;\nb b;\nc c;\nddd;\nxxx\n}',
       'Block[Stmt(aaa) Stmt(b FAIL<b>) Stmt(c FAIL<c>) Stmt(ddd) | FAIL<xxx>]',
       [
-        'Line 3, col 3: expected ";"',
-        'Line 4, col 3: expected ";"',
-        'Line 7, col 1: expected ";"',
+        'Line 3, col 2: expected ";"',
+        'Line 4, col 2: expected ";"',
+        'Line 6, col 4: expected ";"',
       ],
     ],
     // Nested blocks: each block keeps its own prefix.
@@ -387,18 +387,18 @@ test('recovery keeps valid prior work', t => {
       NESTED,
       '{\naaa;\n{\nbbb;\nxxx\n}\nccc;\n}',
       'Block[Stmt(aaa) Block[Stmt(bbb) | FAIL<xxx>] Stmt(ccc)]',
-      ['Line 6, col 1: expected ";"'],
+      ['Line 5, col 4: expected ";"'],
     ],
     [
       NESTED,
       '{\naaa;\n{\nbbb;\n}\nyyy\n}',
       'Block[Stmt(aaa) Block[Stmt(bbb)] | FAIL<yyy>]',
-      ['Line 7, col 1: expected ";"'],
+      ['Line 6, col 4: expected ";"'],
     ],
     [NESTED, '{\naaa;\n{\n}\n}', 'Block[Stmt(aaa) Block[]]', []],
     // A guarded `+` keeps its prefix too; with no element matched, its slot holds an empty iteration.
-    [PLUS, '{\naaa;\nxxx\n}', 'Block[Stmt(aaa) | FAIL<xxx>]', ['Line 4, col 1: expected ";"']],
-    [PLUS, '{\nxxx\n}', 'Block[ | FAIL<xxx>]', ['Line 3, col 1: expected ";"']],
+    [PLUS, '{\naaa;\nxxx\n}', 'Block[Stmt(aaa) | FAIL<xxx>]', ['Line 3, col 4: expected ";"']],
+    [PLUS, '{\nxxx\n}', 'Block[ | FAIL<xxx>]', ['Line 2, col 4: expected ";"']],
   ];
   for (const [source, input, tree, errors] of cases) {
     t.deepEqual(blockView(source, input), {tree, errors}, input);

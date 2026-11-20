@@ -6,7 +6,33 @@ import {recoveryAnalysis} from './RecoveryAnalysis.js';
 import {RecoveryAttemptReplay} from './RecoveryAttemptReplay.js';
 import {recoveriesOf, setRecoveries} from './RecoveryOwnership.js';
 
-export const noFailures = {position: -1, failures: []};
+export const noFailures = {position: -1, failures: [], hasStrongFailures: false};
+
+function mergeDiagnosticPositionEvidence(a, b) {
+  const aProposal = a.proposedDiagnosticPosition;
+  const bProposal = b.proposedDiagnosticPosition;
+  if (!a.hasStrongFailures) {
+    return {hasStrongFailures: b.hasStrongFailures, proposedDiagnosticPosition: bProposal};
+  }
+  if (!b.hasStrongFailures) {
+    return {hasStrongFailures: a.hasStrongFailures, proposedDiagnosticPosition: aProposal};
+  }
+  // A disagreement cannot be replaced with an enclosing join's proposal.
+  return {
+    hasStrongFailures: true,
+    proposedDiagnosticPosition: aProposal === bProposal ? aProposal : null,
+  };
+}
+
+// Only strong failures contribute diagnostic-position evidence. A shared failure
+// list stays independent of its callers' implicit space-rule matches.
+function mergedImplicitSpaceLength(newer, older) {
+  const newerLength = newer.minPrecedingImplicitSpaceLength;
+  const olderLength = older.minPrecedingImplicitSpaceLength;
+  if (newerLength === undefined) return olderLength;
+  if (olderLength === undefined) return newerLength;
+  return Math.min(newerLength, olderLength);
+}
 
 // Two failures are the same expectation when their keys match; `toKey()` is
 // `toString()#type`, so equal types reduce to comparing the text.
@@ -46,7 +72,11 @@ export function mergeFailureSummaries(newer, older) {
       }
     }
   }
-  return {position: newer.position, failures};
+  return {
+    position: newer.position, failures,
+    minPrecedingImplicitSpaceLength: mergedImplicitSpaceLength(newer, older),
+    ...mergeDiagnosticPositionEvidence(newer, older),
+  };
 }
 
 // Keyed by `toKey()` so that large expectation sets stay linear.
@@ -65,12 +95,17 @@ function mergeLargeSummaries(newer, older) {
       if (!failure.isLexical()) prior.lexical = false;
     }
   }
-  return {position: newer.position, failures};
+  return {
+    position: newer.position, failures,
+    minPrecedingImplicitSpaceLength: mergedImplicitSpaceLength(newer, older),
+    ...mergeDiagnosticPositionEvidence(newer, older),
+  };
 }
 
-function fluffy(summary) {
+function withIncidentalFailures(summary) {
   return {
     position: summary.position,
+    hasStrongFailures: false,
     failures: summary.failures.map(f => {
       const copy = f.clone();
       copy.makeFluffy();
@@ -441,12 +476,17 @@ export class RecoveryCache {
     const oldLog = state._recoveryLog;
     const oldAttempts = state._attemptEffects;
     const oldTokenEnd = state._tokenEnd;
+    const progress = state.terminalProgress;
+    const oldAttemptedTerminalEnd = progress.attemptedEnd;
+    const oldRetainedTerminalEnd = progress.retainedEnd;
     const oldExamined = state.inputStream.examinedLength;
     node.depth = state._applicationStack.length;
     state._recoveryFailureSummary = noFailures;
     state._recoveryLog = emptyEffects;
     state._attemptEffects = emptyEffects;
     state._tokenEnd = -1;
+    progress.attemptedEnd = -1;
+    progress.retainedEnd = -1;
     state.inputStream.examinedLength = 0;
     this.current = node;
     let success;
@@ -458,7 +498,9 @@ export class RecoveryCache {
       node.parent = null;
     }
     let summary = state._recoveryFailureSummary;
-    if (success && state.inputStream.pos === summary.position) summary = fluffy(summary);
+    if (success && state.inputStream.pos === summary.position) {
+      summary = withIncidentalFailures(summary);
+    }
     node.success = success;
     node.end = state.inputStream.pos;
     node.bindings = state._bindings.slice(bindings);
@@ -467,6 +509,8 @@ export class RecoveryCache {
     node.summary = summary;
     node.log = state._recoveryLog;
     node.tokenEnd = state._tokenEnd;
+    node.attemptedTerminalEnd = progress.attemptedEnd;
+    node.retainedTerminalEnd = progress.retainedEnd;
     node.examined = state.inputStream.examinedLength;
     node.tainted = state._recoveryTaint !== taint;
     if (expr instanceof pexprs.Apply && !node.tainted) node.attempts = emptyEffects;
@@ -475,6 +519,8 @@ export class RecoveryCache {
     state._recoveryLog = oldLog.concat(node.log);
     state._attemptEffects = oldAttempts.concat(state._attemptEffects);
     state._tokenEnd = Math.max(oldTokenEnd, node.tokenEnd);
+    progress.attemptedEnd = Math.max(oldAttemptedTerminalEnd, node.attemptedTerminalEnd);
+    progress.retainedEnd = Math.max(oldRetainedTerminalEnd, node.retainedTerminalEnd);
     state.inputStream.examinedLength = Math.max(oldExamined, node.examined);
     if (parent) parent.attempts = parent.attempts.concat(node.attempts);
     this.lastRecord = node;
@@ -486,7 +532,9 @@ export class RecoveryCache {
     state._recoveryFailureSummary = noFailures;
     const success = state.evalUncached(expr);
     let summary = state._recoveryFailureSummary;
-    if (success && state.inputStream.pos === summary.position) summary = fluffy(summary);
+    if (success && state.inputStream.pos === summary.position) {
+      summary = withIncidentalFailures(summary);
+    }
     state._recoveryFailureSummary = mergeFailureSummaries(summary, previous);
     return success;
   }
@@ -496,8 +544,14 @@ export class RecoveryCache {
     state._attemptEffects = state._attemptEffects.concat(attempts);
     if (this.current) this.current.attempts = this.current.attempts.concat(attempts);
     state._recoveryLog = state._recoveryLog.concat(node.log);
+    const summary = node.summary.position === node.pos &&
+      node.summary.minPrecedingImplicitSpaceLength !== undefined
+      ? {
+        ...node.summary,
+        minPrecedingImplicitSpaceLength: state._precedingImplicitSpaceLengthAt(node.pos),
+      } : node.summary;
     state._recoveryFailureSummary = mergeFailureSummaries(
-      node.summary,
+      summary,
       state._recoveryFailureSummary
     );
     state.rightmostFailurePosition = Math.max(
@@ -505,6 +559,9 @@ export class RecoveryCache {
       node.summary.position
     );
     state._tokenEnd = Math.max(state._tokenEnd, node.tokenEnd);
+    const progress = state.terminalProgress;
+    progress.attemptedEnd = Math.max(progress.attemptedEnd, node.attemptedTerminalEnd);
+    progress.retainedEnd = Math.max(progress.retainedEnd, node.retainedTerminalEnd);
     state.inputStream.examinedLength = Math.max(
       state.inputStream.examinedLength,
       node.examined
@@ -524,6 +581,7 @@ export class RecoveryCache {
 
   iterate(state, expr) {
     const node = this.current;
+    const progress = state.terminalProgress;
     const origin = state.inputStream.pos;
     let iteration = node.iterationState;
     if (!iteration) {
@@ -555,6 +613,8 @@ export class RecoveryCache {
       state._attemptEffects = state._attemptEffects.concat(prefix.attempts);
       node.attempts = node.attempts.concat(prefix.attempts);
       state._tokenEnd = Math.max(state._tokenEnd, prefix.tokenEnd);
+      progress.attemptedEnd = Math.max(progress.attemptedEnd, prefix.attemptedTerminalEnd);
+      progress.retainedEnd = Math.max(progress.retainedEnd, prefix.retainedTerminalEnd);
       state.inputStream.examinedLength = Math.max(
         state.inputStream.examinedLength,
         prefix.examined
@@ -593,6 +653,8 @@ export class RecoveryCache {
         log: state._recoveryLog,
         attempts: (prefix?.attempts || emptyEffects).concat(watcher.attempts),
         tokenEnd: state._tokenEnd,
+        attemptedTerminalEnd: progress.attemptedEnd,
+        retainedTerminalEnd: progress.retainedEnd,
         examined: state.inputStream.examinedLength,
         watcher,
       };

@@ -188,7 +188,7 @@ export interface Failure {
 }
 
 /**
- * A failure that a recovery point skipped over.
+ * A failure recorded during a recovering match.
  */
 export interface RecoveredFailure {
   /**
@@ -197,18 +197,23 @@ export interface RecoveredFailure {
    */
   readonly interval: Interval;
   /**
-   * Input position of the error: the rightmost failure position that a match
-   * without `recover` would report for this mistake.
+   * The rightmost failure position in the pass that selected this recovery,
+   * or in the final pass if recovery could not finish.
    */
   readonly position: number;
   /**
-   * The error message that a match without `recover` gives for this mistake,
-   * in the format of `MatchResult#shortMessage`.
+   * The diagnostic position used for `shortMessage`, as for
+   * `FailedMatchResult#getDiagnosticPosition`. It can be earlier than `position`.
+   */
+  getDiagnosticPosition(): number;
+  /**
+   * The error message for that pass, including the effect of any earlier corrections,
+   * in the format of `FailedMatchResult#shortMessage`.
    */
   readonly shortMessage: string;
-  /** As on a failed MatchResult, for this mistake. */
+  /** The expected text at `position` in that pass. */
   getExpectedText(): string;
-  /** As on a failed MatchResult, for this mistake. */
+  /** The failures at `position` in that pass. */
   getRightmostFailures(): Failure[];
 }
 
@@ -265,9 +270,9 @@ export interface MatchResult {
 
   /**
    * Every error that recovery skipped over, in input order; empty without
-   * `recover`. On a failed match with `recover`, the list holds the errors
-   * recovered before the match gave up, followed by the final failure, and
-   * `shortMessage` is the same as for a match without `recover`.
+   * `recover`. On a failed recovering match, the list holds the errors recovered
+   * before the match gave up, followed by the final failure. The match result's
+   * `shortMessage` describes the failure of the first failed pass, before any recovery.
    */
   getRecoveredFailures(): RecoveredFailure[];
 
@@ -295,10 +300,17 @@ export interface FailedMatchResult extends MatchResult {
   shortMessage: string;
 
   /**
-   * Returns the position at which the error should be reported. This is used
-   * to construct `message` and `shortMessage`.
+   * Returns the rightmost failure position used for expectation lookup.
+   * Displayed diagnostics may use an earlier position.
    */
   getRightmostFailurePosition(): number;
+  /**
+   * The diagnostic position used by `message`, `shortMessage`, and `getInterval()`.
+   * It is the rightmost failure position, except when the join of a `B ! C`
+   * fails before consuming input after `B` matched: then it can be the end of
+   * the guard's last matched token.
+   */
+  getDiagnosticPosition(): number;
 
   /**
    * Return a string summarizing the expected contents of the input stream
@@ -315,9 +327,26 @@ export interface FailedMatchResult extends MatchResult {
 
   /**
    * If this MatchResult is a failure, returns an Interval indicating
-   * the position of the rightmost failure.
+   * the diagnostic position returned by `getDiagnosticPosition()`.
    */
   getInterval(): Interval;
+}
+
+/** Options for adding or extending operations and attributes. */
+export interface OperationOptions {
+  /**
+   * What the operation or attribute does at a `_correction` node, which holds input that recovery
+   * skipped. A `_correction` action, if the action dictionary defines one, always wins.
+   *
+   * - `'skip'` (the default) makes a correction node yield `undefined`. Use `Node#isCorrection`
+   *   to filter correction nodes when traversing the children.
+   * - `'throw'` makes reaching a correction node an error.
+   * - A function is a zero-arity action for the correction node.
+   *
+   * An extension inherits the policy of the operation or attribute it extends. This option
+   * replaces the inherited policy.
+   */
+  corrections?: 'throw' | 'skip' | ((this: Node) => unknown);
 }
 
 /**
@@ -328,25 +357,6 @@ export interface FailedMatchResult extends MatchResult {
  * (even in the same program) never have to worry about
  * operation/attribute name clashes.
  */
-/**
- * Options for Semantics#addOperation, addAttribute, extendOperation and extendAttribute.
- */
-export interface OperationOptions {
-  /**
-   * What the operation or attribute does at a `_correction` node, which holds input that recovery
-   * skipped. A `_correction` action, if the action dictionary defines one, always wins.
-   *
-   * - `'skip'` (the default): a correction node yields `undefined`. The operation must tolerate
-   *   `undefined` in the results of its children; use Node#isCorrection to filter them.
-   * - `'throw'`: reaching a correction node is an error.
-   * - a function: a zero-arity action, as if the action dictionary defined `_correction`.
-   *
-   * An extension inherits the policy of the operation it extends, and this option replaces it.
-   * Without recovery there are no correction nodes, so the policy never applies.
-   */
-  corrections?: 'throw' | 'skip' | ((this: Node) => unknown);
-}
-
 export interface Semantics {
   /**
    * Returns a dictionary containing operations and attributes defined by
@@ -488,10 +498,7 @@ export interface Node {
    */
   child(idx: number): Node;
 
-  /**
-   * true if the node is a `_correction` node, which holds input that recovery
-   * skipped, otherwise false.
-   */
+  /** Returns whether the node represents input skipped by recovery. */
   isCorrection(): boolean;
 
   /**
