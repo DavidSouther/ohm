@@ -381,7 +381,7 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
       inputStream.pos - origPos,
       inputStream.examinedLength - origPos,
       value,
-      state.cloneRecordedFailures(),
+      state.recordedFailuresForMemo(),
       state._getRightmostFailureOffset(),
       state._tokenEnd < 0 ? -1 : state._tokenEnd - origPos
     );
@@ -394,7 +394,7 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
       state.processFailure(origPos, this);
     }
     if (memoEntry >= 0) {
-      memoTable.failures[memoEntry] = state.cloneRecordedFailures();
+      memoTable.failures[memoEntry] = state.recordedFailuresForMemo();
       memoTable.rightmostFailureOffset[memoEntry] = state._getRightmostFailureOffset();
     }
   }
@@ -473,7 +473,7 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrEntry,
     while (true) {
       memoTable.matchLength[lrEntry] = inputStream.pos - origPos;
       memoTable.values[lrEntry] = newValue;
-      memoTable.failures[lrEntry] = state.cloneRecordedFailures();
+      memoTable.failures[lrEntry] = state.recordedFailuresForMemo();
       if (state.recovery && !state.trace) {
         memoTable.summaries[lrEntry] = state._recoveryFailureSummary;
       }

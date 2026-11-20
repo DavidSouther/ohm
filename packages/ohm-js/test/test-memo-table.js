@@ -1,5 +1,7 @@
 import test from 'ava';
 import * as ohm from '../index.mjs';
+import {Failure} from '../src/Failure.js';
+import FailureGroup from '../src/FailureGroup.js';
 import {MemoTable} from '../src/MemoTable.js';
 
 const add = (table, pos, key, extra = {}) =>
@@ -165,9 +167,10 @@ test('many removals are compacted away between matches without losing entries', 
   const b = table.internKey('b');
   const c = table.internKey('c');
   table.beginPass(2000);
+  const failures = {group: new FailureGroup(), targetOffset: 1};
   const kept = [];
   for (let pos = 0; pos < 1500; pos++) {
-    add(table, pos, a, {value: `a${pos}`});
+    add(table, pos, a, {value: `a${pos}`, failures: pos < 1497 ? failures : undefined});
     table.remove(add(table, pos, b));
     table.remove(add(table, pos, c));
     if (pos % 100 === 0) kept.push(pos);
@@ -177,7 +180,14 @@ test('many removals are compacted away between matches without losing entries', 
   t.true(table.count < count, 'removed entries were squeezed out');
   t.is(table.count, 1500);
   t.is(table.live, 1500);
-  for (const pos of kept) t.is(table.values[table.find(pos, a)], `a${pos}`);
+  for (const pos of kept) {
+    const entry = table.find(pos, a);
+    t.is(table.values[entry], `a${pos}`);
+    t.is(table.failures[entry], failures);
+  }
+  // The failures column ends before this entry's old index, so compaction must
+  // not leave another entry's failures at its new index.
+  t.is(table.failures[table.find(1497, a)], undefined);
   t.is(table.find(10, b), -1);
 });
 
@@ -210,6 +220,70 @@ test('the _memoTable view has the shape the array of PosInfo objects had', t => 
   t.is(first.memo.letter.matchLength, 1);
 
   t.false(first.isActive(first.memo.start.headApplication));
+});
+
+test('the _memoTable view exposes memoized failures by failure key', t => {
+  const grammar = ohm.grammar('G { start = item "!"\n item = "a" "b" }');
+  const matcher = grammar.matcher();
+  matcher.setInput('ac');
+  const result = matcher.match();
+  result.getRightmostFailures();
+
+  const failures = matcher._memoTable[0].memo.item.failuresAtRightmostPosition;
+  t.deepEqual(Object.keys(failures), ['"b"#string']);
+  t.is(failures['"b"#string'].toString(), '"b"');
+  failures['"b"#string'].makeFluffy();
+  t.false(matcher._memoTable[0].memo.item.failuresAtRightmostPosition['"b"#string'].isFluffy());
+  delete failures['"b"#string'];
+  t.deepEqual(Object.keys(matcher._memoTable[0].memo.item.failuresAtRightmostPosition), [
+    '"b"#string',
+  ]);
+});
+
+test('recovering results and memo views expose detached failure summaries', t => {
+  const g = ohm.grammar('G { Start = "a" ";" }');
+  const matcher = g.matcher().setInput('a x');
+  const result = matcher.match(undefined, {recover: true, firstPass: 'cached'});
+  const getSummary = () => matcher._memoTable[0].memo.Start.recoveryFailureSummary;
+
+  result.getRightmostFailures()[0].makeFluffy();
+  const recovery = result.getRecoveredFailures()[0];
+  recovery.getRightmostFailures()[0].makeFluffy();
+  t.false(recovery.getRightmostFailures()[0].isFluffy());
+  const summary = getSummary();
+  t.false(summary.failures[0].isFluffy());
+
+  summary.failures[0].makeFluffy();
+  t.false(getSummary().failures[0].isFluffy());
+});
+
+test('making replayed failures incidental leaves their memoized source strong', t => {
+  const source = new FailureGroup();
+  source.record(new Failure(undefined, '";"', 'string'));
+  const replay = new FailureGroup();
+  replay.merge(source);
+
+  replay.markFailuresIncidental();
+
+  t.true(replay.toArray()[0].isFluffy());
+  t.false(source.toArray()[0].isFluffy());
+});
+
+test('failure replay uses failures recorded for the current target position', t => {
+  // The second `p` reevaluates in a different token context during the rematch
+  // of One, so its memo entry holds failures recorded for One's target position.
+  const g = ohm.grammar(`G {
+    One = ~ab "a" (p | ";") "?" "x"
+    Two = "a" p
+    ab = "a" (p | ";") "?" "q"
+    p = ";" ";"
+  }`);
+  const matcher = g.matcher().setInput('a;?z');
+  t.is(matcher.match('One').getExpectedText(), '"x"');
+
+  const two = matcher.match('Two');
+  t.is(two.getRightmostFailurePosition(), 2);
+  t.is(two.getExpectedText(), '";"');
 });
 
 test('the _memoTable view leaves positions without entries undefined', t => {

@@ -57,6 +57,8 @@ export class Failure {
     return this.type === 'code';
   }
 
+  // A fluffy (incidental) failure lies at the end position of an expression that
+  // succeeded. Expected text omits it; any other failure is strong.
   isFluffy() {
     return this.fluffy;
   }

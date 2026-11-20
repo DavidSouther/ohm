@@ -1,4 +1,5 @@
 import {InputStream} from './InputStream.js';
+import FailureGroup from './FailureGroup.js';
 import {MatchResult} from './MatchResult.js';
 import {Trace} from './Trace.js';
 import {mergeFailureSummaries, noFailures} from './RecoveryCache.js';
@@ -76,7 +77,7 @@ export class MatchState {
 
     if (optPositionToRecordFailures !== undefined) {
       this.positionToRecordFailures = optPositionToRecordFailures;
-      this.recordedFailures = Object.create(null);
+      this.recordedFailures = new FailureGroup();
     }
   }
 
@@ -260,37 +261,17 @@ export class MatchState {
         // parameters.
       }
 
-      this.recordFailure(this._failureOf(expr, pos), false);
+      this.recordedFailures.record(this._failureOf(expr, pos));
     }
   }
 
-  recordFailure(failure, shouldCloneIfNew) {
-    const key = failure.toKey();
-    if (!this.recordedFailures[key]) {
-      this.recordedFailures[key] = shouldCloneIfNew ? failure.clone() : failure;
-    } else {
-      const prior = this.recordedFailures[key];
-      if (prior.isFluffy() && !failure.isFluffy()) prior.clearFluffy();
-      if (!failure.isLexical()) prior.lexical = false;
-    }
-  }
-
-  recordFailures(failures, shouldCloneIfNew) {
-    Object.keys(failures).forEach(key => {
-      this.recordFailure(failures[key], shouldCloneIfNew);
-    });
-  }
-
-  cloneRecordedFailures() {
-    if (!this.recordedFailures) {
-      return undefined;
-    }
-
-    const ans = Object.create(null);
-    Object.keys(this.recordedFailures).forEach(key => {
-      ans[key] = this.recordedFailures[key].clone();
-    });
-    return ans;
+  // A memo entry keeps its failures with the target offset they were recorded for.
+  recordedFailuresForMemo() {
+    if (!this.recordedFailures) return undefined;
+    return {
+      group: this.recordedFailures.copy(),
+      targetOffset: this.positionToRecordFailures - this._posStack.at(-1),
+    };
   }
 
   getRightmostFailurePosition() {
@@ -353,7 +334,8 @@ export class MatchState {
       this.inputStream.pos + memoTable.rightmostFailureOffset[entry] ===
         this.positionToRecordFailures
     ) {
-      return !!memoTable.failures[entry];
+      // Failures recorded for another target position are not the ones needed here.
+      return memoTable.failures[entry]?.targetOffset === memoTable.rightmostFailureOffset[entry];
     }
 
     return true;
@@ -390,10 +372,12 @@ export class MatchState {
     );
     if (
       this.recordedFailures &&
-      this.positionToRecordFailures === memoRecRightmostFailurePosition &&
-      memoTable.failures[entry]
+      this.positionToRecordFailures === memoRecRightmostFailurePosition
     ) {
-      this.recordFailures(memoTable.failures[entry], true);
+      const failures = memoTable.failures[entry];
+      if (failures?.targetOffset === memoTable.rightmostFailureOffset[entry]) {
+        this.recordedFailures.merge(failures.group);
+      }
     }
 
     this.inputStream.examinedLength = Math.max(
@@ -426,7 +410,7 @@ export class MatchState {
     let origRecordedFailures;
     if (this.recordedFailures) {
       origRecordedFailures = this.recordedFailures;
-      this.recordedFailures = Object.create(null);
+      this.recordedFailures = new FailureGroup();
     }
 
     const origPos = inputStream.pos;
@@ -459,9 +443,7 @@ export class MatchState {
         this._tokenEnd = inputStream.pos;
       }
       if (this.recordedFailures && inputStream.pos === this.positionToRecordFailures) {
-        Object.keys(this.recordedFailures).forEach(key => {
-          this.recordedFailures[key].makeFluffy();
-        });
+        this.recordedFailures.markFailuresIncidental();
       }
     } else {
       // Reset the position, bindings, and userData.
@@ -471,7 +453,7 @@ export class MatchState {
     }
 
     if (this.recordedFailures) {
-      this.recordFailures(origRecordedFailures, false);
+      this.recordedFailures.merge(origRecordedFailures);
     }
 
     // The built-in applySyntactic rule needs special handling: we want to skip
@@ -494,12 +476,10 @@ export class MatchState {
     this.eval(this.startExpr);
     let rightmostFailures;
     if (this.recordedFailures) {
-      rightmostFailures = Object.keys(this.recordedFailures).map(
-        key => this.recordedFailures[key]
-      );
+      rightmostFailures = this.recordedFailures.toArray();
     } else if (this.recovery && !this.trace) {
-      // Summaries share their failure lists, so hand the result its own array.
-      rightmostFailures = this._recoveryFailureSummary.failures.slice();
+      // The cached failures are shared across recovery passes.
+      rightmostFailures = this._recoveryFailureSummary.failures.map(failure => failure.clone());
     }
     const cst = this._bindings[0];
     if (cst) {
