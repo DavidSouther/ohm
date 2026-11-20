@@ -26,6 +26,8 @@ export class RecoveryContext {
     this.cache = new RecoveryCache(this);
     // How the first pass ran; see `matchRecovering` and MatchResult#getFirstPass.
     this.firstPass = undefined;
+    // A probe's diagnostics are never reported, so it skips terminal tracking.
+    this.tracksTerminalProgress = true;
   }
 
   chooseAttempt(position) {
@@ -78,6 +80,7 @@ export function matchRecovering(matcher, startExpr, opts) {
   const report = {mode: probing ? 'probe' : 'cached', better: undefined};
   ctx.firstPass = report;
   ctx.cache.disabled = probing;
+  ctx.tracksTerminalProgress = !probing;
   let first;
   let firstPassSeen = false;
   for (;;) {

@@ -1,5 +1,6 @@
 import test from 'ava';
 import * as ohm from '../index.mjs';
+import {MatchState} from '../src/MatchState.js';
 
 const modes = [{}, ...['auto', 'cached', 'probe'].map(firstPass => ({recover: true, firstPass}))];
 
@@ -53,4 +54,52 @@ test('saved display position survives later matcher edits', t => {
     t.is(matcher._memo, memo);
     t.true(matcher.match().succeeded());
   }
+});
+
+function countEvaluations(fn) {
+  const original = MatchState.prototype.eval;
+  let count = 0;
+  MatchState.prototype.eval = function (expr) {
+    count++;
+    return original.call(this, expr);
+  };
+  try {
+    fn();
+  } finally {
+    MatchState.prototype.eval = original;
+  }
+  return count;
+}
+
+const statements = ohm.grammar(`G {
+  Prog = Stmt*
+  Stmt = ident "=" Exp ! ";"
+  Exp = Exp "+" Pri  -- add
+      | Pri
+  Pri = ident | number | Paren
+  Paren = "(" Exp ")"
+  ident = letter alnum*
+  number = digit+
+}`);
+
+test('a failure-only rematch reuses the plain match memo table', t => {
+  const valid = Array.from({length: 200}, (_, i) => `x${i} = a + (b + ${i});`).join('\n');
+  let result;
+  const matchEvaluations = countEvaluations(() => {
+    result = statements.match(valid + '\nz = 1 2;');
+  });
+  const rematchEvaluations = countEvaluations(() => result.getDiagnosticPosition());
+  t.is(result.getDiagnosticPosition(), valid.length + 6);
+  t.true(
+    rematchEvaluations * 20 < matchEvaluations,
+    `${rematchEvaluations} rematch evaluations, ${matchEvaluations} match evaluations`
+  );
+});
+
+test('a successful probe pass does not track terminal progress', t => {
+  const matcher = statements.matcher().setInput('a = 1; b = a + 2;');
+  const result = matcher.match(undefined, {recover: true, firstPass: 'probe'});
+  t.true(result.succeeded());
+  t.is(result.getFirstPass().mode, 'probe');
+  t.is(matcher._memo.terminalOffsets, undefined);
 });

@@ -3,7 +3,7 @@ import {InputStream} from './InputStream.js';
 import FailureGroup from './FailureGroup.js';
 import {MatchResult} from './MatchResult.js';
 import {Trace} from './Trace.js';
-import {mergeFailureSummaries, noFailures} from './RecoveryCache.js';
+import {failureSummary, mergeFailureSummaries, noFailures} from './RecoveryCache.js';
 import {emptyEffects} from './RecoveryEffects.js';
 import * as pexprs from './pexprs.js';
 import * as util from './util.js';
@@ -76,13 +76,22 @@ export class MatchState {
     this._tokenEnd = -1;
     this._tokenEndStack = [];
 
+    // Terminal progress decides diagnostic positions, so only passes that can
+    // report a diagnostic track it: recovering passes other than the probe, and
+    // failure-only rematches. A rematch without recovery reuses the plain
+    // match's untracked memo entries; their progress is unknown (NaN) until a
+    // diagnostic decision needs it (see `exactOperandProgress`).
     this.terminalProgress = undefined;
-    if (optRecovery || optPositionToRecordFailures !== undefined) {
+    const tracksTerminals = optRecovery
+      ? optRecovery.tracksTerminalProgress
+      : optPositionToRecordFailures !== undefined;
+    if (tracksTerminals) {
       this.terminalProgress = {
         retainedEnd: -1,
         attemptedEnd: -1,
         attemptedStack: [],
         offsets: this.memoTable.enableTerminalTracking(),
+        exact: !!optRecovery,
       };
     }
     if (optPositionToRecordFailures !== undefined) {
@@ -264,12 +273,9 @@ export class MatchState {
         this.grammar,
         this._isLexicalFailureAt(pos)
       );
-      const summary = {
-        position: pos,
-        failures,
-        hasStrongFailures: true,
-        minPrecedingImplicitSpaceLength: this._precedingImplicitSpaceLengthAt(pos),
-      };
+      const summary = failureSummary(
+        pos, failures, true, undefined, this._precedingImplicitSpaceLengthAt(pos)
+      );
       this._recoveryFailureSummary = mergeFailureSummaries(
         summary,
         this._recoveryFailureSummary
@@ -348,9 +354,14 @@ export class MatchState {
 
   hasNecessaryInfo(entry, app) {
     const {memoTable} = this;
-    // While terminal progress is tracked, an entry memoized without it is re-evaluated.
-    if (this.terminalProgress && this.terminalProgress.offsets.attempted[entry] === undefined) {
-      return false;
+    // An exact pass re-evaluates an entry whose terminal progress is unknown.
+    const progress = this.terminalProgress;
+    if (progress?.exact) {
+      const attempted = progress.offsets.attempted[entry];
+      const retained = progress.offsets.retained[entry];
+      if (attempted === undefined || Number.isNaN(attempted) || Number.isNaN(retained)) {
+        return false;
+      }
     }
     // Reevaluate across token boundaries: a lexical rule can itself enter a
     // syntactic rule, so its expectations cannot all be reclassified together.
@@ -376,7 +387,8 @@ export class MatchState {
     return true;
   }
 
-  useMemoizedResult(origPos, entry) {
+  // `reused` is false for a left-recursion seed or an application that is still growing.
+  useMemoizedResult(origPos, entry, reused = false) {
     const {memoTable} = this;
     if (this.recovery && !this.trace) {
       const record = this.recovery.cache.memoRecords.get(entry);
@@ -386,20 +398,20 @@ export class MatchState {
         const position = origPos + memoTable.rightmostFailureOffset[entry];
         const {proposedDiagnosticPosition, minPrecedingImplicitSpaceLength} = stored;
         this._recoveryFailureSummary = mergeFailureSummaries(
-          {
+          failureSummary(
             position,
-            failures: stored.position === position ? stored.failures : [],
-            hasStrongFailures: stored.hasStrongFailures,
-            proposedDiagnosticPosition: Number.isInteger(proposedDiagnosticPosition)
+            stored.position === position ? stored.failures : [],
+            stored.hasStrongFailures,
+            Number.isInteger(proposedDiagnosticPosition)
               ? proposedDiagnosticPosition + position - stored.position
               : proposedDiagnosticPosition,
             // A failure at the entrance takes its implicit space from this invocation.
-            minPrecedingImplicitSpaceLength: minPrecedingImplicitSpaceLength === undefined
+            minPrecedingImplicitSpaceLength === undefined
               ? undefined
               : position === origPos
                 ? this._precedingImplicitSpaceLengthAt(origPos)
-                : minPrecedingImplicitSpaceLength,
-          },
+                : minPrecedingImplicitSpaceLength
+          ),
           this._recoveryFailureSummary
         );
       }
@@ -411,14 +423,22 @@ export class MatchState {
     const tokenEndOffset = memoTable.tokenEndOffset[entry];
     const progress = this.terminalProgress;
     if (progress) {
-      // A left-recursion seed or a growing application has no attempted progress yet.
-      // Counting it as a completed join terminal suppresses a diagnostic proposal.
-      const attempted = progress.offsets.attempted[entry] ?? Infinity;
-      if (attempted >= 0) {
-        progress.attemptedEnd = Math.max(progress.attemptedEnd, origPos + attempted);
+      const {attempted, retained} = progress.offsets;
+      if (reused && attempted[entry] === undefined) {
+        // A reused entry without tracking data has unknown progress.
+        progress.attemptedEnd = progress.retainedEnd = NaN;
+      } else {
+        // A left-recursion seed or a growing application has no attempted progress yet.
+        // Counting it as a completed join terminal suppresses a diagnostic proposal.
+        const attemptedOffset = attempted[entry] ?? Infinity;
+        if (!(attemptedOffset < 0)) {
+          progress.attemptedEnd = Math.max(progress.attemptedEnd, origPos + attemptedOffset);
+        }
+        const retainedOffset = retained[entry];
+        if (retainedOffset !== undefined && !(retainedOffset < 0)) {
+          progress.retainedEnd = Math.max(progress.retainedEnd, origPos + retainedOffset);
+        }
       }
-      const retained = progress.offsets.retained[entry];
-      if (retained >= 0) progress.retainedEnd = Math.max(progress.retainedEnd, origPos + retained);
     }
     if (this.recovery && tokenEndOffset >= 0) {
       this._tokenEnd = Math.max(this._tokenEnd, origPos + tokenEndOffset);
@@ -462,13 +482,14 @@ export class MatchState {
   // have increased. On failure, `bindings` and position will be unchanged.
   eval(expr) {
     const progress = this.terminalProgress;
-    if (!progress) return this.evalUncached(expr);
-    return this.evalWithTerminalProgress(expr, progress);
+    if (progress) return this.evalWithTerminalProgress(expr, progress);
+    if (this.recovery && !this.trace) return this.recovery.cache.evaluate(this, expr);
+    return this.evalUncached(expr);
   }
 
   // Completed terminals in discarded alternatives count as attempted progress.
   // Retained progress comes from terminals that survive successful evaluation.
-  // Predicates and implicit space contribute to neither.
+  // Predicates and implicit space contribute to neither. NaN is unknown progress.
   evalWithTerminalProgress(expr, progress) {
     const previousAttempt = progress.attemptedEnd;
     const previousRetained = progress.retainedEnd;
@@ -509,7 +530,7 @@ export class MatchState {
     const origSpaceStart = this._implicitSpaceStart;
     const origSpaceEnd = this._implicitSpaceEnd;
     const memoPos = this.maybeSkipSpacesBefore(expr);
-    const trackSpaces = origRecordedFailures || this.recovery;
+    const trackSpaces = origRecordedFailures || (this.recovery && this.terminalProgress);
     if (trackSpaces) {
       if (memoPos > origPos) {
         this._implicitSpaceStart = origPos;
