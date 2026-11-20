@@ -320,6 +320,23 @@ export interface FailedMatchResult extends MatchResult {
   getInterval(): Interval;
 }
 
+/** Options for adding or extending operations and attributes. */
+export interface OperationOptions {
+  /**
+   * What the operation or attribute does at a `_correction` node, which holds input that recovery
+   * skipped. A `_correction` action, if the action dictionary defines one, always wins.
+   *
+   * - `'skip'` (the default) makes a correction node yield `undefined`. Use `Node#isCorrection`
+   *   to filter correction nodes when traversing the children.
+   * - `'throw'` makes reaching a correction node an error.
+   * - A function is a zero-arity action for the correction node.
+   *
+   * An extension inherits the policy of the operation or attribute it extends. This option
+   * replaces the inherited policy.
+   */
+  corrections?: 'throw' | 'skip' | ((this: Node) => unknown);
+}
+
 /**
  * A Semantics is a family of operations and/or attributes for a given
  * grammar. Each operation/attribute has a unique name within the
@@ -328,25 +345,6 @@ export interface FailedMatchResult extends MatchResult {
  * (even in the same program) never have to worry about
  * operation/attribute name clashes.
  */
-/**
- * Options for Semantics#addOperation, addAttribute, extendOperation and extendAttribute.
- */
-export interface OperationOptions {
-  /**
-   * What the operation or attribute does at a `_correction` node, which holds input that recovery
-   * skipped. A `_correction` action, if the action dictionary defines one, always wins.
-   *
-   * - `'skip'` (the default): a correction node yields `undefined`. The operation must tolerate
-   *   `undefined` in the results of its children; use Node#isCorrection to filter them.
-   * - `'throw'`: reaching a correction node is an error.
-   * - a function: a zero-arity action, as if the action dictionary defined `_correction`.
-   *
-   * An extension inherits the policy of the operation it extends, and this option replaces it.
-   * Without recovery there are no correction nodes, so the policy never applies.
-   */
-  corrections?: 'throw' | 'skip' | ((this: Node) => unknown);
-}
-
 export interface Semantics {
   /**
    * Returns a dictionary containing operations and attributes defined by
@@ -488,10 +486,7 @@ export interface Node {
    */
   child(idx: number): Node;
 
-  /**
-   * true if the node is a `_correction` node, which holds input that recovery
-   * skipped, otherwise false.
-   */
+  /** Returns whether the node represents input skipped by recovery. */
   isCorrection(): boolean;
 
   /**
