@@ -112,11 +112,11 @@ Edit the current input string, replacing the characters between `startIdx` and `
 
 <b><pre class="api">m.match(optStartRule?: string, options?: object) &rarr; MatchResult</pre></b>
 
-Like [Grammar's `match` method](#Grammar.match), but operates incrementally.
+Like [Grammar's `match` method](#Grammar.match), but operates incrementally. A match with `recover: true` is the exception: each such call starts with a fresh memo table, so recovery also works after input edits.
 
 <b><pre class="api">m.trace(optStartRule?: string, options?: object) &rarr; Trace</pre></b>
 
-Like [Grammar's `trace` method](#Grammar.trace), with the same recovery restrictions as `m.match`.
+Like [Grammar's `trace` method](#Grammar.trace), with the same options as `m.match`.
 
 ## MatchResult objects
 
