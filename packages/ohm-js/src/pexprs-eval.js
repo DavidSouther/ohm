@@ -4,6 +4,7 @@ import * as errors from './errors.js';
 import {IterationNode, ListNode, NonterminalNode, SeqNode, TerminalNode} from './nodes.js';
 import * as pexprs from './pexprs-main.js';
 import {MAX_CODE_POINT} from './InputStream.js';
+import {failureSummary} from './RecoveryCache.js';
 
 // --------------------------------------------------------------------
 // Operations
@@ -303,7 +304,7 @@ pexprs.Apply.prototype.eval = function (state) {
       memoTable.remove(entry);
     } else if (memoTable.shouldUseMemoizedResult(pos, entry)) {
       if (state.hasNecessaryInfo(entry, app)) {
-        return state.useMemoizedResult(pos, entry);
+        return state.useMemoizedResult(pos, entry, true);
       }
       memoTable.remove(entry);
     }
@@ -401,17 +402,10 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
   if (memoEntry >= 0 && state.recovery && !state.trace) {
     if (isHeadOfLeftRecursion && !description) {
       const seedSummary = memoTable.summaries[memoEntry];
-      memoTable.summaries[memoEntry] = {
-        position: state.rightmostFailurePosition,
-        failures:
-          seedSummary?.position === state.rightmostFailurePosition ? seedSummary.failures : [],
-        minPrecedingImplicitSpaceLength: seedSummary?.position === state.rightmostFailurePosition
-          ? seedSummary.minPrecedingImplicitSpaceLength : undefined,
-        hasStrongFailures: seedSummary?.position === state.rightmostFailurePosition
-          ? seedSummary.hasStrongFailures : false,
-        proposedDiagnosticPosition: seedSummary?.position === state.rightmostFailurePosition
-          ? seedSummary.proposedDiagnosticPosition : undefined,
-      };
+      const position = state.rightmostFailurePosition;
+      memoTable.summaries[memoEntry] = seedSummary?.position === position
+        ? seedSummary
+        : failureSummary(position, [], false, undefined, undefined);
     } else {
       memoTable.summaries[memoEntry] = state._recoveryFailureSummary;
     }

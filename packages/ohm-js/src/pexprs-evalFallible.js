@@ -82,15 +82,58 @@ function emptyOptional(state) {
 function matchPlain(fallible, state) {
   // A failure-only rematch gathers the same diagnostic evidence as a recovering pass.
   if (state.terminalProgress) return matchOperands(fallible, state).ok;
-  if (!state.eval(fallible.guarded)) return false;
-  state.pushBinding(emptyOptional(state), state.inputStream.pos);
-  return state.eval(fallible.join);
+  return matchSequence(fallible, state).ok;
+}
+
+// `B C` without terminal progress: a recovering probe pass or a plain match.
+function matchSequence(fallible, state) {
+  const guardedMatched = state.eval(fallible.guarded);
+  const guardedEnd = state.inputStream.pos;
+  if (!guardedMatched) return {guardedMatched, guardedEnd, guardedTerminalEnd: -1, ok: false};
+  state.pushBinding(emptyOptional(state), guardedEnd);
+  return {guardedMatched, guardedEnd, guardedTerminalEnd: -1, ok: state.eval(fallible.join)};
 }
 
 function withProposedDiagnosticPosition(summary, proposedDiagnosticPosition) {
   return summary.hasStrongFailures && summary.proposedDiagnosticPosition === undefined
     ? {...summary, proposedDiagnosticPosition}
     : summary;
+}
+
+// Re-evaluates `expr` at `pos` with exact terminal progress and returns it,
+// leaving the state as it was. Only a failure-only rematch without recovery,
+// which reuses untracked memo entries, has unknown (NaN) progress to resolve.
+function exactOperandProgress(state, expr, pos, userData) {
+  const {inputStream, terminalProgress: progress} = state;
+  const saved = {
+    pos: inputStream.pos,
+    examinedLength: inputStream.examinedLength,
+    bindings: state._bindings.length,
+    rightmostFailurePosition: state.rightmostFailurePosition,
+    recordedFailures: state.recordedFailures,
+    userData: state.userData,
+    retainedEnd: progress.retainedEnd,
+    attemptedEnd: progress.attemptedEnd,
+  };
+  state.recordedFailures = new FailureGroup();
+  state.userData = userData;
+  inputStream.pos = pos;
+  progress.retainedEnd = progress.attemptedEnd = -1;
+  progress.exact = true;
+  try {
+    state.eval(expr);
+    return {retainedEnd: progress.retainedEnd, attemptedEnd: progress.attemptedEnd};
+  } finally {
+    progress.exact = false;
+    state.truncateBindings(saved.bindings);
+    inputStream.pos = saved.pos;
+    inputStream.examinedLength = saved.examinedLength;
+    state.rightmostFailurePosition = saved.rightmostFailurePosition;
+    state.recordedFailures = saved.recordedFailures;
+    state.userData = saved.userData;
+    progress.retainedEnd = saved.retainedEnd;
+    progress.attemptedEnd = saved.attemptedEnd;
+  }
 }
 
 // Evaluates the operands and, when the join fails at its start, proposes the
@@ -100,14 +143,16 @@ function withProposedDiagnosticPosition(summary, proposedDiagnosticPosition) {
 function matchOperands(fallible, state) {
   const {guarded, join} = fallible;
   const {inputStream, terminalProgress: progress, recordedFailures: previousFailures} = state;
+  if (!progress) return matchSequence(fallible, state);
   const origPos = inputStream.pos;
+  const origUserData = state.userData;
   const previousSummary = state._recoveryFailureSummary;
   if (previousFailures) state.recordedFailures = new FailureGroup();
   state._recoveryFailureSummary = noFailures;
 
   const guardedMatched = state.eval(guarded);
   const guardedEnd = inputStream.pos;
-  const guardedTerminalEnd = progress.retainedEnd;
+  let guardedTerminalEnd = progress.retainedEnd;
   let ok = false;
 
   if (guardedMatched) {
@@ -119,7 +164,7 @@ function matchOperands(fallible, state) {
     const previousAttempted = progress.attemptedEnd;
     progress.attemptedEnd = -1;
     ok = state.eval(join);
-    const farthestCompletedJoinTerminalEnd = progress.attemptedEnd;
+    let farthestCompletedJoinTerminalEnd = progress.attemptedEnd;
     progress.attemptedEnd = Math.max(previousAttempted, farthestCompletedJoinTerminalEnd);
 
     const joinFailures = state.recordedFailures;
@@ -127,17 +172,30 @@ function matchOperands(fallible, state) {
     // The join's failure is proposed when (1) the guard retained a terminal past
     // its start, (2) the join completed no terminal, (3) a strong join failure,
     // less its preceding implicit space, lies at the guard's end, and (4) the
-    // join retains a terminal whenever it succeeds.
-    if (!ok && guardedTerminalEnd > origPos && farthestCompletedJoinTerminalEnd < 0) {
+    // join retains a terminal whenever it succeeds. Unknown (NaN) progress
+    // passes (1) and (2) here and is computed only once (3) and (4) hold.
+    if (
+      !ok &&
+      !(guardedTerminalEnd <= origPos) &&
+      !(farthestCompletedJoinTerminalEnd >= 0)
+    ) {
       const failurePosition = state.positionToRecordFailures;
       const recordedFailureAtJoinStart = joinFailures?.hasStrongFailures &&
         failurePosition - joinFailures.minPrecedingImplicitSpaceLength === guardedEnd;
       const summaryFailureAtJoinStart = joinSummary.hasStrongFailures &&
         joinSummary.position - joinSummary.minPrecedingImplicitSpaceLength === guardedEnd;
-      if (
-        (recordedFailureAtJoinStart || summaryFailureAtJoinStart) &&
-        join.retainsTerminalOnSuccess(state.grammar, state.currentApplication())
-      ) {
+      const eligible = (recordedFailureAtJoinStart || summaryFailureAtJoinStart) &&
+        join.retainsTerminalOnSuccess(state.grammar, state.currentApplication());
+      if (eligible && Number.isNaN(guardedTerminalEnd)) {
+        guardedTerminalEnd =
+          exactOperandProgress(state, guarded, origPos, origUserData).retainedEnd;
+      }
+      if (eligible && Number.isNaN(farthestCompletedJoinTerminalEnd) &&
+          guardedTerminalEnd > origPos) {
+        farthestCompletedJoinTerminalEnd =
+          exactOperandProgress(state, join, guardedEnd, state.userData).attemptedEnd;
+      }
+      if (eligible && guardedTerminalEnd > origPos && farthestCompletedJoinTerminalEnd < 0) {
         if (recordedFailureAtJoinStart) {
           joinFailures.proposeDiagnosticPosition(guardedTerminalEnd);
           // A guard failure at or before the retained end shares the proposal.
@@ -419,8 +477,8 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom, inserti
       : state._recoveryFrames;
   const stepsByToken = !!state.grammar.rules.recoveryToken;
   let found = null;
-  const previousRetained = progress.retainedEnd;
-  const previousAttempted = progress.attemptedEnd;
+  const previousRetained = progress?.retainedEnd;
+  const previousAttempted = progress?.attemptedEnd;
   const origTokenEnd = state._suspendRecovery();
   for (let p = scanStart; p <= end; ) {
     inputStream.pos = p;
@@ -429,7 +487,7 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom, inserti
     const numBindings = state._bindings.length;
     // Stop and token probes discard their bindings. Only the selected join can
     // contribute terminal progress to the recovered expression.
-    progress.retainedEnd = progress.attemptedEnd = -1;
+    if (progress) progress.retainedEnd = progress.attemptedEnd = -1;
     if (next >= searchFrom && state.eval(this.join)) {
       const resumeAt = inputStream.pos;
       const joinNode = state._bindings[numBindings];
@@ -456,9 +514,11 @@ pexprs.Fallible.prototype.scan = function (state, scanStart, searchFrom, inserti
   }
   state._resumeRecovery(origTokenEnd);
   const matchedJoin = found && !found.missing;
-  progress.retainedEnd = matchedJoin ? Math.max(previousRetained, progress.retainedEnd)
-    : previousRetained;
-  progress.attemptedEnd = matchedJoin ? Math.max(previousAttempted, progress.attemptedEnd)
-    : previousAttempted;
+  if (progress) {
+    progress.retainedEnd = matchedJoin ? Math.max(previousRetained, progress.retainedEnd)
+      : previousRetained;
+    progress.attemptedEnd = matchedJoin ? Math.max(previousAttempted, progress.attemptedEnd)
+      : previousAttempted;
+  }
   return found;
 };
