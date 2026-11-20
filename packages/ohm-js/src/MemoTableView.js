@@ -25,14 +25,18 @@ export function memoTableView(table) {
     if (entry < 0) return undefined;
     let record = recordsByEntry.get(entry);
     if (record) return record;
+    const summary = table.summaries[entry];
     record = {
       matchLength: table.matchLength[entry],
       examinedLength: table.examinedLength[entry],
       value: table.values[entry],
-      failuresAtRightmostPosition: table.failures[entry],
+      failuresAtRightmostPosition: table.failures[entry]?.group.toMap(),
       rightmostFailureOffset: table.rightmostFailureOffset[entry],
       tokenEndOffset: table.tokenEndOffset[entry],
-      recoveryFailureSummary: table.summaries[entry],
+      recoveryFailureSummary: summary && {
+        ...summary,
+        failures: summary.failures.map(failure => failure.clone()),
+      },
       traceEntry: table.traces[entry],
       isRecoveryTainted: table.isTainted(entry),
     };
