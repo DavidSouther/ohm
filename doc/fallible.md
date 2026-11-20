@@ -35,7 +35,9 @@ result.getRecoveredFailures().map(f => f.interval.contents); // ['12']
   assert(statements.match('abc', undefined, {recover: true}).failed());
 -->
 
-Here `letter+` matched `abc`, but the join failed at `12`. Recovery skips `12`, consumes the semicolon, and continues with `def;`. Always inspect diagnostics even when `succeeded()` is true. A diagnostic's `position` locates the error; its `interval` describes skipped input. These may not start at the same place when the guarded expression allows repetition.
+Here `letter+` matched `abc`, and the join failed at `12`. Recovery skips `12`, consumes the semicolon, and continues with `def;`. Inspect `getRecoveredFailures()` even when `succeeded()` is true. Each diagnostic's `interval` describes the skipped input and its `position` gives the rightmost failure index in that recovery pass. For a repetition in the guard, the skipped input can begin before that index.
+
+When the guard matches and a consuming join fails before consuming a token, `getDiagnosticPosition()` can use the end of the guard's last matched token. On a failed match, `getInterval()` uses that diagnostic position. The design is described in [Diagnostic positions](design/diagnostic-positions.md). Ambiguous failures and joins whose consumption cannot be established use the rightmost failure position.
 
 ## Use the retained input
 
