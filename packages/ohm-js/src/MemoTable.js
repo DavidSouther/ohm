@@ -41,6 +41,7 @@ export class MemoTable {
     this.examinedLength = new Int32Array(this.capacity);
     this.rightmostFailureOffset = new Int32Array(this.capacity);
     this.tokenEndOffset = new Int32Array(this.capacity);
+    this.terminalOffsets = undefined; // allocated only for diagnostic tracking
     this.values = []; // CST node, or false for a failure
     this.failures = []; // failure group and target offset from a failure-only rematch
     this.summaries = []; // recovery failure summary
@@ -174,6 +175,13 @@ export class MemoTable {
     return this.key[entry] !== NONE;
   }
 
+  // Each column holds an offset from the entry's position: undefined when the
+  // entry has no tracking data, -1 when it completed no terminal.
+  enableTerminalTracking() {
+    if (!this.terminalOffsets) this.terminalOffsets = {attempted: [], retained: []};
+    return this.terminalOffsets;
+  }
+
   isTainted(entry) {
     return (this.flags[entry] & TAINTED) !== 0;
   }
@@ -230,6 +238,11 @@ export class MemoTable {
     if (this.summaries.length > entry) this.summaries[entry] = undefined;
     if (this.traces.length > entry) this.traces[entry] = undefined;
     if (this.tokenContexts.length > entry) this.tokenContexts[entry] = undefined;
+    if (this.terminalOffsets) {
+      const {attempted, retained} = this.terminalOffsets;
+      if (attempted.length > entry) attempted[entry] = undefined;
+      if (retained.length > entry) retained[entry] = undefined;
+    }
     if (this.recursions.size > 0) this.recursions.delete(entry);
     this.live--;
   }
@@ -373,6 +386,7 @@ export class MemoTable {
       return;
     }
     const moved = new Map();
+    const {attempted, retained} = this.terminalOffsets || {};
     let j = 0;
     for (let e = 0; e < this.count; e++) {
       if (this.key[e] === NONE) continue;
@@ -387,6 +401,8 @@ export class MemoTable {
         this.values[j] = this.values[e];
         this.tokenContexts[j] = this.tokenContexts[e];
         // A sparse column can end before `e` but still hold a removed entry's value at `j`.
+        if (attempted && attempted.length > j) attempted[j] = attempted[e];
+        if (retained && retained.length > j) retained[j] = retained[e];
         if (this.failures.length > j) this.failures[j] = this.failures[e];
         if (this.summaries.length > j) this.summaries[j] = this.summaries[e];
         if (this.traces.length > j) this.traces[j] = this.traces[e];
@@ -395,8 +411,15 @@ export class MemoTable {
       j++;
     }
     this.values.length = j;
-    for (const column of [this.failures, this.summaries, this.traces, this.tokenContexts]) {
-      if (column.length > j) column.length = j;
+    for (const column of [
+      this.failures,
+      this.summaries,
+      this.traces,
+      this.tokenContexts,
+      attempted,
+      retained,
+    ]) {
+      if (column && column.length > j) column.length = j;
     }
     this.count = j;
     if (this.recursions.size > 0) {

@@ -51,7 +51,7 @@ export class MatchResult {
       common.defineLazyProperty(this, 'shortMessage', function () {
         const detail = 'expected ' + this.getExpectedText();
         const errorInfo = this._recovery?.positionIndex
-          ? this._recovery.positionIndex.getLineAndColumnNumbers(this.getRightmostFailurePosition())
+          ? this._recovery.positionIndex.getLineAndColumnNumbers(this.getDiagnosticPosition())
           : this._getLineAndColumn();
         return 'Line ' + errorInfo.lineNum + ', col ' + errorInfo.colNum + ': ' + detail;
       });
@@ -63,7 +63,7 @@ export class MatchResult {
   }
 
   _getLineAndColumn() {
-    const position = this.getRightmostFailurePosition();
+    const position = this.getDiagnosticPosition();
     return this._recovery?.positionIndex
       ? this._recovery.positionIndex.getLineAndColumn(position)
       : util.getLineAndColumn(this.input, position);
@@ -98,6 +98,7 @@ export class MatchResult {
         recovery: this._recovery,
       });
       this._rightmostFailures = matchResultWithFailures.getRightmostFailures();
+      this._proposedDiagnosticPosition = matchResultWithFailures._proposedDiagnosticPosition;
     }
     return this._rightmostFailures;
   }
@@ -152,8 +153,18 @@ export class MatchResult {
     return sb.contents();
   }
 
+  // An agreed proposal supplies the diagnostic position.
+  // The failure position selects expectations and drives recovery.
+  getDiagnosticPosition() {
+    if (this._diagnosticPosition !== undefined) return this._diagnosticPosition;
+    this.getRightmostFailures();
+    const failurePosition = this.getRightmostFailurePosition();
+    return this._diagnosticPosition = Number.isInteger(this._proposedDiagnosticPosition)
+      ? this._proposedDiagnosticPosition : failurePosition;
+  }
+
   getInterval() {
-    const pos = this.getRightmostFailurePosition();
+    const pos = this.getDiagnosticPosition();
     return new Interval(this.input, pos, pos);
   }
 }

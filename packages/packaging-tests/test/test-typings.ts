@@ -153,4 +153,18 @@ test('correction semantics from the public types', () => {
   assert.is(semantics(recovered).corrected, true);
 });
 
+test('diagnostic positions from the public types', () => {
+  const grammar = ohm.grammar('G { Start = "a" ! ";" }');
+  const input = 'a x;';
+  const strict = grammar.match(input);
+  if (strict.failed()) {
+    assert.is(strict.getDiagnosticPosition(), 1);
+    assert.is(strict.getRightmostFailurePosition(), 2);
+  } else {
+    assert.unreachable('Expected match failure');
+  }
+  const recovered = grammar.match(input, undefined, {recover: true});
+  assert.is(recovered.getRecoveredFailures()[0].getDiagnosticPosition(), 1);
+});
+
 test.run();

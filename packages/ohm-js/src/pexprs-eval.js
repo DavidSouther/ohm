@@ -405,6 +405,12 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
         position: state.rightmostFailurePosition,
         failures:
           seedSummary?.position === state.rightmostFailurePosition ? seedSummary.failures : [],
+        minPrecedingImplicitSpaceLength: seedSummary?.position === state.rightmostFailurePosition
+          ? seedSummary.minPrecedingImplicitSpaceLength : undefined,
+        hasStrongFailures: seedSummary?.position === state.rightmostFailurePosition
+          ? seedSummary.hasStrongFailures : false,
+        proposedDiagnosticPosition: seedSummary?.position === state.rightmostFailurePosition
+          ? seedSummary.proposedDiagnosticPosition : undefined,
       };
     } else {
       memoTable.summaries[memoEntry] = state._recoveryFailureSummary;
@@ -434,7 +440,16 @@ pexprs.Apply.prototype.reallyEval = function (state, keyId) {
     origInputStreamExaminedLength
   );
 
-  if (memoEntry >= 0) memoTable.tokenContexts[memoEntry] = tokenContext;
+  if (memoEntry >= 0) {
+    memoTable.tokenContexts[memoEntry] = tokenContext;
+    const progress = state.terminalProgress;
+    if (progress) {
+      progress.offsets.attempted[memoEntry] = progress.attemptedEnd < 0
+        ? -1 : progress.attemptedEnd - origPos;
+      progress.offsets.retained[memoEntry] = progress.retainedEnd < 0
+        ? -1 : progress.retainedEnd - origPos;
+    }
+  }
   state.exitApplication(value);
 
   return succeeded;
@@ -466,7 +481,7 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrEntry,
     return false;
   }
 
-  const {inputStream, memoTable} = state;
+  const {inputStream, memoTable, terminalProgress: progress} = state;
 
   if (state.recovery && !state.trace) state.recovery.cache.lrDepth++;
   try {
@@ -474,6 +489,10 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrEntry,
       memoTable.matchLength[lrEntry] = inputStream.pos - origPos;
       memoTable.values[lrEntry] = newValue;
       memoTable.failures[lrEntry] = state.recordedFailuresForMemo();
+      if (progress) {
+        progress.offsets.retained[lrEntry] = progress.retainedEnd < 0
+          ? -1 : progress.retainedEnd - origPos;
+      }
       if (state.recovery && !state.trace) {
         memoTable.summaries[lrEntry] = state._recoveryFailureSummary;
       }
@@ -494,6 +513,7 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrEntry,
         );
       }
       inputStream.pos = origPos;
+      if (progress) progress.retainedEnd = -1;
       newValue = this.evalOnce(body, state);
       if (inputStream.pos - origPos <= memoTable.matchLength[lrEntry]) {
         break;
@@ -510,6 +530,10 @@ pexprs.Apply.prototype.growSeedResult = function (body, state, origPos, lrEntry,
     memoTable.traces[lrEntry].recordLRTermination(state.trace.pop(), newValue);
   }
   inputStream.pos = origPos + memoTable.matchLength[lrEntry];
+  if (progress) {
+    const end = progress.offsets.retained[lrEntry];
+    progress.retainedEnd = end < 0 ? -1 : origPos + end;
+  }
   return memoTable.values[lrEntry];
 };
 
