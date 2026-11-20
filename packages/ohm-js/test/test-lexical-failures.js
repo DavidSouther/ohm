@@ -94,8 +94,9 @@ test('a recovered failure classifies the pass that selected its recovery', t => 
   ]);
 });
 
-test('an unrecoverable recovering match classifies its final failure', t => {
-  const g = ohm.grammar(STMTS);
+test('an opted-out unrecoverable match classifies its final failure', t => {
+  // Preserve a final structural failure instead of inserting its missing join.
+  const g = ohm.grammar(STMTS.replace('Item ! ";"', 'Item !~ ";"'));
 
   const lexical = g.match('ab; 0xZ', undefined, RECOVER);
   const structural = g.match('ab; cd', undefined, RECOVER);

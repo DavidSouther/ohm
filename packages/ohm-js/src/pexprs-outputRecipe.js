@@ -74,6 +74,7 @@ pexprs.Fallible.prototype.outputRecipe = function (formals, grammarInterval) {
     getMetaInfo(this, grammarInterval),
     this.guarded.outputRecipe(formals, grammarInterval),
     this.join.outputRecipe(formals, grammarInterval),
+    this.insertion !== false,
   ];
 };
 

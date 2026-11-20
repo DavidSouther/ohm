@@ -286,11 +286,12 @@ test('recovery stops at an enclosing stop marker', t => {
 });
 
 // Recovery keeps valid prior work: a guarded `*` keeps the elements it
-// matched, and the skip region fills the synchronizer's slot.
+// matched, and the skip region fills the synchronizer's slot. Statement joins
+// opt out so these cases continue to exercise skipped text and its ownership.
 const EXACT = String.raw`
 Exact {
   Block = "{" Stmt* ! &"}" "}"
-  Stmt  = Body ! ";"
+  Stmt  = Body !~ ";"
   Body  = ident
   ident = letter+
 }`;
@@ -299,7 +300,7 @@ const NESTED = String.raw`
 Nested {
   Block  = "{" Stmt* ! &"}" "}"
   Stmt   = Block | Simple
-  Simple = Body ! ";"
+  Simple = Body !~ ";"
   Body   = ident
   ident  = letter+
 }`;

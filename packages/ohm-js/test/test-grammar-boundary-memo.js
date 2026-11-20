@@ -13,19 +13,19 @@ function assertOutcome(t, g, input, expected, label) {
 }
 
 test('left recursion and memoized lookahead preserve retained terminal anchor', t => {
-  const lr = ohm.grammar('G { Start = Expr ! ";" Expr = Expr "+" atom -- plus\n | atom -- atom\n atom = letter }');
+  const lr = ohm.grammar('G { Start = Expr !~ ";" Expr = Expr "+" atom -- plus\n | atom -- atom\n atom = letter }');
   assertOutcome(t, lr, 'a + b wrong', 5, 'left recursion');
-  const memo = ohm.grammar('G { Start = (&Word Word) ! ";" Word = "name" }');
+  const memo = ohm.grammar('G { Start = (&Word Word) !~ ";" Word = "name" }');
   assertOutcome(t, memo, 'name\n wrong', 4, 'memoized lookahead');
 });
 
 test('strong and fluffy failures with the same expectation retain grammar provenance', t => {
-  const g = ohm.grammar('G { Start = ("name" ";"?) ! ";" }');
+  const g = ohm.grammar('G { Start = ("name" ";"?) !~ ";" }');
   assertOutcome(t, g, 'name\n wrong', 4, 'same-key optional');
 });
 
 test('edits and reused matcher agree with a fresh matcher on absolute anchor', t => {
-  const g = ohm.grammar('G { Start = Prefix Thing Prefix = "a"* Thing = "x" ! ";" }');
+  const g = ohm.grammar('G { Start = Prefix Thing Prefix = "a"* Thing = "x" !~ ";" }');
   const m = g.matcher().setInput('aax wrong');
   const initial = m.match();
   t.is(initial.getDiagnosticPosition(), 3);
@@ -64,7 +64,7 @@ test('parameterized and recursive joins stay conservative', t => {
     Start = First | Second
     First = "a" Item<";">
     Second = "b" Item<&";">
-    Item<j> = "n" ! j
+    Item<j> = "n" !~ j
   }`);
   const recursive = ohm.grammar(`G {
     Start = "a" ! Join

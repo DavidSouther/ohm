@@ -51,7 +51,7 @@ pexprs.Seq.prototype.toString = function () {
 };
 
 pexprs.Fallible.prototype.toString = function () {
-  return '(' + this.guarded + ' ! ' + this.join + ')';
+  return '(' + this.guarded + (this.insertion === false ? ' !~ ' : ' ! ') + this.join + ')';
 };
 
 pexprs.Iter.prototype.toString = function () {

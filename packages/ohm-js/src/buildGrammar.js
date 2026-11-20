@@ -152,11 +152,13 @@ export function buildGrammar(match, namespace, optOhmGrammarForTesting, options)
       return builder.seq(...expr.children.map(c => c.visit())).withSource(this.source);
     },
 
-    Fallible_fallible(x, _, y) {
-      return builder.bang(x.visit(), y.visit()).withSource(this.source);
+    Fallible_fallible(x, operator, y) {
+      const expr = builder.bang(x.visit(), y.visit()).withSource(this.source);
+      expr.insertion = operator.sourceString !== '!~';
+      return expr;
     },
-    Fallible_trailing(_x, bang) {
-      throw errors.missingSynchronizer(bang.source);
+    Fallible_trailing(_x, operator) {
+      throw errors.missingSynchronizer(operator.source, operator.sourceString);
     },
 
     Iter_star(x, _) {

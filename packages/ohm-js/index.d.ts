@@ -192,28 +192,32 @@ export interface Failure {
  */
 export interface RecoveredFailure {
   /**
-   * The input skipped by this recovery. For the last entry of a failed
-   * recovering match, this is an empty interval at the failure position.
+   * The input skipped by this recovery. Direct insertions and the final
+   * unrecovered failure have empty intervals.
    */
   readonly interval: Interval;
+  /** True when recovery inserts a missing punctuation join. */
+  readonly missing: boolean;
   /**
-   * The rightmost failure position in the pass that selected this recovery,
-   * or in the final pass if recovery could not finish.
+   * Input position of the error. An insertion points at the end of the guard's
+   * last matched token, before implicitly skipped whitespace.
+   * Other recoveries use the failed pass's rightmost failure position.
    */
   readonly position: number;
   /**
-   * The diagnostic position used for `shortMessage`, as for
-   * `FailedMatchResult#getDiagnosticPosition`. It can be earlier than `position`.
+   * The diagnostic position used for `shortMessage`. For an insertion, this is
+   * the insertion anchor, `position`. Otherwise it is as for
+   * `FailedMatchResult#getDiagnosticPosition` and can be earlier than `position`.
    */
   getDiagnosticPosition(): number;
   /**
-   * The error message for that pass, including the effect of any earlier corrections,
-   * in the format of `FailedMatchResult#shortMessage`.
+   * The error message in the format of `MatchResult#shortMessage`.
+   * An insertion reports the expected punctuation at its insertion position.
    */
   readonly shortMessage: string;
-  /** The expected text at `position` in that pass. */
+  /** The expected text at this error. */
   getExpectedText(): string;
-  /** The failures at `position` in that pass. */
+  /** The failures used to compute the expected text. */
   getRightmostFailures(): Failure[];
 }
 
@@ -269,8 +273,8 @@ export interface MatchResult {
   failed(): this is FailedMatchResult;
 
   /**
-   * Every error that recovery skipped over, in input order; empty without
-   * `recover`. On a failed recovering match, the list holds the errors recovered
+   * Recovery diagnostics in input order. The list is empty without `recover`.
+   * On a failed recovering match, the list holds the errors recovered
    * before the match gave up, followed by the final failure. The match result's
    * `shortMessage` describes the failure of the first failed pass, before any recovery.
    */
@@ -335,8 +339,8 @@ export interface FailedMatchResult extends MatchResult {
 /** Options for adding or extending operations and attributes. */
 export interface OperationOptions {
   /**
-   * What the operation or attribute does at a `_correction` node, which holds input that recovery
-   * skipped. A `_correction` action, if the action dictionary defines one, always wins.
+   * What the operation or attribute does at a `_correction` node, which describes skipped input
+   * or missing punctuation. A `_correction` action, if the action dictionary defines one, always wins.
    *
    * - `'skip'` (the default) makes a correction node yield `undefined`. Use `Node#isCorrection`
    *   to filter correction nodes when traversing the children.
@@ -430,12 +434,11 @@ export interface BaseActionDict<T> {
   _nonterminal?: (this: NonterminalNode, ...children: Node[]) => T;
   _terminal?: (this: TerminalNode) => T;
   /**
-   * Called for a diagnostic-bearing correction node, which has no children.
-   * `B ! C` contributes three children: the matched B (or ordinary optional
-   * absence), a correction slot, and the actual matched C. On a clean match
-   * the correction slot is ordinary optional absence; after recovery it is
-   * a `_correction` node whose sourceString is the skipped input and whose
-   * recoveredFailure describes the error. Recovery requires C to match.
+   * Called for the correction node that recovery places in the correction slot
+   * of a `B ! C` (or `B !~ C`); the node has no children. `this.sourceString`
+   * is the skipped input, empty when recovery inferred a missing join, and
+   * `this.recoveredFailure` holds the diagnostic, with `missing` set for an
+   * inferred join. The child layout and insertion rules are in doc/fallible.md.
    */
   _correction?: (this: Node) => T;
 
@@ -498,7 +501,7 @@ export interface Node {
    */
   child(idx: number): Node;
 
-  /** Returns whether the node represents input skipped by recovery. */
+  /** Returns whether the node describes input skipped by recovery or missing punctuation. */
   isCorrection(): boolean;
 
   /**
