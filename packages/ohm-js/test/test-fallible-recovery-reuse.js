@@ -155,6 +155,33 @@ test.serial('dense recovery preserves corrected-prefix errors without quadratic 
   t.deepEqual(violations, [], 'all semantics passed; recovery work must grow below quadratic');
 });
 
+test.serial('missing delimiter diagnostics reuse whitespace provenance with linear work', t => {
+  for (const api of [ohm]) {
+    const grammar = api.grammar(`G {
+      Start = Stmt* ! end
+      Stmt = ("let" name "=" number) ! ";"
+      name = letter+
+      number = digit+
+    }`);
+    let previous = 0;
+    for (const errors of [16, 32, 64]) {
+      const measured = measuredRecovery(grammar, 'let a=1\n'.repeat(errors) + 'let z=2;');
+      t.true(measured.result.succeeded());
+      t.is(measured.failures.length, errors);
+      for (const [i, failure] of measured.failures.entries()) {
+        t.true(failure.missing);
+        t.is(failure.position, (i + 1) * 8 - 1);
+        t.is(failure.getDiagnosticPosition(), (i + 1) * 8 - 1);
+        t.is(failure.shortMessage, `Line ${i + 1}, col 8: expected ";"`);
+      }
+      if (previous) {
+        t.true(measured.evaluations < 2.75 * previous, `${errors} inserted delimiters`);
+      }
+      previous = measured.evaluations;
+    }
+  }
+});
+
 test('valid and invalid matches of one grammar are independent of the cache-free first pass', t => {
   // The first pass runs without the reuse cache after a valid match, and with it after an
   // invalid one; the order of earlier matches must not change any later result.

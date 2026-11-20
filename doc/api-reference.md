@@ -138,9 +138,10 @@ Return recovery diagnostics in input order. A successful recovering match can st
 
 Each diagnostic records a failure from the pass that selected the recovery, including the effect of any earlier corrections. The final diagnostic of an unsuccessful recovering match records the failure from the final pass.
 
-- `interval`: the skipped input as an Interval. The final failure of an unsuccessful recovering match has an empty interval at its failure position.
-- `position`: the rightmost failure index in that pass, which can differ from the skipped interval's start.
-- `getDiagnosticPosition()`: the diagnostic position, the input index used to report the error. It can be earlier than `position` at a declared fallible join, as described below.
+- `interval` is the skipped input as an Interval. A direct insertion has an empty interval at the insertion point. The final failure of an unsuccessful recovering match has an empty interval at its failure position.
+- `missing` is `true` when recovery inserts a missing punctuation join.
+- `position` is the rightmost failure index in that pass for ordinary recovery, and the insertion anchor for an inferred join. It can differ from the start of the skipped interval.
+- `getDiagnosticPosition()` returns the diagnostic position, the input index used to report the error. For an insertion, this is the insertion anchor. For ordinary recovery, it can be earlier than `position` at a declared fallible join, as described below.
 - `shortMessage`: the error message, formatted like a failed MatchResult's `shortMessage`.
 - `getExpectedText()` and `getRightmostFailures()`: describe what was expected at the error.
 
@@ -224,7 +225,7 @@ Add a new Operation to this Semantics, using the [semantic actions](#semantic-ac
 
 If the operation has arguments, they are accessible via `this.args` within a semantic action. For example, `this.args.depth` would hold the value of the `depth` argument for the current action.
 
-<span id="corrections-option"></span>`options.corrections` sets what the operation does at a `_correction` node, which holds input that [recovery](./fallible.md) skipped. A `_correction` action in `actionDict` always wins. Otherwise, `'skip'` (the default) makes a correction node yield `undefined`, and `'throw'` makes reaching one an error. A function is a zero-arity action, as if `actionDict` defined it. An invalid option throws a `TypeError`. Recovery is opt-in, so without it there are no correction nodes and this never applies.
+<span id="corrections-option"></span>`options.corrections` sets what the operation does at a `_correction` node, which describes input that [recovery](./fallible.md) skipped or missing punctuation (with an empty source interval for direct insertion). A `_correction` action in `actionDict` always wins. Otherwise, `'skip'` (the default) makes a correction node yield `undefined`, and `'throw'` makes reaching one an error. A function is a zero-arity action, as if `actionDict` defined it. An invalid option throws a `TypeError`. Recovery is opt-in, so without it there are no correction nodes and this never applies.
 
 <b><pre class="api">mySemantics.addAttribute(name: string, actionDict: object, options?: object) &rarr; Semantics</pre></b>
 
@@ -247,7 +248,7 @@ A semantic action is a function that computes the value of an operation or attri
 - _Rule application_, or _non-terminal_ nodes, which correspond to rule application expressions
 - _Terminal_ nodes, for string and number literals, and keyword expressions
 - _Iteration_ nodes, which are associated with expressions inside a [repetition operator](./syntax-reference.md#repetition-operators) (`*`, `+`, and `?`)
-- _Correction_ nodes, which describe input skipped by Fallible recovery
+- _Correction_ nodes, which describe input skipped by Fallible recovery or missing punctuation
 
 Generally, you write a semantic action for each rule in your grammar, and store them together in an _action dictionary_. For example, given the following grammar:
 
@@ -300,7 +301,7 @@ The matching semantic action for a particular node is chosen as follows:
 
 <span id="special-actions"></span>The `_iter`, `_nonterminal`, `_terminal`, and `_correction` actions are sometimes called _special actions_. `_iter` and `_nonterminal` take a variable number of arguments, which are typically captured into an array using [rest parameter syntax](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/rest_parameters) , e.g. `_iter(...children) { ... }`. The `_terminal` and `_correction` actions take no arguments.
 
-<span id="fallible-actions"></span>A `guarded ! join` expression contributes the guarded values, a correction slot, and the join node. If the guarded expression failed, every guarded argument is an empty optional node. The correction slot is an empty optional node on clean input, and a childless `_correction` node after recovery. Its `sourceString` holds the skipped input. A semantic operation visits this node by defining `_correction`; without that, the node follows the operation's [`corrections` option](#corrections-option) and by default yields `undefined`.
+<span id="fallible-actions"></span>A `guarded ! join` expression contributes the guarded values, a correction slot, and the join node. If the guarded expression failed, every guarded argument is an empty optional node. The correction slot is an empty optional node on clean input, and a childless `_correction` node after recovery. Its `sourceString` holds the skipped input and is empty for direct insertion. The join node is either matched input or inferred punctuation with a zero-width source interval. Insertion requires a nonempty successful guard and an enclosing continuation that matches within the insertion probe’s bounds. A semantic operation visits this node by defining `_correction`; without that, the node follows the operation's [`corrections` option](#corrections-option) and by default yields `undefined`.
 
 <!-- @markscript
   markscript.transformNextBlock((code) =>
@@ -329,7 +330,7 @@ Get the child at index `idx`.
 
 <b><pre class="api">n.isCorrection() &rarr; boolean</pre></b>
 
-`true` if the node is a `_correction` node, which holds input that recovery skipped, otherwise `false`.
+`true` if the node is a `_correction` node, which describes skipped input or missing punctuation (with an empty source interval for direct insertion), otherwise `false`.
 
 <b><pre class="api">n.isIteration() &rarr; boolean</pre></b>
 

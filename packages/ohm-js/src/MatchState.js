@@ -52,9 +52,8 @@ export class MatchState {
     // Recovery at `B ! C`. `recovery` is the RecoveryContext shared by the
     // passes of a recovering match, or undefined.
     this.recovery = optRecovery;
-    // Stop markers: join expressions of the fallibles whose attempt is in
-    // progress. A scan stops where any of them matches.
-    this._syncStack = [];
+    // Active frames supply continuation evidence and enclosing joins that bound a scan.
+    this._recoveryFrames = [];
     this._syncContext = 0;
     this._syncContextStack = [];
     // Number of blocks whose guarded attempt is active.
@@ -98,14 +97,14 @@ export class MatchState {
     return tokenEnd;
   }
 
-  _pushRecoverySync(join) {
-    this._syncStack.push(join);
+  _pushRecoveryFrame(frame) {
+    this._recoveryFrames.push(frame);
     this._syncContextStack.push(this._syncContext);
-    this._syncContext = this.recovery.cache.enterContext(this._syncContext, join);
+    this._syncContext = this.recovery.cache.enterContext(this._syncContext, frame);
   }
 
-  _popRecoverySync() {
-    this._syncStack.pop();
+  _popRecoveryFrame() {
+    this._recoveryFrames.pop();
     this._syncContext = this._syncContextStack.pop();
   }
 

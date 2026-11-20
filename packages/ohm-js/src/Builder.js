@@ -119,7 +119,7 @@ export class Builder {
     return new pexprs.Opt(expr);
   }
 
-  bang(fExpr, jExpr) {
+  bang(fExpr, jExpr, insertion = true) {
     if (!(fExpr instanceof pexprs.PExpr)) {
       fExpr = this.fromRecipe(fExpr);
     }
@@ -131,7 +131,9 @@ export class Builder {
     if (jExpr instanceof pexprs.Not && jExpr.eliminatedLookahead) {
       jExpr = new pexprs.Lookahead(jExpr.eliminatedLookahead).withSource(jExpr.source);
     }
-    return new pexprs.Fallible(fExpr, jExpr);
+    const expr = new pexprs.Fallible(fExpr, jExpr);
+    expr.insertion = insertion;
+    return expr;
   }
 
   not(expr) {

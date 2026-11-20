@@ -41,8 +41,8 @@ Ohm {
     = Fallible*
 
   Fallible
-    = Iter "!" Iter  -- fallible
-    | Iter "!"       -- trailing
+    = Iter ("!~" | "!") Iter  -- fallible
+    | Iter ("!~" | "!")  -- trailing
     | Iter
 
   Iter

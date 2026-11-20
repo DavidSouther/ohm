@@ -11,16 +11,17 @@ import * as v18 from '../src/v18.js';
 
 const RECOVER = {recover: true};
 
+// `!~` keeps these fixtures on skip recovery.
 const STMTS = String.raw`
 Stmts {
   Block = "{" Stmt* ! &"}" "}"
-  Stmt  = Body ! ";"
+  Stmt  = Body !~ ";"
   Body  = ident
   ident = letter+
 }`;
 
 const PLAIN_STMTS = STMTS.replace('Stmt* ! &"}"', 'Stmt* &"}"').replace(
-  'Body ! ";"',
+  'Body !~ ";"',
   'Body ";"'
 );
 
@@ -485,6 +486,17 @@ test('a trailing `!` has a clear message', t => {
   t.throws(() => ohm.grammar('G { S = "a" ! }'), {message: /synchronizer/});
 });
 
+test('a trailing `!~` and a `!~` arity error name `!~`', t => {
+  t.throws(() => ohm.grammar('G { S = "a" !~ }'), {message: /Missing synchronizer after '!~'/});
+  t.throws(() => ohm.grammar('G { S = "a" !~\n T = "b" }'), {message: /after '!~'/});
+  t.throws(() => ohm.grammar('G { S = "a" !~ ("b" "c") }'), {
+    message: /the synchronizer of '!~' must have arity 1/,
+  });
+  t.throws(() => ohm.grammar('G { S = "a" ! ("b" "c") }'), {
+    message: /the synchronizer of '!' must have arity 1/,
+  });
+});
+
 test('toString parenthesizes a fallible', t => {
   const g = ohm.grammar('G { S = "{" "a"* ! &"}" "}" }');
   t.is(g.rules.S.body.toString(), '("{" ("a"* ! &"}") "}")');
@@ -670,8 +682,10 @@ test('recoveredFailures at the root of nested blocks lists every failure, object
   root.forEach((f, i) => t.is(f, expected[i]));
 });
 
-test('a missing nested join fails without a semantic tree', t => {
-  const result = ohm.grammar(NESTED_BLOCKS).match('{ a; { b;', undefined, RECOVER);
+test('an opted-out missing nested join fails without a semantic tree', t => {
+  const result = ohm
+    .grammar(NESTED_BLOCKS.replace('Item* ! "}"', 'Item* !~ "}"'))
+    .match('{ a; { b;', undefined, RECOVER);
   t.true(result.failed());
   t.throws(() => ohm.grammar(NESTED_BLOCKS).createSemantics()(result));
 });
@@ -821,18 +835,35 @@ Nested {
   Body  = letter+
 }`;
 
-test('a block missing its closer at the end of the input fails', t => {
+test('a block missing its closer at EOF inserts it and retains its statements', t => {
   const g = ohm.grammar(CALLS);
   const source = '{\nf(x);\ng(y);';
-  const plain = g.match(source);
   const r = g.match(source, undefined, RECOVER);
-  t.true(r.failed());
-  t.is(r.shortMessage, plain.shortMessage);
-  t.true(r.getRecoveredFailures().every(f => !f.missing));
+  t.true(r.succeeded());
+  t.deepEqual(
+    r
+      .getRecoveredFailures()
+      .map(f => [f.position, f.shortMessage, f.missing, f.interval.contents]),
+    [[source.length, 'Line 3, col 6: expected "}"', true, '']]
+  );
+  const semantics = g.createSemantics().addOperation('body', {
+    Body(_open, stmts, correction, close) {
+      return {
+        statements: stmts.children.map(stmt => stmt.sourceString),
+        correction: [correction.source.startIdx, correction.source.endIdx],
+        close: [close.sourceString, close.source.startIdx, close.source.endIdx],
+      };
+    },
+  });
+  t.deepEqual(semantics(r).body(), {
+    statements: ['f(x);', 'g(y);'],
+    correction: [source.length, source.length],
+    close: ['', source.length, source.length],
+  });
 });
 
-test('a failed nested block is discarded when the outer join matches', t => {
-  const g = ohm.grammar(NESTED);
+test('an opted-out failed nested block is discarded when the outer join matches', t => {
+  const g = ohm.grammar(NESTED.replace('Stmt* ! ")"', 'Stmt* !~ ")"'));
   const r = g.match('{ a; ( b; c; } ', undefined, RECOVER);
   t.true(r.succeeded());
   t.deepEqual(
@@ -841,8 +872,10 @@ test('a failed nested block is discarded when the outer join matches', t => {
   );
 });
 
-test('two blocks missing their closers fail as a whole', t => {
-  const g = ohm.grammar(NESTED);
+test('two opted-out blocks missing their closers fail as a whole', t => {
+  const g = ohm.grammar(
+    NESTED.replaceAll('Stmt* !', 'Stmt* !~').replace('Item* !', 'Item* !~')
+  );
   const r = g.match('{ a; ( b;', undefined, RECOVER);
   t.true(r.failed());
   t.true(r.getRecoveredFailures().every(f => !f.missing));
@@ -854,11 +887,12 @@ test('a block marked with a stop marker escalates instead of inserting', t => {
   t.true(r.failed());
 });
 
+// Unit and statement joins opt out to exercise recoveryStop scan escalation.
 const UNITS = String.raw`
 Units {
   File = Unit* ! end
-  Unit = unit ident "{" Stmt* ! "}"
-  Stmt = Body ! ";"
+  Unit = unit ident "{" Stmt* !~ "}"
+  Stmt = Body !~ ";"
   Body = ident ident?
   unit = "unit" ~alnum
   ident = ~unit letter+
@@ -988,10 +1022,10 @@ test('recoveryToken: first errors are unchanged, with and without recovery', t =
   }
 });
 
-test('a terminal failure at one position is reported once', t => {
+test('an opted-out terminal failure at one position is reported once', t => {
   const g = ohm.grammar(String.raw`
     Blocks {
-      Block = "{" Item* ! "}"
+      Block = "{" Item* !~ "}"
       Item  = Block | Stmt
       Stmt  = Body ! ";"
       Body  = letter+

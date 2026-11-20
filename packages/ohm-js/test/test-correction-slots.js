@@ -72,8 +72,8 @@ test('a guarded repetition retains its matched prefix', t => {
   t.is(found.result._cst.children[0].children.length, 2);
 });
 
-test('a missing join fails and does not synthesize a correction or join', t => {
-  const g = ohm.grammar('G { Start = "{" "a"* ! "}" }');
+test('an opted-out missing join fails without synthesizing a correction or join', t => {
+  const g = ohm.grammar('G { Start = "{" "a"* !~ "}" }');
   for (const input of ['{aa', '{aa x']) {
     const result = g.match(input, undefined, recover);
     t.true(result.failed());
@@ -96,7 +96,8 @@ test('a later terminal failure retains diagnostics in the matched guarded prefix
   const g = ohm.grammar(`G {
     Start = Item* "z"
     Item = Line* ! "}"
-    Line = letter ! ";"
+    // Retain skipped regions for the guarded-prefix ownership assertions.
+    Line = letter !~ ";"
   }`);
   const result = g.match('a x; y } q', undefined, recover);
   t.true(result.failed());
@@ -114,7 +115,8 @@ test('the correction retains diagnostics from a discarded join subtree', t => {
     const g = api.grammar(`G {
       Start = "a" ! Join
       Join = Inner "z"
-      Inner = letter ! ";"
+      // The parent must discard this skipped join subtree.
+      Inner = letter !~ ";"
     }`);
     const result = g.match('a b x; q c;z', undefined, recover);
     t.true(result.succeeded());
@@ -145,7 +147,8 @@ test('retained guarded diagnostics remain separate from discarded join diagnosti
       Start = Guard ! Join
       Guard = Inner "g"
       Join = Inner "z"
-      Inner = letter ! ";"
+      // Keep skip diagnostics in both retained and discarded subtrees.
+      Inner = letter !~ ";"
     }`);
     const result = g.match('a x;g b y; q c;z', undefined, recover);
     t.true(result.succeeded());
