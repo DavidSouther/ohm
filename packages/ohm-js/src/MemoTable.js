@@ -176,7 +176,8 @@ export class MemoTable {
   }
 
   // Each column holds an offset from the entry's position: undefined when the
-  // entry has no tracking data, -1 when it completed no terminal.
+  // entry has no tracking data, NaN when a failure-only rematch reused an
+  // untracked entry inside it, and -1 when it completed no terminal.
   enableTerminalTracking() {
     if (!this.terminalOffsets) this.terminalOffsets = {attempted: [], retained: []};
     return this.terminalOffsets;
