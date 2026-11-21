@@ -19,6 +19,10 @@ export class RecoveredFailure {
     this.shortMessage = this._diagnostic.shortMessage;
   }
 
+  getDiagnosticPosition() {
+    return this._diagnostic.getDiagnosticPosition();
+  }
+
   getExpectedText() {
     return this._diagnostic.getExpectedText();
   }

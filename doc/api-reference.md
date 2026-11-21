@@ -134,12 +134,13 @@ Return `true` if the match failed, otherwise `false`.
 
 <b><pre class="api">r.getRecoveredFailures() &rarr; Array</pre></b>
 
-Return recovery diagnostics in input order. A successful recovering match can still have diagnostics. Without recovery, or on a clean match, the array is empty. If a recovering match fails, it contains earlier recoveries followed by the final failure.
+Return recovery diagnostics in input order. A successful recovering match can still have diagnostics. Without recovery, or on a clean match, the array is empty. If a recovering match fails, the array contains earlier recoveries followed by the final failure. The failed MatchResult's own `message` and `shortMessage` describe the first failure.
 
-Each diagnostic has these properties and methods:
+Each diagnostic records a failure from the pass that selected the recovery, including the effect of any earlier corrections. The final diagnostic of an unsuccessful recovering match records the failure from the final pass.
 
 - `interval`: the skipped input as an Interval. The final failure of an unsuccessful recovering match has an empty interval at its failure position.
-- `position`: the error's input index, which can differ from the skipped interval's start.
+- `position`: the rightmost failure index in that pass, which can differ from the skipped interval's start.
+- `getDiagnosticPosition()`: the diagnostic position, the input index used to report the error. It can be earlier than `position` at a declared fallible join, as described below.
 - `shortMessage`: the error message, formatted like a failed MatchResult's `shortMessage`.
 - `getExpectedText()` and `getRightmostFailures()`: describe what was expected at the error.
 
@@ -157,7 +158,27 @@ Contains an abbreviated version of `r.message` that does not include an excerpt 
 
 <b><pre class="api">r.getRightmostFailurePosition() &rarr; number</pre></b>
 
-Return the index in the input stream at which the match failed.
+Return the rightmost failure index in the input stream. This index is used to select expectations and can differ from the diagnostic position.
+
+<b><pre class="api">r.getDiagnosticPosition() &rarr; number</pre></b>
+
+Return the input index used for `message`, `shortMessage`, and `getInterval()`. Ordinary failures use the rightmost failure position. For a declared `B ! C`, when `B` matches and a consuming `C` fails before consuming a token, the diagnostic position can move to the end of the guard's last matched token. Ambiguous failures and joins whose consumption cannot be established retain the rightmost position.
+
+<!-- @markscript
+  const positionExample = ohm.grammar('PositionExample { Start = "name" ";" }')
+    .match('name\n  wrong');
+  assert.equal(positionExample.getRightmostFailurePosition(), 7);
+  assert.equal(positionExample.getDiagnosticPosition(), 7);
+  assert.equal(positionExample.getInterval().startIdx, 7);
+  const falliblePosition = ohm.grammar('FalliblePosition { Start = "name" ! ";" }')
+    .match('name\n  wrong');
+  assert.equal(falliblePosition.getRightmostFailurePosition(), 7);
+  assert.equal(falliblePosition.getDiagnosticPosition(), 4);
+  const positionRecovered = ohm.grammar('RecoveredPosition { Start = ("a" ";") ! "}" }')
+    .match('a\n x}', undefined, {recover: true}).getRecoveredFailures()[0];
+  assert.equal(positionRecovered.position, 3);
+  assert.equal(positionRecovered.getDiagnosticPosition(), 3);
+-->
 
 <b><pre class="api">r.getRightmostFailures() &rarr; Array</pre></b>
 

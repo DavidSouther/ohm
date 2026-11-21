@@ -1,8 +1,22 @@
 // A FailureGroup holds the failures recorded at the position a failure-only
-// rematch is looking for, keyed by `Failure#toKey()`.
+// rematch is looking for, keyed by `Failure#toKey()`, together with the
+// evidence for a diagnostic position earlier than that failure position.
+//
+// Only strong failures (see `Failure#isFluffy`) contribute to that evidence.
+// `proposedDiagnosticPosition` is undefined while unassigned, an input index
+// when every strong failure agrees on it, and null after a disagreement,
+// including a strong failure with a proposal meeting one without. An
+// enclosing join can fill an unassigned proposal and must keep a disagreement.
 export default class FailureGroup {
+  get hasStrongFailures() { return this._hasStrongFailures; }
+  get proposedDiagnosticPosition() { return this._proposedDiagnosticPosition; }
+  get minPrecedingImplicitSpaceLength() { return this._minPrecedingImplicitSpaceLength; }
+
   constructor() {
     this._failures = Object.create(null);
+    this._hasStrongFailures = false;
+    this._proposedDiagnosticPosition = undefined;
+    this._minPrecedingImplicitSpaceLength = Infinity;
   }
 
   // Stored failures can be shared across groups. Changes replace the affected
@@ -25,12 +39,38 @@ export default class FailureGroup {
   }
 
   // `failure` must not be referenced elsewhere.
-  record(failure) {
+  record(failure, precedingImplicitSpaceLength) {
+    if (!failure.isFluffy()) {
+      if (this._proposedDiagnosticPosition !== undefined) this._proposedDiagnosticPosition = null;
+      this._hasStrongFailures = true;
+      this._minPrecedingImplicitSpaceLength = Math.min(
+        this._minPrecedingImplicitSpaceLength, precedingImplicitSpaceLength
+      );
+    }
     this._insert(failure);
   }
 
-  merge(other) {
+  merge(other, offset = 0, precedingImplicitSpaceLength = other.minPrecedingImplicitSpaceLength) {
+    if (other.hasStrongFailures) {
+      const proposal = other.proposedDiagnosticPosition;
+      const shiftedProposal = Number.isInteger(proposal) ? proposal + offset : proposal;
+      if (this._hasStrongFailures && this._proposedDiagnosticPosition !== shiftedProposal) {
+        this._proposedDiagnosticPosition = null;
+      } else if (!this._hasStrongFailures) {
+        this._proposedDiagnosticPosition = shiftedProposal;
+      }
+      this._hasStrongFailures = true;
+      this._minPrecedingImplicitSpaceLength = Math.min(
+        this._minPrecedingImplicitSpaceLength, precedingImplicitSpaceLength
+      );
+    }
     for (const failure of Object.values(other._failures)) this._insert(failure);
+  }
+
+  proposeDiagnosticPosition(position) {
+    if (this._hasStrongFailures && this._proposedDiagnosticPosition === undefined) {
+      this._proposedDiagnosticPosition = position;
+    }
   }
 
   markFailuresIncidental() {
@@ -41,11 +81,15 @@ export default class FailureGroup {
         this._failures[key] = copy;
       }
     }
+    this._hasStrongFailures = false;
+    this._proposedDiagnosticPosition = undefined;
+    this._minPrecedingImplicitSpaceLength = Infinity;
   }
 
-  copy() {
+  // Memo entries store the proposal relative to the rule application.
+  copyAtOffset(offset) {
     const copy = new FailureGroup();
-    copy.merge(this);
+    copy.merge(this, offset);
     return copy;
   }
 
