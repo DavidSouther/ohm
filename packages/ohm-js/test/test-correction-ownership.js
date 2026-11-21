@@ -22,8 +22,9 @@ for (const [name, guarded, extra, input] of cases) {
     for (const api of [ohm, v18]) {
       const grammar = api.grammar(`G {
         Start = "{" ${guarded} ! "}"
-        Block = "(" Line* ! ")"
-        Line = letter ! ";"
+        // Keep skip recovery so the failed child is discarded by its parent.
+        Block = "(" Line* !~ ")"
+        Line = letter !~ ";"
         ${extra}
       }`);
       const result = grammar.match(input, undefined, {recover: true});
@@ -77,8 +78,9 @@ test.serial(
         const grammar = api.grammar(`G {
         Start = "{" Body ! "}" ${suffix}
         Body = Block*
-        Block = "(" Line* ! ")"
-        Line = letter ! ";"
+        // These diagnostics must come from discarded skip recoveries.
+        Block = "(" Line* !~ ")"
+        Line = letter !~ ";"
       }`);
         let lastLog;
         const original = MatchState.prototype.getMatchResult;

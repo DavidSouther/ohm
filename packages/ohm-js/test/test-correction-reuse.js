@@ -67,7 +67,8 @@ test.serial('discarded join diagnostics survive cached and uncached recovery', t
         Start = ${guard} ! Join
         Guard = Inner "g"
         Join = Inner "z"
-        Inner = letter ! ";"
+        // Exercise replay of diagnostics from discarded skip recoveries.
+        Inner = letter !~ ";"
       }`);
       const run = () =>
         grammar.match(input, undefined, {
@@ -128,8 +129,9 @@ test.serial(
       ]) {
         const grammar = api.grammar(`G {
         Start = "{" ${guarded} ! "}"
-        Block = "(" Line* ! ")"
-        Line = letter ! ";"
+        // Keep skip recovery so the failed child is discarded by its parent.
+        Block = "(" Line* !~ ")"
+        Line = letter !~ ";"
         ${extra}
       }`);
         const run = () =>

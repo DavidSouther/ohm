@@ -1,12 +1,7 @@
 import {DiagnosticSnapshot} from './DiagnosticSnapshot.js';
 
-/*
-  A failure that a recovery point skipped over. `interval` is the skip region
-  (empty for the final failure of a parse that recovery cannot finish), and
-  `position`, `shortMessage` and the expected failures are those of the pass
-  that selected the recovery: that pass's farthest failure. `missing` is false:
-  recovery requires a matching join expression.
-*/
+// A recovery correction or final unrecovered failure. The diagnostic is
+// captured as a snapshot at construction, so later passes cannot change it.
 export class RecoveredFailure {
   constructor(interval, position, passResult, missing = false) {
     this.interval = interval;

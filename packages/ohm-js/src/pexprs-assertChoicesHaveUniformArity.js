@@ -69,7 +69,8 @@ pexprs.Fallible.prototype.assertChoicesHaveUniformArity = function (ruleName) {
   }
   const syncArity = this.join.getArity();
   if (syncArity !== 1) {
-    throw errors.invalidFallibleOperand(ruleName, syncArity, this.join);
+    const operator = this.insertion === false ? '!~' : '!';
+    throw errors.invalidFallibleOperand(ruleName, syncArity, this.join, operator);
   }
 };
 

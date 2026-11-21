@@ -82,7 +82,8 @@ test('returned iteration arrays survive cache reclamation with nested source off
   const grammar = ohm.grammar(String.raw`G {
     S = "{" Item* ! "}"
     Item = "{" Item* ! "}" -- block
-         | letter ! ";" -- simple
+         // The malformed final item must be discarded, preserving offset coverage.
+         | letter !~ ";" -- simple
   }`);
   const result = grammar.match('{a;{b;c}d;}', undefined, {recover: true});
   t.true(result.succeeded());
@@ -202,7 +203,8 @@ test('materialized nested failures retain writable array identity and mutations'
     [0, 1, 2]
   );
 
-  const grammar = ohm.grammar('G { S = "{" Item* ! "}"\n Item = letter ! ";" }');
+  // A skipped final item puts a materialized correction in the enclosing block.
+  const grammar = ohm.grammar('G { S = "{" Item* ! "}"\n Item = letter !~ ";" }');
   const result = grammar.match('{a;1; x}', undefined, {recover: true});
   t.true(result.succeeded());
   const recovered = result._cst.children[2];

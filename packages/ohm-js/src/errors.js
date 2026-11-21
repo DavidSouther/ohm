@@ -220,17 +220,17 @@ export function invalidCodePoint(applyWrapper) {
 
 // ----------------- Fallible (`B ! C`) -----------------
 
-export function missingSynchronizer(bangInterval) {
+export function missingSynchronizer(operatorInterval, operator = '!') {
   return createError(
-    "Missing synchronizer after '!': a recovery point is written `B ! C`, " +
-      'where C is where recovery resumes',
-    bangInterval
+    `Missing synchronizer after '${operator}': a recovery point is written ` +
+      `\`B ${operator} C\`, where C is where recovery resumes`,
+    operatorInterval
   );
 }
 
-export function invalidFallibleOperand(ruleName, arity, expr) {
+export function invalidFallibleOperand(ruleName, arity, expr, operator = '!') {
   return createError(
-    `In rule ${ruleName}, the synchronizer of '!' must have arity 1 (got ${arity}); ` +
+    `In rule ${ruleName}, the synchronizer of '${operator}' must have arity 1 (got ${arity}); ` +
       'wrap it in a rule',
     expr.source
   );

@@ -276,8 +276,8 @@ export class RecoveryCache {
     );
   }
 
-  enterContext(parent, join) {
-    const key = `${parent}:${join.toString()}`;
+  enterContext(parent, frame) {
+    const key = `${parent}:${frame.toString()}`;
     let id = this.contexts.get(key);
     if (id === undefined) this.contexts.set(key, (id = this.contexts.size + 1));
     return id;

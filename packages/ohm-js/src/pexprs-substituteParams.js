@@ -36,10 +36,14 @@ pexprs.Seq.prototype.substituteParams = function (actuals) {
 };
 
 pexprs.Fallible.prototype.substituteParams = function (actuals) {
-  return new pexprs.Fallible(
+  const result = new pexprs.Fallible(
     this.guarded.substituteParams(actuals),
     this.join.substituteParams(actuals)
   );
+  result.insertion = this.insertion;
+  // A substituted copy keeps its authored site's recovery and insertion identity.
+  result._insertionSite = this._insertionSite || this;
+  return result;
 };
 
 pexprs.Iter.prototype.substituteParams =

@@ -2,20 +2,21 @@
 import test from 'ava';
 import * as ohm from '../index.mjs';
 
+// Use !~ at punctuation joins where the test needs to observe a failure after recovery.
 const modes = [{}, ...['cached', 'probe', 'auto'].map(firstPass => ({recover: true, firstPass}))];
 const cases = [
-  ['declared delimiter', 'Start = "name" ! ";"', 'name\n wrong', 6, 4],
+  ['declared delimiter', 'Start = "name" !~ ";"', 'name\n wrong', 6, 4],
   ['declared word', 'Start = "name" ! "done"', 'name\n wrong', 6, 4],
-  ['described join', 'Start = "name" ! Semi\n Semi (a semicolon) = ";"', 'name\n wrong', 6, 4],
-  ['nullable guard tail', 'Start = ("name" Empty) ! ";"\n Empty = ""', 'name\n wrong', 6, 4],
-  ['lookahead memo', 'Start = (&Word Word) ! ";"\n Word = "name"', 'name\n wrong', 6, 4],
-  ['explicit space', 'Start = ("name" #spaces) ! ";"', 'name wrong', 5, 5],
+  ['described join', 'Start = "name" !~ Semi\n Semi (a semicolon) = ";"', 'name\n wrong', 6, 4],
+  ['nullable guard tail', 'Start = ("name" Empty) !~ ";"\n Empty = ""', 'name\n wrong', 6, 4],
+  ['lookahead memo', 'Start = (&Word Word) !~ ";"\n Word = "name"', 'name\n wrong', 6, 4],
+  ['explicit space', 'Start = ("name" #spaces) !~ ";"', 'name wrong', 5, 5],
   ['partial join', 'Start = "name" ! Join\n Join = "x" ";"', 'name\n xwrong', 7, 7],
-  ['nonjoin competitor', 'Start = A | B\n A = "name" ! ";"\n B = "name" ";"', 'name wrong', 5, 5],
-  ['nonjoin competitor reversed', 'Start = B | A\n A = "name" ! ";"\n B = "name" ";"', 'name wrong', 5, 5],
-  ['abandoned farther guard', 'Start = Guard ! ";"\n Guard = "x" "next" "z" -- long\n | "x" -- short', 'x next', 6, 6],
+  ['nonjoin competitor', 'Start = A | B\n A = "name" !~ ";"\n B = "name" ";"', 'name wrong', 5, 5],
+  ['nonjoin competitor reversed', 'Start = B | A\n A = "name" !~ ";"\n B = "name" ";"', 'name wrong', 5, 5],
+  ['abandoned farther guard', 'Start = Guard !~ ";"\n Guard = "x" "next" "z" -- long\n | "x" -- short', 'x next', 6, 6],
   ['empty guard', 'Start = Stmt* ! "}"\n Stmt = letter+ ";"', ' 1aa;', 1, 1],
-  ['custom implicit spaces', 'Start = "name" ! ";"\n space += "~"', 'name~~wrong', 6, 4],
+  ['custom implicit spaces', 'Start = "name" !~ ";"\n space += "~"', 'name~~wrong', 6, 4],
 ];
 for (const [name, rules, input, rightmost, display] of cases) {
   test(name, t => {
@@ -35,7 +36,7 @@ for (const [name, rules, input, rightmost, display] of cases) {
 }
 
 test('an abandoned guard alternative that explicitly consumes whitespace vetoes relocation', t => {
-  const grammar = 'G { Start = Guard ! ";" Guard = "name" #("\\n " "x") -- long\n | "name" -- short }';
+  const grammar = 'G { Start = Guard !~ ";" Guard = "name" #("\\n " "x") -- long\n | "name" -- short }';
   const g = ohm.grammar(grammar);
   for (const options of modes) {
     const result = g.match('name\n wrong', undefined, options);
@@ -93,8 +94,8 @@ test('multi-token joins anchor only before they attempt to consume', t => {
 
 test('case-insensitive terminals contribute guard and join positions', t => {
   for (const [rules, input, raw, display] of [
-    ['Start = caseInsensitive<"name"> ! ";"', 'NAME\n wrong', 6, 4],
-    ['Start = caseInsensitive<""> ! ";"', ' wrong', 1, 1],
+    ['Start = caseInsensitive<"name"> !~ ";"', 'NAME\n wrong', 6, 4],
+    ['Start = caseInsensitive<""> !~ ";"', ' wrong', 1, 1],
     ['Start = "name" ! caseInsensitive<"END">', 'name\n wrong', 6, 4],
     ['Start = "name" ! Join\n Join = caseInsensitive<"X"> "y"', 'name\n Xwrong', 7, 7],
     ['Start = "name" ! (caseInsensitive<""> | &"!")', 'name\n wrong', 6, 6],
@@ -151,8 +152,8 @@ test('a recovery scan contributes only the selected join to the retained guard',
 
 test('disagreeing inner and outer joins keep the rightmost position', t => {
   const g = ohm.grammar(`G {
-    Start = Guard ! ";"
-    Guard = ("a" ! "y") -- inner
+    Start = Guard !~ ";"
+    Guard = ("a" !~ "y") -- inner
           | #("a" " ") -- kept
   }`);
   for (const options of modes) {
