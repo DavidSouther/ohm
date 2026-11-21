@@ -7,6 +7,9 @@ import {collectRecoveredFailures} from './RecoveredFailure.js';
 // Private stuff
 // --------------------------------------------------------------------
 
+// Identify the memo for a lazy failure without retaining the table after a reset.
+const failureMemoIdentities = new WeakMap();
+
 export class MatchResult {
   constructor(
     matcher,
@@ -32,6 +35,15 @@ export class MatchResult {
     this._recoveredFailures = undefined;
 
     if (this.failed()) {
+      if (optRecordedFailures === undefined) {
+        const memo = matcher._memo;
+        let identity = failureMemoIdentities.get(memo);
+        if (!identity) {
+          identity = {};
+          failureMemoIdentities.set(memo, identity);
+        }
+        this._failureMemoIdentity = identity;
+      }
       common.defineLazyProperty(this, 'message', function () {
         const detail = 'Expected ' + this.getExpectedText();
         return this._getLineAndColumn().toString() + detail;
@@ -67,8 +79,18 @@ export class MatchResult {
 
   getRightmostFailures() {
     if (!this._rightmostFailures) {
-      this.matcher.setInput(this.input);
-      const matchResultWithFailures = this.matcher._match(this.startExpr, {
+      const {matcher} = this;
+      // An edit can leave the live memo stale even when the text has been restored.
+      // A recovery on the same text resets it and can memoize corrected results.
+      const canReuseMemo =
+        matcher.getInput() === this.input &&
+        (!matcher._isMemoTableStale || matcher.grammar.supportsIncrementalParsing) &&
+        (this._failureMemoIdentity === undefined ||
+          this._failureMemoIdentity === failureMemoIdentities.get(matcher._memo));
+      const failureMatcher = canReuseMemo
+        ? matcher
+        : matcher.grammar.matcher().setInput(this.input);
+      const matchResultWithFailures = failureMatcher._match(this.startExpr, {
         tracing: false,
         positionToRecordFailures: this.getRightmostFailurePosition(),
         // Re-match under the same recovery corrections, or the expected text
