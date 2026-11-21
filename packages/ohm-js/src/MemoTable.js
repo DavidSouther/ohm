@@ -42,7 +42,7 @@ export class MemoTable {
     this.rightmostFailureOffset = new Int32Array(this.capacity);
     this.tokenEndOffset = new Int32Array(this.capacity);
     this.values = []; // CST node, or false for a failure
-    this.failures = []; // failures recorded at the rightmost position, if any
+    this.failures = []; // failure group and target offset from a failure-only rematch
     this.summaries = []; // recovery failure summary
     this.tokenContexts = []; // whether the lexical application began inside a token
     this.traces = []; // trace entry, only when tracing
@@ -386,9 +386,10 @@ export class MemoTable {
         this.tokenEndOffset[j] = this.tokenEndOffset[e];
         this.values[j] = this.values[e];
         this.tokenContexts[j] = this.tokenContexts[e];
-        if (this.failures.length > e) this.failures[j] = this.failures[e];
-        if (this.summaries.length > e) this.summaries[j] = this.summaries[e];
-        if (this.traces.length > e) this.traces[j] = this.traces[e];
+        // A sparse column can end before `e` but still hold a removed entry's value at `j`.
+        if (this.failures.length > j) this.failures[j] = this.failures[e];
+        if (this.summaries.length > j) this.summaries[j] = this.summaries[e];
+        if (this.traces.length > j) this.traces[j] = this.traces[e];
       }
       moved.set(e, j);
       j++;
