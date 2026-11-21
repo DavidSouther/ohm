@@ -134,9 +134,6 @@ export interface MatchOptions {
    * When true, a match that fails is retried with recovery at `B ! C`
    * recovery points, and recovered input appears as `_correction` nodes. Default
    * false. Without it, `B ! C` matches exactly as the sequence `B C`.
-   * A Matcher throws if recovery is requested after a match without recovery,
-   * or after its input changes following an earlier match. Use a fresh Matcher,
-   * Grammar#match, or Grammar#trace for recovery in those cases.
    */
   recover?: boolean;
 
@@ -324,6 +321,23 @@ export interface FailedMatchResult extends MatchResult {
   getInterval(): Interval;
 }
 
+/** Options for adding or extending operations and attributes. */
+export interface OperationOptions {
+  /**
+   * What the operation or attribute does at a `_correction` node, which holds input that recovery
+   * skipped. A `_correction` action, if the action dictionary defines one, always wins.
+   *
+   * - `'skip'` (the default) makes a correction node yield `undefined`. Use `Node#isCorrection`
+   *   to filter correction nodes when traversing the children.
+   * - `'throw'` makes reaching a correction node an error.
+   * - A function is a zero-arity action for the correction node.
+   *
+   * An extension inherits the policy of the operation or attribute it extends. This option
+   * replaces the inherited policy.
+   */
+  corrections?: 'throw' | 'skip' | ((this: Node) => unknown);
+}
+
 /**
   * A Semantics is a family of operations and/or attributes for a given
   * grammar. Each operation/attribute has a unique name within the
@@ -346,7 +360,7 @@ export interface Semantics {
     * is already an operation or attribute called name in this semantics.
     * Returns this Semantics.
     */
-  addOperation<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  addOperation<T>(name: string, actionDict: ActionDict<T>, options?: OperationOptions): Semantics;
 
   /**
     * Add a new attribute named name to this Semantics, using the
@@ -354,7 +368,7 @@ export interface Semantics {
     * is already an operation or attribute called name in this semantics.
     * Returns this Semantics.
     */
-  addAttribute<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  addAttribute<T>(name: string, actionDict: ActionDict<T>, options?: OperationOptions): Semantics;
 
   /**
     * Extend the operation named name with the semantic actions contained
@@ -362,7 +376,7 @@ export interface Semantics {
     * semantics.
     * Returns this Semantics.
     */
-  extendOperation<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  extendOperation<T>(name: string, actionDict: ActionDict<T>, options?: OperationOptions): Semantics;
 
   /**
     * Extend the attribute named name with the semantic actions contained
@@ -370,7 +384,7 @@ export interface Semantics {
     * semantics.
     * Returns this Semantics.
     */
-  extendAttribute<T>(name: string, actionDict: ActionDict<T>): Semantics;
+  extendAttribute<T>(name: string, actionDict: ActionDict<T>, options?: OperationOptions): Semantics;
 }
 
 /**
@@ -435,6 +449,9 @@ export interface Node {
     * Returns the child at index idx.
     */
   child(idx: number): Node;
+
+  /** Returns whether the node represents input skipped by recovery. */
+  isCorrection(): boolean;
 
   /**
     * true if the node is a terminal node, otherwise false.
